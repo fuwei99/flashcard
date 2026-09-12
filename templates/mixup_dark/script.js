@@ -1,7 +1,12 @@
 /* ============================================================
    形近词辨析 · 暗黑模板 · 交互脚本
-   卡牌内部全权处理：义项渲染、翻面、TTS、评分。
-   原生壳只暴露 window.Flashcard API。
+   ------------------------------------------------------------
+   两段式流程：
+     正面  点【记错了】-> pre=again -> 词义页只剩【下一词】
+           点【模糊】  -> pre=hard  -> 词义页【记错了】+【下一词】
+           点【记得】  -> pre=good  -> 词义页【记错了】+【下一词】
+     词义页 点【记错了】-> 改判 again
+           点【下一词】-> 提交 pre 那个评分
    ============================================================ */
 (function () {
   "use strict";
@@ -17,7 +22,9 @@
   var root = document.querySelector(".fc-root");
   if (!root) return;
 
-  // ---------- 渲染义项块（数组字段由脚本生成 DOM）----------
+  var preRating = "good"; // 正面预判
+
+  // ---------- 渲染义项块 ----------
   function renderSenses(card) {
     var list = (card.fields && card.fields.senses) || [];
     root.querySelectorAll(".fc-senses").forEach(function (box) {
@@ -35,8 +42,10 @@
     });
   }
 
-  // ---------- 翻面 ----------
-  function reveal() {
+  // ---------- 翻到词义页 ----------
+  function toMeaning(pre) {
+    preRating = pre || "good";
+    root.setAttribute("data-pre", preRating);   // CSS 靠它决定是否显示【记错了】
     root.setAttribute("data-state", "back");
     var f = root.querySelector(".fc-back");
     if (f) f.scrollTop = 0;
@@ -52,21 +61,31 @@
       FC.tts(t.getAttribute("data-tts"), "en-US");
       return;
     }
+
     var a = t.getAttribute("data-action");
-    if (a === "reveal") { reveal(); return; }
+
+    // 正面三档：一律进词义页，记录预判
+    if (a === "to-meaning") {
+      toMeaning(t.getAttribute("data-pre"));
+      return;
+    }
+
+    // 词义页：这里才评分
     if (a === "answer") {
-      root.querySelectorAll(".fc-btn").forEach(function (b) {
+      var r = t.getAttribute("data-rating");
+      var final = (r === "again") ? "again" : preRating;
+      root.querySelectorAll(".fc-actions-back .fc-btn").forEach(function (b) {
         b.setAttribute("disabled", "disabled");
       });
-      FC.answer(t.getAttribute("data-rating"));
+      FC.answer(final);
     }
   });
 
-  // 空格/回车翻面
+  // 空格/回车 = 进词义页（正面时，按 good 预判）
   document.addEventListener("keydown", function (e) {
     if (e.code === "Space" || e.code === "Enter") {
       e.preventDefault();
-      if (root.getAttribute("data-state") === "front") reveal();
+      if (root.getAttribute("data-state") === "front") toMeaning("good");
     }
   });
 
@@ -74,6 +93,7 @@
   function boot() {
     renderSenses(FC.getCard());
     root.setAttribute("data-state", "front");
+    root.setAttribute("data-pre", "");
     if (FC.ready) FC.ready();
   }
   if (document.readyState === "loading") {

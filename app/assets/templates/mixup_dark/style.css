@@ -1,6 +1,6 @@
 /* ============================================================
    形近词辨析 · 暗黑模板
-   复刻截图：单词大字 + 美音胶囊 + 竖排义项块 + 底部看答案
+   两段式：正面(提问) / 词义页(回答)
    ============================================================ */
 :root{
   --bg:#0e1517; --txt:#e9eff1; --muted:#8a9a9f; --dim:#5a6b70;
@@ -26,6 +26,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-face::-webkit-scrollbar{display:none}
 .fc-root[data-state="front"] .fc-front{display:flex;flex-direction:column}
 .fc-root[data-state="back"]  .fc-back {display:block}
+.fc-spacer{flex:1 1 auto}
 
 /* ---------- 单词 ---------- */
 .fc-word{font-size:40px;font-weight:700;letter-spacing:-.6px;margin:0;line-height:1.05}
@@ -45,18 +46,11 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-tts-sm svg{width:13px;height:13px}
 
 /* ---------- 义项块 ---------- */
-.fc-senses{margin-top:34px;display:flex;flex-direction:column;gap:11px}
+.fc-senses{margin-top:26px;display:flex;flex-direction:column;gap:11px}
 .fc-sense{background:var(--block);border-radius:13px;padding:15px 17px}
 .fc-sense .pos{display:block;font-size:12px;color:var(--dim);
                margin-bottom:7px;letter-spacing:.2px}
 .fc-sense .cn{font-size:16px;color:#c9d4d7;line-height:1.5}
-
-/* ---------- 底部「看答案」 ---------- */
-.fc-footer{margin-top:auto;padding:40px 0 26px;text-align:center}
-.fc-reveal{border:0;background:none;color:#aeb9bd;font-size:16px;
-           font-family:var(--sans);cursor:pointer;padding:6px 20px}
-.fc-reveal::after{content:'';display:block;width:22px;height:2px;border-radius:2px;
-                  background:var(--red);margin:9px auto 0}
 
 /* ---------- 背面内容块 ---------- */
 .fc-block{background:var(--block);border-radius:13px;padding:14px 16px;margin-top:12px}
@@ -67,9 +61,15 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-cn{font-size:13.5px;line-height:1.6;margin:5px 0 0;color:var(--muted)}
 .fc-root-text{font-size:14px;line-height:1.65;margin:0;color:#c9d4d7}
 
-/* ---------- 评分栏 ---------- */
+/* ---------- 底部按钮栏 ---------- */
 .fc-actions{display:none;flex:0 0 auto;gap:10px;padding:12px 0 20px}
-.fc-root[data-state="back"] .fc-actions{display:flex}
+/* 正面：三档 */
+.fc-root[data-state="front"] .fc-actions-front{display:flex}
+/* 词义页：两档 */
+.fc-root[data-state="back"] .fc-actions-back{display:flex}
+/* 正面选了「记错了」(pre=again) -> 词义页不显示【记错了】，只剩【下一词】 */
+.fc-root[data-pre="again"] .fc-actions-back .fc-again{display:none}
+
 .fc-btn{flex:1;height:50px;border-radius:14px;border:1px solid var(--line);
         background:rgba(255,255,255,.045);color:var(--txt);font-size:14px;font-weight:600;
         font-family:var(--sans);cursor:pointer;display:flex;align-items:center;

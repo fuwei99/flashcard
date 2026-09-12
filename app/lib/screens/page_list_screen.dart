@@ -77,7 +77,16 @@ class PageListBody extends StatelessWidget {
 
   void _startReview(BuildContext context, bool shuffle) {
     if (template == null) return;
-    final list = List<FlashCard>.from(cards);
+    // 只背没学过的卡，已背过的不重复
+    final list = cards.where((c) => !store.isLearned(c.id)).toList();
+    if (list.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('本章新词已背完，去顶部「开始复习」巩固'),
+        backgroundColor: Color(0xFF1B2629),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     if (shuffle) list.shuffle(math.Random());
 
     Navigator.push(

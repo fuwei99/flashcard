@@ -1,4 +1,5 @@
-/// 书内页：有章节 -> 章节目录（文件夹）；无章节 -> 直接页面列表
+/// 书内页：顶部「开始复习」入口 + 章节/页面列表
+/// 有章节 -> 章节目录（文件夹）；无章节 -> 直接页面列表
 library;
 
 import 'package:flutter/material.dart';
@@ -8,8 +9,9 @@ import '../models/deck.dart';
 import '../services/card_store.dart';
 import '../services/study_settings.dart';
 import 'page_list_screen.dart';
+import 'review_screen.dart';
 
-class BookDetailScreen extends StatelessWidget {
+class BookDetailScreen extends StatefulWidget {
   final Book book;
   final CardTemplate? template;
   final CardStore store;
@@ -24,35 +26,154 @@ class BookDetailScreen extends StatelessWidget {
   });
 
   @override
+  State<BookDetailScreen> createState() => _BookDetailScreenState();
+}
+
+class _BookDetailScreenState extends State<BookDetailScreen> {
+  // ---------- 复习：按 FSRS 到期队列 ----------
+  void _startReview() {
+    final tpl = widget.template;
+    if (tpl == null) return;
+
+    final allIds = widget.book.allCards.map((c) => c.id).toList();
+    final dueIds = widget.store.reviewDue(allIds).toSet();
+    final dueCards =
+        widget.book.allCards.where((c) => dueIds.contains(c.id)).toList();
+
+    if (dueCards.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('今日没有要复习的卡片'),
+        backgroundColor: Color(0xFF1B2629),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewScreen(
+          title: '${widget.book.title} · 复习',
+          cards: dueCards,
+          book: widget.book,
+          template: tpl,
+          store: widget.store,
+          settings: widget.settings,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final allIds = widget.book.allCards.map((c) => c.id).toList();
+    final dueCount = widget.store.reviewDueCount(allIds);
+
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
       appBar: AppBar(
         backgroundColor: const Color(0xFF141D1F),
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF8C9DA2)),
-        title: Text(book.title,
+        title: Text(widget.book.title,
             style: const TextStyle(
                 color: Color(0xFFF0F4F5),
                 fontWeight: FontWeight.w700,
                 fontSize: 18)),
       ),
-      body: book.hasChapters
-          ? _chapterList(context)
-          : PageListBody(
-              title: book.title,
-              cards: book.allCards,
-              book: book,
-              template: template,
-              store: store,
-              settings: settings,
-            ),
+      body: Column(
+        children: [
+          _reviewBar(dueCount),
+          Expanded(
+            child: widget.book.hasChapters
+                ? _chapterList(context)
+                : PageListBody(
+                    title: widget.book.title,
+                    cards: widget.book.allCards,
+                    book: widget.book,
+                    template: widget.template,
+                    store: widget.store,
+                    settings: widget.settings,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 顶部复习栏：直接显示今日待复习数量
+  Widget _reviewBar(int dueCount) {
+    final enabled = dueCount > 0 && widget.template != null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: enabled ? _startReview : null,
+        child: Container(
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: enabled ? const Color(0x1F00C08B) : const Color(0x08FFFFFF),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: enabled
+                    ? const Color(0x3300C08B)
+                    : const Color(0x14FFFFFF)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.refresh,
+                  color: enabled
+                      ? const Color(0xFF00C08B)
+                      : const Color(0xFF54666C),
+                  size: 20),
+              const SizedBox(width: 10),
+              Text('开始复习',
+                  style: TextStyle(
+                      color: enabled
+                          ? const Color(0xFFF0F4F5)
+                          : const Color(0xFF54666C),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: enabled
+                      ? const Color(0xFF00C08B)
+                      : const Color(0x14FFFFFF),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('$dueCount',
+                    style: TextStyle(
+                        color: enabled
+                            ? const Color(0xFF141D1F)
+                            : const Color(0xFF54666C),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 6),
+              Text('待复习',
+                  style: TextStyle(
+                      color: enabled
+                          ? const Color(0xFF00C08B)
+                          : const Color(0xFF54666C),
+                      fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _chapterList(BuildContext context) {
+    final book = widget.book;
+    final store = widget.store;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       itemCount: book.chapters.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
@@ -71,12 +192,14 @@ class BookDetailScreen extends StatelessWidget {
                 title: ch.title,
                 cards: ch.cards,
                 book: book,
-                template: template,
+                template: widget.template,
                 store: store,
-                settings: settings,
+                settings: widget.settings,
               ),
             ),
-          ),
+          ).then((_) {
+            if (mounted) setState(() {});
+          }),
           child: Container(
             padding: const EdgeInsets.all(15),
             decoration: BoxDecoration(

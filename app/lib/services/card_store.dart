@@ -92,6 +92,26 @@ class CardStore {
     _prefs?.setString(_kKv, json.encode(_kv));
   }
 
+  /// 到期复习队列（已学 + 到期，不含新卡）
+  List<String> reviewDue(List<String> allIds) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final due = <String>[];
+    for (final id in allIds) {
+      final st = _states[id];
+      if (st != null &&
+          !st.isNew &&
+          st.due != null &&
+          !st.due!.isAfter(today)) {
+        due.add(id);
+      }
+    }
+    return due;
+  }
+
+  /// 到期复习数量
+  int reviewDueCount(List<String> allIds) => reviewDue(allIds).length;
+
   // ---------- 导入 / 导出 ----------
 
   /// 导出指定卡片的进度（只导这些卡的）
