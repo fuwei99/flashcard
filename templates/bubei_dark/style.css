@@ -1,0 +1,118 @@
+/* ============================================================
+   不背单词 · 暗黑极简模板样式
+   所有视觉都在卡牌内部，原生壳只提供一个全屏 WebView
+   ============================================================ */
+:root{
+  --bg:#141d1f; --glass:rgba(255,255,255,.045); --line:rgba(255,255,255,.08);
+  --txt:#f0f4f5; --muted:#8c9da2; --dim:#54666c;
+  --teal:#00c08b; --teal-bg:rgba(0,192,139,.12);
+  --again:#ff5c5c; --hard:#f0a13a; --good:#00c08b;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{background:var(--bg);color:var(--txt);font-family:var(--sans);
+     -webkit-font-smoothing:antialiased;overflow:hidden}
+
+.fc-root{display:flex;flex-direction:column;height:100vh;padding:18px 20px 0;
+         max-width:600px;margin:0 auto;overflow:hidden}
+
+/* ---------- 顶栏 ---------- */
+.fc-top{display:flex;justify-content:space-between;align-items:center;
+        height:26px;flex:0 0 auto}
+.fc-tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+        letter-spacing:.5px;color:var(--teal);background:var(--teal-bg);
+        padding:3px 9px;border-radius:999px;border:1px solid rgba(0,192,139,.25)}
+.fc-tag svg{width:11px;height:11px;fill:currentColor}
+.fc-counter{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* ---------- 正反面切换 ---------- */
+.fc-face{display:none;flex:1 1 auto;overflow-y:auto;padding:22px 0 12px;
+         scrollbar-width:none}
+.fc-face::-webkit-scrollbar{display:none}
+.fc-root[data-state="front"] .fc-front{display:flex;flex-direction:column}
+.fc-root[data-state="back"]  .fc-back {display:block}
+
+/* ---------- 单词 ---------- */
+.fc-word-wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fc-word{font-size:36px;font-weight:700;letter-spacing:-.5px;margin:0;line-height:1.1}
+.fc-word-sm{font-size:30px}
+.fc-mastery{display:inline-flex;align-items:center;justify-content:center;
+            width:20px;height:20px;border-radius:50%;background:var(--teal);
+            box-shadow:0 0 10px rgba(0,192,139,.45)}
+.fc-mastery svg{width:12px;height:12px;stroke:#141d1f;stroke-width:3;fill:none}
+.fc-tts{display:inline-flex;align-items:center;justify-content:center;
+        width:32px;height:32px;border:0;border-radius:50%;background:var(--glass);
+        color:var(--muted);cursor:pointer;transition:.15s}
+.fc-tts:active{transform:scale(.92);background:rgba(255,255,255,.14)}
+.fc-tts svg{width:15px;height:15px;fill:currentColor}
+.fc-tts-sm{width:26px;height:26px}
+.fc-tts-sm svg{width:13px;height:13px}
+
+/* ---------- 音标胶囊 ---------- */
+.fc-phonetics{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.fc-pill{display:inline-flex;align-items:center;gap:6px;background:var(--glass);
+         border:1px solid var(--line);border-radius:999px;padding:4px 12px;
+         font-size:13px;color:var(--muted)}
+.fc-pill b{color:var(--teal);font-weight:600;font-size:11px}
+
+/* ---------- 骨架屏 ---------- */
+.fc-skeleton{margin-top:38px;display:flex;flex-direction:column;gap:12px}
+.fc-sk{height:14px;border-radius:6px;
+  background:linear-gradient(90deg,rgba(255,255,255,.08) 25%,
+             rgba(255,255,255,.17) 50%,rgba(255,255,255,.08) 75%);
+  background-size:200% 100%;animation:fcshim 1.8s infinite ease-in-out}
+.fc-sk.w65{width:65%}.fc-sk.w40{width:40%}
+@keyframes fcshim{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ---------- 正面底部 ---------- */
+.fc-front-footer{margin-top:auto;padding-top:40px;text-align:center}
+.fc-hint{font-size:12.5px;color:var(--dim);margin:0 0 16px}
+.fc-reveal{padding:12px 28px;border-radius:12px;border:1px solid var(--line);
+           background:rgba(255,255,255,.05);color:var(--teal);font-size:14px;
+           font-weight:600;cursor:pointer;transition:.2s;font-family:var(--sans)}
+.fc-reveal:active{background:var(--teal-bg);border-color:var(--teal)}
+
+/* ---------- 释义 ---------- */
+.fc-meaning{margin:20px 0 18px;font-size:19px;font-weight:500;line-height:1.6}
+.fc-pos{color:var(--teal);font-style:italic;font-weight:700;margin-right:6px}
+
+/* ---------- 玻璃卡片 ---------- */
+.fc-glass{background:var(--glass);border:1px solid var(--line);border-radius:14px;
+          padding:14px 16px;margin-bottom:14px;
+          box-shadow:0 4px 20px rgba(0,0,0,.15);
+          backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.fc-glass-head{display:flex;justify-content:space-between;align-items:center;
+               margin-bottom:9px}
+.fc-label{font-size:11px;font-weight:700;letter-spacing:.8px;
+          text-transform:uppercase;color:var(--dim)}
+.fc-en{font-size:15.5px;line-height:1.55;margin:0 0 8px}
+.fc-en u,.fc-en b{color:var(--teal);text-decoration:none;font-weight:600;
+                  border-bottom:1.5px solid var(--teal)}
+.fc-cn{font-size:13.5px;color:var(--muted);line-height:1.5;margin:0}
+.fc-phrase-list{display:flex;flex-direction:column;gap:9px}
+.fc-phrase{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13.5px;
+           padding-bottom:8px;border-bottom:1px dashed rgba(255,255,255,.05)}
+.fc-phrase:last-child{border-bottom:0;padding-bottom:0}
+.fc-phrase .en{font-weight:500}
+.fc-phrase .cn{color:var(--muted)}
+.fc-root-text{font-size:13px;line-height:1.65;color:var(--muted);margin:0}
+.fc-root-text b{color:var(--teal)}
+
+/* ---------- 评分栏 ---------- */
+.fc-actions{flex:0 0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+            padding:12px 0 calc(14px + env(safe-area-inset-bottom))}
+.fc-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:3px;height:56px;border:1px solid var(--line);border-radius:14px;
+        background:var(--glass);color:var(--muted);font-size:12.5px;font-weight:600;
+        font-family:var(--sans);cursor:pointer;transition:.15s}
+.fc-btn:active{transform:scale(.96)}
+.fc-btn .fc-ico{font-size:16px;font-weight:700;line-height:1}
+.fc-btn[disabled]{opacity:.3;pointer-events:none}
+.fc-again{color:var(--again)}.fc-again:active{background:rgba(255,92,92,.12);border-color:var(--again)}
+.fc-hard {color:var(--hard) }.fc-hard:active {background:rgba(240,161,58,.12);border-color:var(--hard)}
+.fc-good {color:var(--good) }.fc-good:active {background:var(--teal-bg);border-color:var(--good)}
+
+/* ---------- 翻面动画 ---------- */
+@keyframes fcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.fc-face[style*="display: block"],.fc-face[style*="display: flex"]{animation:fcIn .22s ease}

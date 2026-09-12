@@ -1,0 +1,102 @@
+<!--
+  不背单词 · 暗黑极简模板
+  占位符: {{field}}，列表用 {{#phrases}}...{{/phrases}}
+  交互全部交给 script.js，通过 window.Flashcard API 与原生壳通信
+-->
+<div class="fc-root" data-state="front">
+
+  <header class="fc-top">
+    {{#exam_tag}}
+    <span class="fc-tag">
+      <svg viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5l8.5 14.5H3.5L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
+      {{exam_tag}}
+    </span>
+    {{/exam_tag}}
+    <span class="fc-counter">{{__index}} / {{__total}}</span>
+  </header>
+
+  <!-- ============ 正面 ============ -->
+  <section class="fc-face fc-front">
+    <div class="fc-word-wrap">
+      <h1 class="fc-word">{{word}}</h1>
+      <button class="fc-tts" data-tts="{{word}}" title="朗读单词">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+    </div>
+
+    <div class="fc-phonetics">
+      {{#phonetic_us}}<span class="fc-pill"><b>美</b>{{phonetic_us}}</span>{{/phonetic_us}}
+      {{#phonetic_uk}}<span class="fc-pill"><b>英</b>{{phonetic_uk}}</span>{{/phonetic_uk}}
+    </div>
+
+    <div class="fc-skeleton">
+      <div class="fc-sk w65"></div>
+      <div class="fc-sk w40"></div>
+    </div>
+
+    <div class="fc-front-footer">
+      <p class="fc-hint">先自己想，想不起来再翻面</p>
+      <button class="fc-reveal" data-action="reveal">显示释义</button>
+    </div>
+  </section>
+
+  <!-- ============ 背面 ============ -->
+  <section class="fc-face fc-back">
+    <div class="fc-word-wrap">
+      <h1 class="fc-word fc-word-sm">{{#syllable}}{{syllable}}{{/syllable}}{{^syllable}}{{word}}{{/syllable}}</h1>
+      <span class="fc-mastery" title="已掌握"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span>
+      <button class="fc-tts" data-tts="{{word}}" title="朗读单词">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+    </div>
+
+    <div class="fc-phonetics">
+      {{#phonetic_us}}<span class="fc-pill"><b>美</b>{{phonetic_us}}</span>{{/phonetic_us}}
+    </div>
+
+    <div class="fc-meaning">
+      <span class="fc-pos">{{pos}}</span>
+      <span class="fc-mean-text">{{meaning}}</span>
+    </div>
+
+    {{#sentence_en}}
+    <div class="fc-glass fc-sentence">
+      <div class="fc-glass-head">
+        <span class="fc-label">真题例句</span>
+        <button class="fc-tts fc-tts-sm" data-tts="{{sentence_en}}" title="朗读例句">
+          <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+        </button>
+      </div>
+      <p class="fc-en">{{sentence_en}}</p>
+      {{#sentence_cn}}<p class="fc-cn">{{sentence_cn}}</p>{{/sentence_cn}}
+    </div>
+    {{/sentence_en}}
+
+    {{#phrases}}
+    <div class="fc-glass fc-phrases">
+      <div class="fc-glass-head"><span class="fc-label">常用词组</span></div>
+      <div class="fc-phrase-list"></div>
+    </div>
+    {{/phrases}}
+
+    {{#root}}
+    <div class="fc-glass fc-root">
+      <div class="fc-glass-head"><span class="fc-label">词根词源</span></div>
+      <p class="fc-root-text">{{root}}</p>
+    </div>
+    {{/root}}
+  </section>
+
+  <!-- ============ 评分栏（永远在卡牌内部，原生不提供任何按钮）============ -->
+  <footer class="fc-actions">
+    <button class="fc-btn fc-again" data-action="answer" data-rating="again">
+      <span class="fc-ico">✕</span><span>忘记</span>
+    </button>
+    <button class="fc-btn fc-hard" data-action="answer" data-rating="hard">
+      <span class="fc-ico">~</span><span>模糊</span>
+    </button>
+    <button class="fc-btn fc-good" data-action="answer" data-rating="good">
+      <span class="fc-ico">✓</span><span>记得</span>
+    </button>
+  </footer>
+</div>
