@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       # app/ 只有 lib 和 assets，没有平台目录。
-      # 在临时目录生成 android/ 脚手架再拷回来，避免覆盖我们的 lib/main.dart
+      # 在临时目录生成 android/ 脚手架再拷回来，避免覆盖 lib/main.dart
       - name: Scaffold Android platform
         working-directory: app
         run: |
@@ -37,16 +37,18 @@ jobs:
           cp -r /tmp/scaffold/android ./android
           cp /tmp/scaffold/.metadata ./.metadata || true
 
-      # 1) 依赖解析出 kotlin-stdlib 2.2.20，脚手架编译器只有 1.8.x，元数据不兼容
-      #    -> Kotlin 插件与 kotlin-stdlib 一起顶到 2.0.21
-      # 2) flutter_tts 要求 minSdk >= 24，脚手架默认 21 -> 抬到 24
-      - name: Fix Gradle (Kotlin version + minSdk)
+      # 一次性打补丁：
+      #   1. Kotlin 插件 1.8 -> 2.0.21，kotlin-stdlib 对齐（否则 flutter_tts 编译失败）
+      #   2. minSdk -> 24（flutter_tts 要求）
+      #   3. AndroidManifest 加存储权限（MANAGE_EXTERNAL_STORAGE）
+      - name: Patch Android (kotlin / minSdk / permissions)
         working-directory: app/android
         run: |
           python3 - <<'PY'
           import os, re
           KVER = "2.0.21"
 
+          # 1) Kotlin 插件版本
           for f in ("settings.gradle", "settings.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -54,8 +56,9 @@ jobs:
                       r'(org\.jetbrains\.kotlin\.android["\']?\s*\)?\s*version\s*["\'])([0-9.]+)(["\'])',
                       lambda m: m.group(1) + KVER + m.group(3), s)
                   open(f, "w").write(s)
-                  print("== patched", f)
+                  print("patched kotlin plugin:", f)
 
+          # 2) 强制 kotlin-stdlib 对齐
           for f in ("build.gradle", "build.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -71,20 +74,32 @@ jobs:
                                 "      force 'org.jetbrains.kotlin:kotlin-stdlib:" + KVER + "'\n"
                                 "    }\n  }\n}\n")
                       open(f, "w").write(s)
-                      print("== patched", f)
+                      print("patched stdlib force:", f)
 
+          # 3) minSdk -> 24
           for f in ("app/build.gradle", "app/build.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
-                  s = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24', s)
-                  s = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 24', s)
-                  s = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 24', s)
-                  s = re.sub(r'minSdk\s*=\s*\d+', 'minSdk = 24', s)
+                  s = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 24', s)
+                  s = re.sub(r'minSdkVersion\s+(flutter\.minSdkVersion|\d+)', 'minSdkVersion 24', s)
                   open(f, "w").write(s)
-                  print("== patched minSdk:", f)
-                  for line in s.splitlines():
-                      if "minSdk" in line:
-                          print("   ", line.strip())
+                  print("patched minSdk:", f)
+
+          # 4) AndroidManifest 存储权限
+          mf = "app/src/main/AndroidManifest.xml"
+          if os.path.exists(mf):
+              s = open(mf).read()
+              perms = (
+                  '    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n'
+                  '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n'
+                  '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n'
+              )
+              if "MANAGE_EXTERNAL_STORAGE" not in s:
+                  s = s.replace("<application", perms + "    <application", 1)
+                  open(mf, "w").write(s)
+                  print("manifest patched")
+              else:
+                  print("manifest already has perms")
           PY
 
       - name: Flutter pub get
