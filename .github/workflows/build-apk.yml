@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -48,7 +51,6 @@ jobs:
           import os, re
           KVER = "2.0.21"
 
-          # 1) Kotlin 插件版本
           for f in ("settings.gradle", "settings.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -58,7 +60,6 @@ jobs:
                   open(f, "w").write(s)
                   print("patched kotlin plugin:", f)
 
-          # 2) 强制 kotlin-stdlib 对齐
           for f in ("build.gradle", "build.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -76,7 +77,6 @@ jobs:
                       open(f, "w").write(s)
                       print("patched stdlib force:", f)
 
-          # 3) minSdk -> 24
           for f in ("app/build.gradle", "app/build.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -85,7 +85,6 @@ jobs:
                   open(f, "w").write(s)
                   print("patched minSdk:", f)
 
-          # 4) AndroidManifest 存储权限
           mf = "app/src/main/AndroidManifest.xml"
           if os.path.exists(mf):
               s = open(mf).read()
@@ -98,8 +97,100 @@ jobs:
                   s = s.replace("<application", perms + "    <application", 1)
                   open(mf, "w").write(s)
                   print("manifest patched")
+          PY
+
+      # 固定签名：从 Secrets 解码 keystore，写 key.properties，patch build.gradle
+      # 这样每次 CI 出的包签名一致，能直接覆盖安装
+      - name: Setup release signing
+        working-directory: app
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # 1) 解码 keystore 到 app/flashcard.p12
+          echo "$KEYSTORE_B64" | base64 -d > android/app/flashcard.p12
+
+          # 2) key.properties（Gradle root = android/）
+          cat > android/key.properties <<EOF
+          storePassword=$KS_PASS
+          keyPassword=$KEY_PASS
+          keyAlias=$KEY_ALIAS
+          storeFile=flashcard.p12
+          storeType=PKCS12
+          EOF
+
+          # 3) patch app/build.gradle(.kts) 用 release 签名
+          python3 - <<'PY'
+          import os
+
+          load_groovy = '''
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file('key.properties')
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+          '''
+
+          signing_groovy = '''    signingConfigs {
+              release {
+                  keyAlias keystoreProperties['keyAlias']
+                  keyPassword keystoreProperties['keyPassword']
+                  storeFile file(keystoreProperties['storeFile'])
+                  storePassword keystoreProperties['storePassword']
+                  storeType 'PKCS12'
+              }
+          }
+
+          '''
+
+          load_kts = '''
+          import java.util.Properties
+          import java.io.FileInputStream
+
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+          '''
+
+          signing_kts = '''    signingConfigs {
+              create("release") {
+                  keyAlias = keystoreProperties["keyAlias"] as String
+                  keyPassword = keystoreProperties["keyPassword"] as String
+                  storeFile = file(keystoreProperties["storeFile"] as String)
+                  storePassword = keystoreProperties["storePassword"] as String
+                  storeType = "PKCS12"
+              }
+          }
+
+          '''
+
+          done = False
+          for f in ("android/app/build.gradle", "android/app/build.gradle.kts"):
+              if not os.path.exists(f):
+                  continue
+              s = open(f).read()
+              if "signingConfigs" in s and "release" in s.split("signingConfigs",1)[1][:400]:
+                  print("already signed:", f)
+                  done = True
+                  break
+              if f.endswith(".kts"):
+                  s = s.replace("android {", load_kts + "\nandroid {\n" + signing_kts, 1)
+                  s = s.replace('signingConfig = signingConfigs.getByName("debug")',
+                                'signingConfig = signingConfigs.getByName("release")')
               else:
-                  print("manifest already has perms")
+                  s = s.replace("android {", load_groovy + "\nandroid {\n" + signing_groovy, 1)
+                  s = s.replace("signingConfig signingConfigs.debug",
+                                "signingConfig signingConfigs.release")
+              open(f, "w").write(s)
+              print("signed:", f)
+              done = True
+              break
+          if not done:
+              raise SystemExit("build.gradle not found for signing patch")
           PY
 
       - name: Flutter pub get
@@ -113,9 +204,13 @@ jobs:
             --target-platform=android-arm64 \
             --split-per-abi
 
-      - name: Show APK
+      - name: Verify signature
         working-directory: app
-        run: ls -lh build/app/outputs/flutter-apk/
+        run: |
+          ls -lh build/app/outputs/flutter-apk/
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          BT=$(ls -d $ANDROID_HOME/build-tools/* 2>/dev/null | tail -1)
+          "$BT/apksigner" verify --print-certs "$APK" | head -8 || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -123,3 +218,10 @@ jobs:
           name: flashcard-arm64-v8a
           path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
+
+      # tag 推送时自动建 Release
+      - name: Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
