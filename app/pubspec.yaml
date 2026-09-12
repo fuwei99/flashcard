@@ -1,7 +1,7 @@
 name: flashcard
 description: "flashcard - 卡牌即网页的极简背单词壳。原生只发牌，交互全在卡牌里。"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.0+2
 
 environment:
   sdk: ^3.5.0
@@ -15,7 +15,7 @@ dependencies:
   flutter_tts: ^4.2.2
   # 本地存储：卡牌调度状态 + 卡牌私有 KV
   shared_preferences: ^2.3.3
-  # 文件路径（读取解包的卡牌包）
+  # 文件路径
   path_provider: ^2.1.5
   # 状态管理
   provider: ^6.1.2
@@ -25,6 +25,10 @@ dependencies:
   # JSON / 工具
   crypto: ^3.0.6
   archive: ^3.6.1
+  # 导入：选文件
+  file_picker: ^8.1.4
+  # 权限：全部文件访问（MANAGE_EXTERNAL_STORAGE）
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
@@ -36,3 +40,4 @@ flutter:
   assets:
     - assets/decks/
     - assets/templates/bubei_dark/
+    - assets/templates/mixup_dark/

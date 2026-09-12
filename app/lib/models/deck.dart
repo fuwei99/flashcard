@@ -17,6 +17,9 @@ class FlashCard {
   }
 
   String get word => (fields['word'] ?? id).toString();
+
+  /// 序列化：id 单列，其余字段平铺
+  Map<String, dynamic> toJson() => {'id': id, ...fields};
 }
 
 /// 一个卡组 = 若干卡片 + 绑定的模板 + 字段顺序

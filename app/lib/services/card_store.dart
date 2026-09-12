@@ -92,6 +92,42 @@ class CardStore {
     _prefs?.setString(_kKv, json.encode(_kv));
   }
 
+  // ---------- 导入 / 导出 ----------
+
+  /// 导出指定卡片的进度（只导这些卡的）
+  Map<String, dynamic> exportProgress(List<String> ids) {
+    final states = <String, dynamic>{};
+    final kv = <String, dynamic>{};
+    for (final id in ids) {
+      final s = _states[id];
+      if (s != null) states[id] = s.toJson();
+      final k = _kv[id];
+      if (k != null) kv[id] = k;
+    }
+    return {'card_states': states, 'card_kv': kv};
+  }
+
+  /// 导入进度并合并（同 id 覆盖）
+  void importProgress(Map<String, dynamic> progress) {
+    final states = progress['card_states'];
+    if (states is Map) {
+      states.forEach((k, v) {
+        if (v is Map) {
+          _states[k.toString()] =
+              CardState.fromJson(Map<String, dynamic>.from(v));
+        }
+      });
+    }
+    final kv = progress['card_kv'];
+    if (kv is Map) {
+      kv.forEach((k, v) {
+        if (v is Map) _kv[k.toString()] = Map<String, dynamic>.from(v);
+      });
+    }
+    _flushStates();
+    _flushKv();
+  }
+
   Future<void> reset() async {
     _states.clear();
     _kv.clear();

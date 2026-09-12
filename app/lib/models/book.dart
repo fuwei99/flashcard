@@ -35,6 +35,12 @@ class Chapter {
       cards: cards,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'chapter_id': chapterId,
+        'title': title,
+        'cards': cards.map((c) => c.toJson()).toList(),
+      };
 }
 
 /// 一本书
@@ -92,4 +98,16 @@ class Book {
       looseCards: loose,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'book_id': bookId,
+        'title': title,
+        'subtitle': subtitle,
+        'template': templateId,
+        'fields_order': fieldsOrder,
+        if (chapters.isNotEmpty)
+          'chapters': chapters.map((c) => c.toJson()).toList(),
+        if (looseCards.isNotEmpty)
+          'cards': looseCards.map((c) => c.toJson()).toList(),
+      };
 }

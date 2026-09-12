@@ -2,9 +2,11 @@
 /// 书架 -> 书 -> 章 -> 页 -> 背诵
 library;
 
-import 'package:flutter/material.dart';
+import 'dart:io';
 
-import 'models/book.dart';
+import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 import 'models/deck.dart';
 import 'screens/bookshelf_screen.dart';
 import 'services/card_store.dart';
@@ -49,7 +51,6 @@ class _BootstrapState extends State<_Bootstrap> {
   final _store = CardStore();
   final _settings = StudySettings();
 
-  List<Book>? _books;
   Map<String, CardTemplate>? _templates;
   Object? _error;
 
@@ -63,17 +64,27 @@ class _BootstrapState extends State<_Bootstrap> {
     try {
       await _store.init();
       await _settings.init();
-      final books = await _repo.loadAllBooks();
       final templates = await _repo.loadAllTemplates();
       if (!mounted) return;
-      setState(() {
-        _books = books;
-        _templates = templates;
-      });
+      setState(() => _templates = templates);
+      // 进 APP 就申请「全部文件访问权」，放到首帧之后避免 build 冲突
+      WidgetsBinding.instance.addPostFrameCallback((_) => _askPermission());
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e);
     }
+  }
+
+  Future<void> _askPermission() async {
+    if (!Platform.isAndroid) return;
+    try {
+      if (await Permission.manageExternalStorage.isGranted) return;
+      final st = await Permission.manageExternalStorage.request();
+      if (!st.isGranted) {
+        // 老系统回退到普通存储权限
+        await Permission.storage.request();
+      }
+    } catch (_) {}
   }
 
   @override
@@ -86,7 +97,7 @@ class _BootstrapState extends State<_Bootstrap> {
         ),
       );
     }
-    if (_books == null || _templates == null) {
+    if (_templates == null) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(color: Color(0xFF00C08B)),
@@ -94,7 +105,7 @@ class _BootstrapState extends State<_Bootstrap> {
       );
     }
     return BookShelfScreen(
-      books: _books!,
+      repo: _repo,
       templates: _templates!,
       store: _store,
       settings: _settings,
