@@ -3,6 +3,7 @@ name: Build APK (arm64-v8a)
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
