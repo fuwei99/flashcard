@@ -37,14 +37,16 @@ jobs:
           cp -r /tmp/scaffold/android ./android
           cp /tmp/scaffold/.metadata ./.metadata || true
 
-      # 依赖里 kotlin-stdlib 解析到 2.2.20，但脚手架 Kotlin 编译器只有 1.8.x，
-      # 元数据不兼容导致 flutter_tts 编译失败。把编译器与 stdlib 一起顶到 2.0.21。
-      - name: Fix Kotlin / kotlin-stdlib version conflict
+      # 1) 依赖解析出 kotlin-stdlib 2.2.20，脚手架编译器只有 1.8.x，元数据不兼容
+      #    -> Kotlin 插件与 kotlin-stdlib 一起顶到 2.0.21
+      # 2) flutter_tts 要求 minSdk >= 24，脚手架默认 21 -> 抬到 24
+      - name: Fix Gradle (Kotlin version + minSdk)
         working-directory: app/android
         run: |
           python3 - <<'PY'
           import os, re
           KVER = "2.0.21"
+
           for f in ("settings.gradle", "settings.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -53,7 +55,7 @@ jobs:
                       lambda m: m.group(1) + KVER + m.group(3), s)
                   open(f, "w").write(s)
                   print("== patched", f)
-                  print(s)
+
           for f in ("build.gradle", "build.gradle.kts"):
               if os.path.exists(f):
                   s = open(f).read()
@@ -70,6 +72,19 @@ jobs:
                                 "    }\n  }\n}\n")
                       open(f, "w").write(s)
                       print("== patched", f)
+
+          for f in ("app/build.gradle", "app/build.gradle.kts"):
+              if os.path.exists(f):
+                  s = open(f).read()
+                  s = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24', s)
+                  s = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 24', s)
+                  s = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 24', s)
+                  s = re.sub(r'minSdk\s*=\s*\d+', 'minSdk = 24', s)
+                  open(f, "w").write(s)
+                  print("== patched minSdk:", f)
+                  for line in s.splitlines():
+                      if "minSdk" in line:
+                          print("   ", line.strip())
           PY
 
       - name: Flutter pub get
