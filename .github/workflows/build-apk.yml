@@ -37,6 +37,41 @@ jobs:
           cp -r /tmp/scaffold/android ./android
           cp /tmp/scaffold/.metadata ./.metadata || true
 
+      # 依赖里 kotlin-stdlib 解析到 2.2.20，但脚手架 Kotlin 编译器只有 1.8.x，
+      # 元数据不兼容导致 flutter_tts 编译失败。把编译器与 stdlib 一起顶到 2.0.21。
+      - name: Fix Kotlin / kotlin-stdlib version conflict
+        working-directory: app/android
+        run: |
+          python3 - <<'PY'
+          import os, re
+          KVER = "2.0.21"
+          for f in ("settings.gradle", "settings.gradle.kts"):
+              if os.path.exists(f):
+                  s = open(f).read()
+                  s = re.sub(
+                      r'(org\.jetbrains\.kotlin\.android["\']?\s*\)?\s*version\s*["\'])([0-9.]+)(["\'])',
+                      lambda m: m.group(1) + KVER + m.group(3), s)
+                  open(f, "w").write(s)
+                  print("== patched", f)
+                  print(s)
+          for f in ("build.gradle", "build.gradle.kts"):
+              if os.path.exists(f):
+                  s = open(f).read()
+                  if "kotlin-stdlib" not in s:
+                      if f.endswith(".kts"):
+                          s += ('\nsubprojects {\n  configurations.all {\n'
+                                '    resolutionStrategy {\n'
+                                '      force("org.jetbrains.kotlin:kotlin-stdlib:' + KVER + '")\n'
+                                '    }\n  }\n}\n')
+                      else:
+                          s += ("\nsubprojects {\n  configurations.all {\n"
+                                "    resolutionStrategy {\n"
+                                "      force 'org.jetbrains.kotlin:kotlin-stdlib:" + KVER + "'\n"
+                                "    }\n  }\n}\n")
+                      open(f, "w").write(s)
+                      print("== patched", f)
+          PY
+
       - name: Flutter pub get
         working-directory: app
         run: flutter pub get
