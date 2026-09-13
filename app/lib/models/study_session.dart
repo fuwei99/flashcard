@@ -14,8 +14,8 @@
 ///   done：池空
 library;
 
-import '../models/deck.dart';
-import 'scheduler.dart';
+import 'deck.dart';
+import '../services/scheduler.dart';
 
 enum SessionPhase { learn, retest, done }
 
