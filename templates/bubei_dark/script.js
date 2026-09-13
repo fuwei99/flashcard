@@ -93,7 +93,8 @@
 
   function pick(btn, box) {
     if (pending !== null) return;
-    pending = (btn.getAttribute("data-right") === "true") ? "good" : "again";
+    var ok = btn.getAttribute("data-right") === "true";
+    pending = ok ? "good" : "again";
 
     box.querySelectorAll(".fc-option").forEach(function (x) {
       var right = x.getAttribute("data-right") === "true";
@@ -101,6 +102,16 @@
       else if (x === btn) x.classList.add("wrong");
       x.setAttribute("disabled", "disabled");
     });
+
+    // 答错 -> 切到词义页，把词 + 词性 + 释义 + 例句完整看一遍。
+    //         这张卡后面还会被重考，直到 choice / cloze 两个考法都过，
+    //         但中间不能只是干巴巴重复「选错 -> 下一题」，得先让人学一遍。
+    // 答对 -> 就停在原题上看绿勾，直接「下一词」。
+    if (!ok) {
+      root.setAttribute("data-state", "back");
+      var back = root.querySelector(".fc-back");
+      if (back) back.scrollTop = 0;
+    }
 
     var nb = root.querySelector(".fc-actions-next .fc-btn");
     if (nb) nb.removeAttribute("disabled");

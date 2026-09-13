@@ -32,9 +32,16 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-face::-webkit-scrollbar{display:none}
 
 .fc-root[data-mode="read"][data-state="front"] .fc-front{display:flex;flex-direction:column}
-.fc-root[data-mode="read"][data-state="back"]  .fc-back {display:block}
+/* 词义页：read 的「看词义」+ choice/cloze 答错后的「看一遍再重考」 */
+.fc-root[data-state="back"] .fc-back{display:block}
 .fc-root[data-mode="choice"] .fc-choice{display:flex;flex-direction:column}
 .fc-root[data-mode="cloze"]  .fc-cloze {display:flex;flex-direction:column}
+/* choice/cloze 答错切到词义页时，藏掉题目区 */
+.fc-root[data-state="back"][data-mode="choice"] .fc-choice,
+.fc-root[data-state="back"][data-mode="cloze"]  .fc-cloze{display:none}
+/* 答错是来补课的，别顶个「已掌握」绿勾 */
+.fc-root[data-state="back"][data-mode="choice"] .fc-mastery,
+.fc-root[data-state="back"][data-mode="cloze"]  .fc-mastery{display:none}
 .fc-spacer{flex:1 1 auto}
 
 /* ---------- 单词 ---------- */

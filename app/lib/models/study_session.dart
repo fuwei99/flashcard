@@ -7,11 +7,15 @@
 ///   learn  轮（第一遍，read 模式）
 ///     记得        -> 直接毕业
 ///     模糊 / 忘记  -> 进重测池
-///   choice 轮（池内所有卡 · 英→中选义 · 一次过完）
-///   cloze  轮（池内所有卡 · 例句挖空选词 · 一次过完）
-///     答错不重考 —— 只记下挣扎程度就往下走，明天由 FSRS 安排再见。
-///     之前是「同一张卡 choice+cloze 挨着考、错了留池下轮重来」，
-///     等于刚做完英选中就送挖空答案，还反复折腾同一张卡。
+///   重测轮（循环，直到池内每张卡 choice + cloze 都过）
+///     阶段 A：池里 choice 还没过的卡，一次考完
+///     阶段 B：池里 cloze  还没过的卡，一次考完
+///     还有卡没过 -> round++，回阶段 A
+///     全过       -> 毕业
+///   两阶段分开的原因：不让同一张卡的 choice / cloze 挨着考 ——
+///   刚做完「英→中选义」，紧接着「例句挖空选词」，上一题选项里刚见过那个词，
+///   等于送答案。先让所有卡过完 choice，再让所有卡过 cloze。
+///
 ///   done
 library;
 
@@ -48,16 +52,22 @@ class StudySession {
   /// 已毕业的卡 id（本轮内）
   final Set<String> graduated = {};
 
+  /// 重测阶段里每张卡的考法通过记录：cardId -> {mode keys}
+  final Map<String, Set<String>> _passedModes = {};
+
   /// 本轮「挣扎程度」：0 = 一次过，1 = 费了点劲，2 = 硬骨头。
   /// 毕业时映射成 FSRS 评分 —— 别再无脑写 good 了。
   final Map<String, int> _effort = {};
 
-  /// 重测轮里这张卡答错的次数
+  /// 这张卡答错的次数
   final Map<String, int> _wrongCount = {};
 
   SessionPhase phase = SessionPhase.learn;
   int round = 1;
   int _roundTotal = 0;
+
+  /// 重测阶段一张卡必须全过的考法
+  static const Set<String> retestModes = {'choice', 'cloze'};
 
   StudySession(List<FlashCard> cards) {
     _queue.addAll(cards.map((c) => StudyStep(c, StudyMode.read, 1)));
@@ -92,6 +102,9 @@ class StudySession {
     }
   }
 
+  bool _allPassed(String id) =>
+      (_passedModes[id] ?? const <String>{}).containsAll(retestModes);
+
   /// 学习轮：提交一次自评
   void submitLearn(Rating r) {
     if (_queue.isEmpty) return;
@@ -106,11 +119,13 @@ class StudySession {
   }
 
   /// 重测轮：提交一个考法的对错。
-  /// 答错只记录挣扎程度，**不重考** —— 错了就错了，明天 FSRS 会安排。
+  /// 答错 -> 不记通过，后面轮次继续考，**直到两个考法都过**。
   void submitRetest(StudyMode mode, bool ok) {
     if (_queue.isEmpty) return;
     final step = _queue.removeAt(0);
-    if (!ok) {
+    if (ok) {
+      (_passedModes[step.card.id] ??= <String>{}).add(mode.key);
+    } else {
       final n = (_wrongCount[step.card.id] ?? 0) + 1;
       _wrongCount[step.card.id] = n;
       _bump(step.card.id, n >= 2 ? 2 : 1);
@@ -127,32 +142,56 @@ class StudySession {
         return;
       }
       round = 2;
-      _startRound(SessionPhase.choice, StudyMode.choice);
+      _startChoice();
       return;
     }
 
     if (phase == SessionPhase.choice) {
-      round = 3;
-      _startRound(SessionPhase.cloze, StudyMode.cloze);
+      _startCloze();
       return;
     }
 
     if (phase == SessionPhase.cloze) {
-      // 两轮重测走完，池内所有卡毕业。
-      // 评分已经按各自挣扎程度记在 _effort 里，不因「错一次」就无限重考。
-      for (final c in _retestPool) {
-        graduated.add(c.id);
+      // 这一轮走完，池里还有卡没做到「choice + cloze 都过」吗？
+      final pending =
+          _retestPool.where((c) => !_allPassed(c.id)).toList(growable: false);
+      if (pending.isEmpty) {
+        for (final c in _retestPool) {
+          graduated.add(c.id);
+        }
+        phase = SessionPhase.done;
+        return;
       }
-      phase = SessionPhase.done;
+      round++;
+      _startChoice();
     }
   }
 
-  /// 开一轮：池内每张卡一个考法，一次过完
-  void _startRound(SessionPhase p, StudyMode m) {
-    phase = p;
+  /// 阶段 A：池里 choice 还没过的卡，一次考完
+  void _startChoice() {
+    phase = SessionPhase.choice;
     _queue.clear();
     for (final c in _retestPool) {
-      _queue.add(StudyStep(c, m, round));
+      if ((_passedModes[c.id] ?? const <String>{})
+          .contains(StudyMode.choice.key)) {
+        continue;
+      }
+      _queue.add(StudyStep(c, StudyMode.choice, round));
+    }
+    _roundTotal = _queue.length;
+    if (_queue.isEmpty) _advance();
+  }
+
+  /// 阶段 B：池里 cloze 还没过的卡，一次考完
+  void _startCloze() {
+    phase = SessionPhase.cloze;
+    _queue.clear();
+    for (final c in _retestPool) {
+      if ((_passedModes[c.id] ?? const <String>{})
+          .contains(StudyMode.cloze.key)) {
+        continue;
+      }
+      _queue.add(StudyStep(c, StudyMode.cloze, round));
     }
     _roundTotal = _queue.length;
     if (_queue.isEmpty) _advance();

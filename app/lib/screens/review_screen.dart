@@ -183,8 +183,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final today = widget.settings;
     final phaseName = switch (_session.phase) {
       SessionPhase.learn => '学习',
-      SessionPhase.choice => '重测·选义',
-      SessionPhase.cloze => '重测·填空',
+      SessionPhase.choice => '重测 R${_session.round - 1}·选义',
+      SessionPhase.cloze => '重测 R${_session.round - 1}·填空',
       SessionPhase.done => '完成',
     };
 
