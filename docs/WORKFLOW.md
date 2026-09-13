@@ -281,28 +281,32 @@ Flashcard.tts(text, lang)      ← 牌组只发这一句，不关心底下是谁
 
 ## 10. 已知问题 & 路线
 
+### 项目内文档分工
+
+| 目录 | 管什么 |
+|---|---|
+| `docs/WORKFLOW.md`（本文） | **怎么运转** —— 架构总纲，改动以它为准 |
+| `text/worklogs/` | **干了什么** —— 开发日志，按日期 |
+| `text/plan/` | **接下来做什么** —— 路线图与优先级 |
+| `text/bugs/` | **哪里坏了** —— bug 台账（修掉的也不删） |
+
 ### 已修（2026-09-13）
 - [x] 三档评分写死 good → FSRS 收到真实评分
 - [x] `kW[17]` 越界 fallback → 显式 `kForgetRetainExp`
 - [x] 例句 TTS 念 HTML 标签
 - [x] `pre=again` 时手滑不可逆（加「记对了」）
 - [x] `markDone()` 在未毕业时也计数（今日进度虚高）
+- [x] 改根 `templates/` 不进 APK（CI 强制同步）
+
+详细台账见 [`text/bugs/known-issues.md`](../text/bugs/known-issues.md)。
 
 ### 待办
-| 优先级 | 事项 |
-|---|---|
-| P0 | 排课器 Planner（预算 + 逾期优先 + 欠账不累积） |
-| P0 | 标熟（`known`）+ 可撤销 |
-| P1 | 分级自测流程（6590 → 2000） |
-| P1 | 今日任务统一入口（跨书汇总） |
-| P2 | TTS 抽象层（系统 + OpenAI 兼容 + auto_play） |
-| P2 | 词条库抽出（lemma 主键）+ status.json 快照 |
-| P3 | 文章牌组 `article_reader` |
-| P3 | 收藏生词本 / 拼写题 / 近义字段 / 统计曲线 |
+
+见 [`text/plan/roadmap.md`](../text/plan/roadmap.md)。
 
 ### 观察项（非 bug）
 - 重测轮 `_startRetest()` 会 `_passedModes.clear()`：上轮过了一个考法，下轮两个都要重考。
-  符合"两个都过"的设计，但略费时。
-- 重测轮是**无限循环直到全过**，没有"跳过"出口。词太生时可能卡住，考虑加逃生口。
+  符合「两个都过」的设计，但略费时。
+- 重测轮是**无限循环直到全过**，没有「跳过」出口。词太生时可能卡住，考虑加逃生口。
 - 首次间隔恒为 1 天（`kLearningInterval`），之后按 FSRS 递增（约 1 → 7 → 20 → 50 → …）。
 - `kMaxInterval = 365` 对长期使用偏保守，可调。
