@@ -101,7 +101,8 @@ class WebViewBridge {
 
     switch (type) {
       case 'tts':
-        final text = (data['text'] ?? '').toString();
+        // 卡牌字段常带 <u>/<b> 高亮标签，直接喂 TTS 会念出尖括号
+        final text = _plainText((data['text'] ?? '').toString());
         final lang = (data['lang'] ?? 'en-US').toString();
         if (text.isNotEmpty) {
           await tts.stop();
@@ -125,6 +126,12 @@ class WebViewBridge {
         break;
     }
   }
+
+  /// 去掉 HTML 标签 + 压缩空白，只留能念的纯文本
+  static String _plainText(String s) => s
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   void dispose() {
     _messages.close();

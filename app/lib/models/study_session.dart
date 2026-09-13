@@ -50,6 +50,13 @@ class StudySession {
   /// 每张卡本轮的考法通过记录：cardId -> {mode keys}
   final Map<String, Set<String>> _passedModes = {};
 
+  /// 本轮「挣扎程度」：0 = 一次过，1 = 费了点劲，2 = 硬骨头。
+  /// 毕业时映射成 FSRS 评分 —— 别再无脑写 good 了。
+  final Map<String, int> _effort = {};
+
+  /// 重测轮里这张卡答错的次数
+  final Map<String, int> _wrongCount = {};
+
   SessionPhase phase = SessionPhase.learn;
   int round = 1;
   int _roundTotal = 0;
@@ -69,6 +76,26 @@ class StudySession {
   int get doneInRound => _roundTotal - _queue.length;
   int get retestPoolSize => _retestPool.length;
 
+  /// 抬高一张卡的挣扎程度（只增不减）
+  void _bump(String cardId, int e) {
+    if (e > (_effort[cardId] ?? 0)) _effort[cardId] = e;
+  }
+
+  /// 这张卡毕业时该写什么 FSRS 评分
+  ///   0 一次过   -> good   轻松，稳定性正常涨
+  ///   1 费了点劲 -> hard   增长量打 2.3 折
+  ///   2 硬骨头   -> again  稳定性下调，明天必须再见
+  Rating ratingFor(String cardId) {
+    switch (_effort[cardId] ?? 0) {
+      case 0:
+        return Rating.good;
+      case 1:
+        return Rating.hard;
+      default:
+        return Rating.again;
+    }
+  }
+
   /// 学习轮：提交一次自评
   void submitLearn(Rating r) {
     if (_queue.isEmpty) return;
@@ -77,6 +104,7 @@ class StudySession {
       graduated.add(step.card.id);
     } else {
       _retestPool.add(step.card);
+      _bump(step.card.id, r == Rating.again ? 2 : 1);
     }
     _advance();
   }
@@ -87,6 +115,10 @@ class StudySession {
     final step = _queue.removeAt(0);
     if (ok) {
       (_passedModes[step.card.id] ??= {}).add(mode.key);
+    } else {
+      final n = (_wrongCount[step.card.id] ?? 0) + 1;
+      _wrongCount[step.card.id] = n;
+      _bump(step.card.id, n >= 2 ? 2 : 1);
     }
 
     // 这张卡本轮还有后续步骤吗？

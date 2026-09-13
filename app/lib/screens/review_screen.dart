@@ -64,14 +64,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final id = step.card.id;
 
     if (_session.phase == SessionPhase.learn) {
-      final willGraduate = rating == Rating.good;
       _session.submitLearn(rating);
-      if (willGraduate) _write(id, Rating.good);
-      await widget.settings.markDone();
     } else {
-      final ok = rating != Rating.again;
-      _session.submitRetest(step.mode, ok);
-      if (_session.graduated.contains(id)) _write(id, Rating.good);
+      _session.submitRetest(step.mode, rating != Rating.again);
+    }
+
+    // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
+    // 评分不是恒定的 good，而是 StudySession 按本轮挣扎程度算出来的
+    // （一次过 good / 费劲 hard / 硬骨头 again），三档终于真的进了 FSRS。
+    if (_session.graduated.contains(id) && !_written.contains(id)) {
+      _write(id, _session.ratingFor(id));
+      await widget.settings.markDone();
     }
 
     if (!mounted) return;

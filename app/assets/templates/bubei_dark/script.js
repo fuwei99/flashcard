@@ -113,7 +113,12 @@
 
     if (t.hasAttribute("data-tts")) {
       e.stopPropagation();
-      FC.tts(t.getAttribute("data-tts"), "en-US");
+      // 例句里带 <u>/<b> 高亮，剥掉再念，不然 TTS 会念出尖括号
+      var say = String(t.getAttribute("data-tts") || "")
+        .replace(/<[^>]*>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (say) FC.tts(say, "en-US");
       return;
     }
 
@@ -123,7 +128,10 @@
 
     if (a === "answer") {
       var r = t.getAttribute("data-rating");
-      var fin = (r === "again") ? "again" : preRating;
+      var fin;
+      if (r === "again") fin = "again";
+      else if (r === "good") fin = "good"; // 「记对了」：正面手滑，纠正回来
+      else fin = preRating;                // 「下一词」：采纳正面预判
       root.querySelectorAll(".fc-actions-back .fc-btn").forEach(function (b) {
         b.setAttribute("disabled", "disabled");
       });

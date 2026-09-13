@@ -17,6 +17,11 @@ const double kRequestRetention = 0.90;
 const int kMaxInterval = 365;
 /// 学习/重学阶段间隔（天）：今天刚学或忘掉的卡，明天必须复习
 const int kLearningInterval = 1;
+
+/// 遗忘惩罚强度：忘记后稳定性最多保留原值的 1/e^k。
+/// 手调参数（不是 FSRS 论文值）：原代码写死的 2.0 太狠（只剩 13.5%），
+/// 调到 1.5 约剩 22% —— 明显下调，但不至于一次忘记就打回原形。
+const double kForgetRetainExp = 1.5;
 const double _decay = -0.5;
 final double _factor = math.pow(0.9, 1 / _decay) - 1;
 
@@ -133,7 +138,7 @@ double _stabilityAfterRecall(double d, double s, double r, int rating) {
 }
 
 double _stabilityAfterForget(double d, double s, double r) {
-  final sMin = s / math.exp(kW.length > 17 ? kW[17] : 2.0);
+  final sMin = s / math.exp(kForgetRetainExp);
   final ns = kW[11] *
       math.pow(d, -kW[12]) *
       (math.pow(s + 1, kW[13]) - 1) *

@@ -16,6 +16,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 模板/卡组的唯一真源 = 仓库根 templates/ 与 decks/。
+      # app/assets/ 下的只是打包副本，曾经出现「改了根目录、APK 里还是旧模板」的坑。
+      # 这里在构建前强制同步，保证以后只改根目录就够了。
+      - name: Sync templates & decks into app assets
+        run: |
+          set -e
+          mkdir -p app/assets/templates app/assets/decks
+          [ -d templates ] && cp -r templates/. app/assets/templates/ || true
+          [ -d decks ]     && cp -r decks/.     app/assets/decks/     || true
+          echo "--- synced assets ---"
+          find app/assets/templates app/assets/decks -type f | sort
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
