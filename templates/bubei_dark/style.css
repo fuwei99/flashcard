@@ -105,9 +105,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-root[data-mode="read"][data-state="back"]  .fc-actions-back {display:flex}
 .fc-root[data-mode="choice"] .fc-actions-next{display:flex}
 .fc-root[data-mode="cloze"]  .fc-actions-next{display:flex}
+/* 正面点了「忘记」：词义页只剩「下一词」，flex:1 自动撑满整行 */
 .fc-root[data-pre="again"] .fc-actions-back .fc-again{display:none}
-.fc-actions-back .fc-unforget{display:none}
-.fc-root[data-pre="again"] .fc-actions-back .fc-unforget{display:flex}
 
 .fc-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;
         gap:3px;height:56px;border:1px solid var(--line);border-radius:14px;

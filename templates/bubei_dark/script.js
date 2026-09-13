@@ -128,10 +128,7 @@
 
     if (a === "answer") {
       var r = t.getAttribute("data-rating");
-      var fin;
-      if (r === "again") fin = "again";
-      else if (r === "good") fin = "good"; // 「记对了」：正面手滑，纠正回来
-      else fin = preRating;                // 「下一词」：采纳正面预判
+      var fin = (r === "again") ? "again" : preRating;
       root.querySelectorAll(".fc-actions-back .fc-btn").forEach(function (b) {
         b.setAttribute("disabled", "disabled");
       });

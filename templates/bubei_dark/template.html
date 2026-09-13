@@ -109,15 +109,12 @@
     </button>
   </footer>
 
-  <!-- ============ read 词义页按钮：两档 + 一个反悔位 ============ -->
-  <!-- 「记对了」平时隐藏，只在正面预判为 again 时露出：
-       防正面手滑点了「忘记」，到这儿还能捞回来 -->
+  <!-- ============ read 词义页按钮 ============ -->
+  <!-- 正面预判为 again（点了「忘记」）时只留「下一词」，
+       靠 .fc-actions .fc-btn{flex:1} 自动撑满整行 -->
   <footer class="fc-actions fc-actions-back">
     <button class="fc-btn fc-again" data-action="answer" data-rating="again">
       <span class="fc-ico">✕</span><span>记错了</span>
-    </button>
-    <button class="fc-btn fc-good fc-unforget" data-action="answer" data-rating="good">
-      <span class="fc-ico">✓</span><span>记对了</span>
     </button>
     <button class="fc-btn fc-good" data-action="answer" data-rating="next">
       <span class="fc-ico">✓</span><span>下一词</span>
