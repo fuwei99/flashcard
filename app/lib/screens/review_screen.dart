@@ -61,7 +61,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (step == null) return;
 
     final rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
-    final id = step.card.id;
 
     if (_session.phase == SessionPhase.learn) {
       _session.submitLearn(rating);
@@ -72,8 +71,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
     // 评分不是恒定的 good，而是 StudySession 按本轮挣扎程度算出来的
     // （一次过 good / 费劲 hard / 硬骨头 again），三档终于真的进了 FSRS。
-    if (_session.graduated.contains(id) && !_written.contains(id)) {
-      _write(id, _session.ratingFor(id));
+    // 注意：重测走完时是「整池一起毕业」，所以这里要遍历全部未落盘的卡。
+    for (final cid in _session.graduated) {
+      if (_written.contains(cid)) continue;
+      _write(cid, _session.ratingFor(cid));
       await widget.settings.markDone();
     }
 
@@ -110,25 +111,41 @@ class _ReviewScreenState extends State<ReviewScreen> {
     ctrl.loadHtmlString(html);
   }
 
-  /// 生成干扰项：choice 用中文义，cloze 用英文词
+  /// 生成干扰项
+  ///   choice : 中文义 —— 必须带词性，否则光看释义没法选
+  ///   cloze  : 英文词
   List<Map<String, String>> _choicesFor(StudyStep step) {
     final all = widget.book.allCards;
     final cur = step.card;
-    final key = step.mode == StudyMode.choice ? 'meaning' : 'word';
-    final right = (cur.fields[key] ?? cur.word).toString();
+    final isChoice = step.mode == StudyMode.choice;
 
-    final pool = <String>[];
+    String textOf(FlashCard c) => isChoice
+        ? (c.fields['meaning'] ?? '').toString().trim()
+        : (c.fields['word'] ?? c.word).toString().trim();
+
+    String posOf(FlashCard c) =>
+        isChoice ? (c.fields['pos'] ?? '').toString().trim() : '';
+
+    final rightText = textOf(cur);
+    if (rightText.isEmpty) return const [];
+
+    final pool = <Map<String, String>>[];
+    final seen = <String>{rightText};
     for (final c in all) {
       if (c.id == cur.id) continue;
-      final v = (c.fields[key] ?? c.word).toString();
-      if (v.isNotEmpty && v != right && !pool.contains(v)) pool.add(v);
+      final t = textOf(c);
+      if (t.isEmpty || seen.contains(t)) continue;
+      seen.add(t);
+      pool.add({'text': t, 'pos': posOf(c), 'right': 'false'});
     }
     pool.shuffle();
 
-    final opts = <String>[right, ...pool.take(3)]..shuffle();
-    return opts
-        .map((t) => {'text': t, 'right': (t == right).toString()})
-        .toList();
+    final opts = <Map<String, String>>[
+      {'text': rightText, 'pos': posOf(cur), 'right': 'true'},
+      ...pool.take(3),
+    ]..shuffle();
+
+    return opts;
   }
 
   @override
@@ -164,9 +181,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final total = _session.roundTotal;
     final prog = total == 0 ? 0.0 : _session.doneInRound / total;
     final today = widget.settings;
-    final phaseName = _session.phase == SessionPhase.learn
-        ? '学习'
-        : '重测 R${_session.round - 1}';
+    final phaseName = switch (_session.phase) {
+      SessionPhase.learn => '学习',
+      SessionPhase.choice => '重测·选义',
+      SessionPhase.cloze => '重测·填空',
+      SessionPhase.done => '完成',
+    };
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),

@@ -88,7 +88,13 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-options{display:flex;flex-direction:column;gap:11px;margin-top:26px}
 .fc-option{padding:15px 16px;border:1px solid var(--line);border-radius:13px;
            background:var(--glass);color:var(--txt);font-size:15px;line-height:1.45;
-           text-align:left;font-family:var(--sans);cursor:pointer;transition:.15s}
+           text-align:left;font-family:var(--sans);cursor:pointer;transition:.15s;
+           display:flex;align-items:baseline;gap:8px}
+.fc-opt-pos{flex:0 0 auto;font-size:11px;font-style:italic;letter-spacing:.3px;
+            color:var(--dim)}
+.fc-opt-text{flex:1 1 auto;min-width:0}
+.fc-option.right .fc-opt-pos{color:var(--teal)}
+.fc-option.wrong .fc-opt-pos{color:var(--again)}
 .fc-option:active{transform:scale(.985)}
 .fc-option[disabled]{cursor:default}
 .fc-option.right{border-color:var(--teal);background:var(--teal-bg);color:var(--teal)}

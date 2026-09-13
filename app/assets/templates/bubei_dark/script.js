@@ -71,7 +71,20 @@
       var b = document.createElement("button");
       b.className = "fc-option";
       b.type = "button";
-      b.textContent = c.text || "";
+
+      // choice 的选项是中文义，必须带词性（adj. / n. / v. ...），
+      // 否则四个释义摆一起根本没法选。单列一个淡色小标签。
+      if (c.pos) {
+        var p = document.createElement("span");
+        p.className = "fc-opt-pos";
+        p.textContent = c.pos;
+        b.appendChild(p);
+      }
+      var s = document.createElement("span");
+      s.className = "fc-opt-text";
+      s.textContent = c.text || "";
+      b.appendChild(s);
+
       b.setAttribute("data-right", String(c.right === "true" || c.right === true));
       b.addEventListener("click", function () { pick(b, box); });
       box.appendChild(b);
