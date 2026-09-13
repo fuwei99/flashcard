@@ -1,9 +1,19 @@
 <!--
   不背单词 · 暗黑极简模板
+  两段式：
+    正面(提问)  -> 只有单词 + 三档按钮（忘记/模糊/记得），点了都进词义页
+                   点【忘记】 = 预判 again
+                   点【模糊】 = 预判 hard
+                   点【记得】 = 预判 good
+    词义页(回答) -> 显示释义
+                   pre=again        -> 只有【下一词】
+                   pre=hard / good  -> 【记错了】+【下一词】
+                   记错了 = 改判 again
+                   下一词 = 提交正面那个预判评分
   占位符: {{field}}，列表用 {{#phrases}}...{{/phrases}}
   交互全部交给 script.js，通过 window.Flashcard API 与原生壳通信
 -->
-<div class="fc-root" data-state="front">
+<div class="fc-root" data-state="front" data-pre="">
 
   <header class="fc-top">
     {{#exam_tag}}
@@ -15,7 +25,7 @@
     <span class="fc-counter">{{__index}} / {{__total}}</span>
   </header>
 
-  <!-- ============ 正面 ============ -->
+  <!-- ============ 正面：提问 ============ -->
   <section class="fc-face fc-front">
     <div class="fc-word-wrap">
       <h1 class="fc-word">{{word}}</h1>
@@ -29,18 +39,10 @@
       {{#phonetic_uk}}<span class="fc-pill"><b>英</b>{{phonetic_uk}}</span>{{/phonetic_uk}}
     </div>
 
-    <div class="fc-skeleton">
-      <div class="fc-sk w65"></div>
-      <div class="fc-sk w40"></div>
-    </div>
-
-    <div class="fc-front-footer">
-      <p class="fc-hint">先自己想，想不起来再翻面</p>
-      <button class="fc-reveal" data-action="reveal">显示释义</button>
-    </div>
+    <div class="fc-spacer"></div>
   </section>
 
-  <!-- ============ 背面 ============ -->
+  <!-- ============ 词义页：回答 ============ -->
   <section class="fc-face fc-back">
     <div class="fc-word-wrap">
       <h1 class="fc-word fc-word-sm">{{#syllable}}{{syllable}}{{/syllable}}{{^syllable}}{{word}}{{/syllable}}</h1>
@@ -87,16 +89,26 @@
     {{/root}}
   </section>
 
-  <!-- ============ 评分栏（永远在卡牌内部，原生不提供任何按钮）============ -->
-  <footer class="fc-actions">
-    <button class="fc-btn fc-again" data-action="answer" data-rating="again">
+  <!-- ============ 正面按钮：三档，点了都进词义页（不评分）============ -->
+  <footer class="fc-actions fc-actions-front">
+    <button class="fc-btn fc-again" data-action="to-meaning" data-pre="again">
       <span class="fc-ico">✕</span><span>忘记</span>
     </button>
-    <button class="fc-btn fc-hard" data-action="answer" data-rating="hard">
+    <button class="fc-btn fc-hard" data-action="to-meaning" data-pre="hard">
       <span class="fc-ico">~</span><span>模糊</span>
     </button>
-    <button class="fc-btn fc-good" data-action="answer" data-rating="good">
+    <button class="fc-btn fc-good" data-action="to-meaning" data-pre="good">
       <span class="fc-ico">✓</span><span>记得</span>
+    </button>
+  </footer>
+
+  <!-- ============ 词义页按钮：两档，这里才评分 ============ -->
+  <footer class="fc-actions fc-actions-back">
+    <button class="fc-btn fc-again" data-action="answer" data-rating="again">
+      <span class="fc-ico">✕</span><span>记错了</span>
+    </button>
+    <button class="fc-btn fc-good" data-action="answer" data-rating="next">
+      <span class="fc-ico">✓</span><span>下一词</span>
     </button>
   </footer>
 </div>
