@@ -1,19 +1,12 @@
 <!--
   不背单词 · 暗黑极简模板
-  两段式：
-    正面(提问)  -> 只有单词 + 三档按钮（忘记/模糊/记得），点了都进词义页
-                   点【忘记】 = 预判 again
-                   点【模糊】 = 预判 hard
-                   点【记得】 = 预判 good
-    词义页(回答) -> 显示释义
-                   pre=again        -> 只有【下一词】
-                   pre=hard / good  -> 【记错了】+【下一词】
-                   记错了 = 改判 again
-                   下一词 = 提交正面那个预判评分
-  占位符: {{field}}，列表用 {{#phrases}}...{{/phrases}}
-  交互全部交给 script.js，通过 window.Flashcard API 与原生壳通信
+  三种考法（由 card.session.mode 决定）：
+    read   —— 学习轮：正面自评(忘记/模糊/记得) -> 词义页(记错了/下一词)
+    choice —— 重测轮：英->中选义
+    cloze  —— 重测轮：例句挖空->选英词
+  选项由 script.js 用 card.choices 渲染
 -->
-<div class="fc-root" data-state="front" data-pre="">
+<div class="fc-root" data-state="front" data-mode="read" data-pre="">
 
   <header class="fc-top">
     {{#exam_tag}}
@@ -25,7 +18,7 @@
     <span class="fc-counter">{{__index}} / {{__total}}</span>
   </header>
 
-  <!-- ============ 正面：提问 ============ -->
+  <!-- ============ read · 正面 ============ -->
   <section class="fc-face fc-front">
     <div class="fc-word-wrap">
       <h1 class="fc-word">{{word}}</h1>
@@ -33,16 +26,14 @@
         <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
       </button>
     </div>
-
     <div class="fc-phonetics">
       {{#phonetic_us}}<span class="fc-pill"><b>美</b>{{phonetic_us}}</span>{{/phonetic_us}}
       {{#phonetic_uk}}<span class="fc-pill"><b>英</b>{{phonetic_uk}}</span>{{/phonetic_uk}}
     </div>
-
     <div class="fc-spacer"></div>
   </section>
 
-  <!-- ============ 词义页：回答 ============ -->
+  <!-- ============ read · 词义页 ============ -->
   <section class="fc-face fc-back">
     <div class="fc-word-wrap">
       <h1 class="fc-word fc-word-sm">{{#syllable}}{{syllable}}{{/syllable}}{{^syllable}}{{word}}{{/syllable}}</h1>
@@ -51,16 +42,13 @@
         <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
       </button>
     </div>
-
     <div class="fc-phonetics">
       {{#phonetic_us}}<span class="fc-pill"><b>美</b>{{phonetic_us}}</span>{{/phonetic_us}}
     </div>
-
     <div class="fc-meaning">
       <span class="fc-pos">{{pos}}</span>
       <span class="fc-mean-text">{{meaning}}</span>
     </div>
-
     {{#sentence_en}}
     <div class="fc-glass fc-sentence">
       <div class="fc-glass-head">
@@ -73,14 +61,12 @@
       {{#sentence_cn}}<p class="fc-cn">{{sentence_cn}}</p>{{/sentence_cn}}
     </div>
     {{/sentence_en}}
-
     {{#phrases}}
     <div class="fc-glass fc-phrases">
       <div class="fc-glass-head"><span class="fc-label">常用词组</span></div>
       <div class="fc-phrase-list"></div>
     </div>
     {{/phrases}}
-
     {{#root}}
     <div class="fc-glass fc-root">
       <div class="fc-glass-head"><span class="fc-label">词根词源</span></div>
@@ -89,7 +75,28 @@
     {{/root}}
   </section>
 
-  <!-- ============ 正面按钮：三档，点了都进词义页（不评分）============ -->
+  <!-- ============ choice · 英 -> 中选义 ============ -->
+  <section class="fc-face fc-choice">
+    <div class="fc-word-wrap">
+      <h1 class="fc-word">{{word}}</h1>
+      <button class="fc-tts" data-tts="{{word}}" title="朗读单词">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+    </div>
+    <div class="fc-phonetics">
+      {{#phonetic_us}}<span class="fc-pill"><b>美</b>{{phonetic_us}}</span>{{/phonetic_us}}
+    </div>
+    <div class="fc-options" data-for="choice"></div>
+  </section>
+
+  <!-- ============ cloze · 例句挖空选英词 ============ -->
+  <section class="fc-face fc-cloze">
+    <div class="fc-cloze-label">选词填空</div>
+    <div class="fc-cloze-sentence"></div>
+    <div class="fc-options" data-for="cloze"></div>
+  </section>
+
+  <!-- ============ read 正面按钮：三档 ============ -->
   <footer class="fc-actions fc-actions-front">
     <button class="fc-btn fc-again" data-action="to-meaning" data-pre="again">
       <span class="fc-ico">✕</span><span>忘记</span>
@@ -102,12 +109,19 @@
     </button>
   </footer>
 
-  <!-- ============ 词义页按钮：两档，这里才评分 ============ -->
+  <!-- ============ read 词义页按钮：两档 ============ -->
   <footer class="fc-actions fc-actions-back">
     <button class="fc-btn fc-again" data-action="answer" data-rating="again">
       <span class="fc-ico">✕</span><span>记错了</span>
     </button>
     <button class="fc-btn fc-good" data-action="answer" data-rating="next">
+      <span class="fc-ico">✓</span><span>下一词</span>
+    </button>
+  </footer>
+
+  <!-- ============ choice / cloze 按钮 ============ -->
+  <footer class="fc-actions fc-actions-next">
+    <button class="fc-btn fc-good" data-action="submit" disabled>
       <span class="fc-ico">✓</span><span>下一词</span>
     </button>
   </footer>

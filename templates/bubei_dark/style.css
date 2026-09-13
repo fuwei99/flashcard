@@ -1,7 +1,6 @@
 /* ============================================================
    不背单词 · 暗黑极简模板样式
-   两段式：正面(提问) / 词义页(回答)
-   所有视觉都在卡牌内部，原生壳只提供一个全屏 WebView
+   三考法：read / choice / cloze
    ============================================================ */
 :root{
   --bg:#141d1f; --glass:rgba(255,255,255,.045); --line:rgba(255,255,255,.08);
@@ -27,12 +26,15 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-tag svg{width:11px;height:11px;fill:currentColor}
 .fc-counter{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 
-/* ---------- 正反面切换 ---------- */
+/* ---------- 面 / 考法切换 ---------- */
 .fc-face{display:none;flex:1 1 auto;overflow-y:auto;padding:22px 0 12px;
          scrollbar-width:none}
 .fc-face::-webkit-scrollbar{display:none}
-.fc-root[data-state="front"] .fc-front{display:flex;flex-direction:column}
-.fc-root[data-state="back"]  .fc-back {display:block}
+
+.fc-root[data-mode="read"][data-state="front"] .fc-front{display:flex;flex-direction:column}
+.fc-root[data-mode="read"][data-state="back"]  .fc-back {display:block}
+.fc-root[data-mode="choice"] .fc-choice{display:flex;flex-direction:column}
+.fc-root[data-mode="cloze"]  .fc-cloze {display:flex;flex-direction:column}
 .fc-spacer{flex:1 1 auto}
 
 /* ---------- 单词 ---------- */
@@ -51,7 +53,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-tts-sm{width:26px;height:26px}
 .fc-tts-sm svg{width:13px;height:13px}
 
-/* ---------- 音标胶囊 ---------- */
+/* ---------- 音标 ---------- */
 .fc-phonetics{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .fc-pill{display:inline-flex;align-items:center;gap:6px;background:var(--glass);
          border:1px solid var(--line);border-radius:999px;padding:4px 12px;
@@ -62,10 +64,9 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-meaning{margin:20px 0 18px;font-size:19px;font-weight:500;line-height:1.6}
 .fc-pos{color:var(--teal);font-style:italic;font-weight:700;margin-right:6px}
 
-/* ---------- 玻璃卡片 ---------- */
+/* ---------- 玻璃卡 ---------- */
 .fc-glass{background:var(--glass);border:1px solid var(--line);border-radius:14px;
           padding:14px 16px;margin-bottom:14px;
-          box-shadow:0 4px 20px rgba(0,0,0,.15);
           backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .fc-glass-head{display:flex;justify-content:space-between;align-items:center;
                margin-bottom:9px}
@@ -79,20 +80,31 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);
 .fc-phrase{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13.5px;
            padding-bottom:8px;border-bottom:1px dashed rgba(255,255,255,.05)}
 .fc-phrase:last-child{border-bottom:0;padding-bottom:0}
-.fc-phrase .en{font-weight:500}
 .fc-phrase .cn{color:var(--muted)}
 .fc-root-text{font-size:13px;line-height:1.65;color:var(--muted);margin:0}
 .fc-root-text b{color:var(--teal)}
 
-/* ---------- 底部按钮栏（两段式）---------- */
+/* ---------- choice / cloze ---------- */
+.fc-options{display:flex;flex-direction:column;gap:11px;margin-top:26px}
+.fc-option{padding:15px 16px;border:1px solid var(--line);border-radius:13px;
+           background:var(--glass);color:var(--txt);font-size:15px;line-height:1.45;
+           text-align:left;font-family:var(--sans);cursor:pointer;transition:.15s}
+.fc-option:active{transform:scale(.985)}
+.fc-option[disabled]{cursor:default}
+.fc-option.right{border-color:var(--teal);background:var(--teal-bg);color:var(--teal)}
+.fc-option.wrong{border-color:var(--again);background:rgba(255,92,92,.10);color:var(--again)}
+.fc-cloze-label{font-size:11px;font-weight:700;letter-spacing:.8px;
+                text-transform:uppercase;color:var(--dim);margin-bottom:14px}
+.fc-cloze-sentence{font-size:19px;line-height:1.7;font-weight:500}
+
+/* ---------- 底部按钮 ---------- */
 .fc-actions{display:none;flex:0 0 auto;gap:10px;
             padding:12px 0 calc(14px + env(safe-area-inset-bottom))}
 .fc-actions .fc-btn{flex:1}
-/* 正面：三档 */
-.fc-root[data-state="front"] .fc-actions-front{display:flex}
-/* 词义页：两档 */
-.fc-root[data-state="back"]  .fc-actions-back {display:flex}
-/* 正面选了「忘记」(pre=again) -> 词义页不显示【记错了】，只剩【下一词】 */
+.fc-root[data-mode="read"][data-state="front"] .fc-actions-front{display:flex}
+.fc-root[data-mode="read"][data-state="back"]  .fc-actions-back {display:flex}
+.fc-root[data-mode="choice"] .fc-actions-next{display:flex}
+.fc-root[data-mode="cloze"]  .fc-actions-next{display:flex}
 .fc-root[data-pre="again"] .fc-actions-back .fc-again{display:none}
 
 .fc-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;

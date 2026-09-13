@@ -1,4 +1,7 @@
-/// 背诵模式：顶部原生进度条 + 全屏 WebView 卡牌
+/// 背诵模式：会话状态机驱动 + 全屏 WebView 卡牌
+/// ================================================================
+/// 轮内流程交给 StudySession；只有「毕业」才写 CardStore（= 标记已背）。
+/// 忘记 / 模糊 只记在会话内存里，不落盘。
 library;
 
 import 'package:flutter/material.dart';
@@ -6,7 +9,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
+import '../models/study_session.dart';
 import '../services/card_store.dart';
+import '../services/scheduler.dart';
 import '../services/study_settings.dart';
 import '../services/webview_bridge.dart';
 
@@ -34,61 +39,98 @@ class ReviewScreen extends StatefulWidget {
 
 class _ReviewScreenState extends State<ReviewScreen> {
   late final WebViewBridge _bridge;
+  late final StudySession _session;
   WebViewController? _controller;
-  int _done = 0;      // 本组已完成
   bool _loading = true;
+
+  /// 已写入 FSRS 的卡，避免重复落盘
+  final Set<String> _written = {};
 
   @override
   void initState() {
     super.initState();
+    _session = StudySession(widget.cards);
     _bridge = WebViewBridge(store: widget.store);
     _bridge.initTts();
     _bridge.messages.listen(_onMsg);
   }
 
   Future<void> _onMsg(BridgeMessage m) async {
-    if (m.type == 'answer') {
+    if (m.type != 'answer') return;
+    final step = _session.current;
+    if (step == null) return;
+
+    final rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
+    final id = step.card.id;
+
+    if (_session.phase == SessionPhase.learn) {
+      final willGraduate = rating == Rating.good;
+      _session.submitLearn(rating);
+      if (willGraduate) _write(id, Rating.good);
       await widget.settings.markDone();
-      _next();
-    } else if (m.type == 'next') {
-      _next();
-    } else if (m.type == 'prev' || m.type == 'undo') {
-      if (_done > 0) {
-        setState(() => _done--);
-        _load();
-      }
+    } else {
+      final ok = rating != Rating.again;
+      _session.submitRetest(step.mode, ok);
+      if (_session.graduated.contains(id)) _write(id, Rating.good);
     }
+
+    if (!mounted) return;
+    setState(() {});
+    if (!_session.finished) _load();
   }
 
-  void _next() {
-    if (_done + 1 >= widget.cards.length) {
-      setState(() => _done = widget.cards.length);
-      return;
-    }
-    setState(() => _done++);
-    _load();
+  /// 毕业落盘：这一刻才算「已背」
+  void _write(String cardId, Rating r) {
+    if (_written.contains(cardId)) return;
+    _written.add(cardId);
+    final st = widget.store.stateOf(cardId);
+    widget.store.putState(cardId, review(st, r));
   }
-
-  FlashCard? get _current =>
-      _done < widget.cards.length ? widget.cards[_done] : null;
 
   void _load() {
-    final card = _current;
+    final step = _session.current;
     final ctrl = _controller;
-    if (card == null || ctrl == null) return;
+    if (step == null || ctrl == null) return;
     final html = _bridge.buildCardPage(
       book: widget.book,
       template: widget.template,
-      card: card,
-      index: _done,
-      total: widget.cards.length,
+      card: step.card,
+      index: _session.doneInRound,
+      total: _session.roundTotal,
+      session: {
+        'phase': _session.phase.name,
+        'mode': step.mode.key,
+        'round': step.round,
+      },
+      choices: _choicesFor(step),
     );
     ctrl.loadHtmlString(html);
   }
 
+  /// 生成干扰项：choice 用中文义，cloze 用英文词
+  List<Map<String, String>> _choicesFor(StudyStep step) {
+    final all = widget.book.allCards;
+    final cur = step.card;
+    final key = step.mode == StudyMode.choice ? 'meaning' : 'word';
+    final right = (cur.fields[key] ?? cur.word).toString();
+
+    final pool = <String>[];
+    for (final c in all) {
+      if (c.id == cur.id) continue;
+      final v = (c.fields[key] ?? c.word).toString();
+      if (v.isNotEmpty && v != right && !pool.contains(v)) pool.add(v);
+    }
+    pool.shuffle();
+
+    final opts = <String>[right, ...pool.take(3)]..shuffle();
+    return opts
+        .map((t) => {'text': t, 'right': (t == right).toString()})
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_done >= widget.cards.length) return _finished();
+    if (_session.finished) return _finished();
 
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
@@ -114,11 +156,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
-  /// 原生顶部：本组进度 + 今日进度
+  /// 原生顶部：轮次 + 本组进度 + 今日进度
   Widget _topBar() {
-    final total = widget.cards.length;
-    final prog = total == 0 ? 0.0 : _done / total;
+    final total = _session.roundTotal;
+    final prog = total == 0 ? 0.0 : _session.doneInRound / total;
     final today = widget.settings;
+    final phaseName = _session.phase == SessionPhase.learn
+        ? '学习'
+        : '重测 R${_session.round - 1}';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -143,7 +188,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
               ),
-              Text('已背 $_done / $total',
+              Text('$phaseName ${_session.doneInRound}/$total',
                   style: const TextStyle(
                       color: Color(0xFF00C08B),
                       fontSize: 13,
@@ -161,7 +206,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ),
           ),
           const SizedBox(height: 5),
-          Text('今日 ${today.todayDone} / ${today.dailyLimit}',
+          Text(
+              '毕业 ${_session.graduated.length} · 待重测 ${_session.retestPoolSize} · 今日 ${today.todayDone}/${today.dailyLimit}',
               style: const TextStyle(color: Color(0xFF54666C), fontSize: 11)),
         ],
       ),
@@ -190,16 +236,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Widget _finished() {
+    final n = _session.graduated.length;
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('🎉 本组背完',
+            const Text('🎉 本轮清空',
                 style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 22)),
             const SizedBox(height: 8),
-            Text('共 ${widget.cards.length} 页',
+            Text('毕业 $n 张 · 全部标记已背',
                 style: const TextStyle(color: Color(0xFF54666C))),
             const SizedBox(height: 24),
             ElevatedButton(

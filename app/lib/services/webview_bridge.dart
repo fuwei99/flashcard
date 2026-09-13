@@ -1,10 +1,13 @@
 /// WebView 桥接层
 /// ================================================================
 /// 职责：
-///   1. 把「书本字段 + 模板三段资源」组装成完整 HTML 页面
-///   2. 把页面塞进 WebView 之前，注入 glue JS（window.Flashcard）
-///   3. 监听卡牌脚本通过 FCChannel 发来的消息
-///   4. 把评分转给 scheduler，把 TTS 转给 flutter_tts
+///   1. 把「书本字段 + 模板三段资源 + 会话上下文」组装成完整 HTML
+///   2. 注入 glue JS（window.Flashcard）
+///   3. 监听卡牌脚本发来的消息，转发给上层（屏幕）
+///   4. 把 TTS 转给 flutter_tts
+///
+/// 注意：answer 消息不再在这里写 CardStore —— 交给 ReviewScreen
+///       按「会话阶段」决定是毕业落盘，还是只记轮内结果。
 library;
 
 import 'dart:async';
@@ -15,7 +18,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/book.dart';
 import '../models/deck.dart';
 import 'card_store.dart';
-import 'scheduler.dart';
 import 'template_engine.dart';
 
 class BridgeMessage {
@@ -43,12 +45,17 @@ class WebViewBridge {
   }
 
   /// 组装一张卡牌的完整 HTML 页面
+  ///
+  /// [session] 会话上下文：{phase, mode, round}
+  /// [choices] 干扰项：[{text, right}]
   String buildCardPage({
     required Book book,
     required CardTemplate template,
     required FlashCard card,
     required int index,
     required int total,
+    Map<String, dynamic> session = const {},
+    List<Map<String, String>> choices = const [],
   }) {
     _currentCardId = card.id;
 
@@ -64,6 +71,8 @@ class WebViewBridge {
       'state': store.stateOf(card.id).toJson(),
       'index': index,
       'total': total,
+      'session': session,
+      'choices': choices,
     };
 
     return TemplateEngine.buildPage(
@@ -86,19 +95,11 @@ class WebViewBridge {
       return;
     }
     final type = (data['type'] ?? '').toString();
+
+    // answer 只转发，不落盘 —— 由 ReviewScreen 决定
     _messages.add(BridgeMessage(type, data));
 
     switch (type) {
-      case 'answer':
-        final rating = Rating.fromKey((data['rating'] ?? 'good').toString());
-        final id = _currentCardId;
-        if (id != null) {
-          final st = store.stateOf(id);
-          final updated = review(st, rating);
-          store.putState(id, updated);
-        }
-        break;
-
       case 'tts':
         final text = (data['text'] ?? '').toString();
         final lang = (data['lang'] ?? 'en-US').toString();
@@ -120,6 +121,7 @@ class WebViewBridge {
       case 'undo':
       case 'next':
       case 'prev':
+      case 'answer':
         break;
     }
   }

@@ -1,89 +1,112 @@
 /* ============================================================
    不背单词 · 暗黑极简模板 · 交互脚本
    ------------------------------------------------------------
-   两段式流程：
-     正面  点【忘记】-> pre=again -> 词义页只剩【下一词】
-           点【模糊】-> pre=hard  -> 词义页【记错了】+【下一词】
-           点【记得】-> pre=good  -> 词义页【记错了】+【下一词】
-     词义页 点【记错了】-> 改判 again
-           点【下一词】-> 提交 pre 那个评分
-   原生壳只暴露 window.Flashcard API：
-     Flashcard.getCard()          -> {fields, state, stats, index, total}
-     Flashcard.answer(rating)     -> 'again' | 'hard' | 'good'
-     Flashcard.tts(text, lang)
-     Flashcard.getState(k) / setState(k, v)
-     Flashcard.undo() / next() / prev()
-     Flashcard.ready()
+   三种考法，由 card.session.mode 决定：
+     read   : 正面三档 -> 词义页两档
+     choice : 英 -> 中选义，选完 -> 下一词
+     cloze  : 例句挖空 -> 选英词，选完 -> 下一词
+   选项数据来自 card.choices = [{text, right}]
    ============================================================ */
 (function () {
   "use strict";
 
   var FC = window.Flashcard || null;
-
-  // ---------- 降级：浏览器里没有原生壳时，用 localStorage 模拟 ----------
   if (!FC) {
     FC = window.Flashcard = {
-      _card: null,
-      getCard: function () { return FC._card || {}; },
-      answer: function (r) {
-        console.log("[mock] answer:", r);
-        var st = JSON.parse(localStorage.getItem("fc_states") || "{}");
-        st[FC._card.fields.word] = r;
-        localStorage.setItem("fc_states", JSON.stringify(st));
-        FC.next();
-      },
-      tts: function (text, lang) {
+      getCard: function () { return window.__FLASHCARD_CARD__ || {}; },
+      answer: function (r) { console.log("[mock] answer:", r); },
+      tts: function (t, l) {
         if (!("speechSynthesis" in window)) return;
         speechSynthesis.cancel();
-        var u = new SpeechSynthesisUtterance(text);
-        u.lang = lang || "en-US";
-        u.rate = 0.95;
-        speechSynthesis.speak(u);
+        var u = new SpeechSynthesisUtterance(t);
+        u.lang = l || "en-US"; u.rate = 0.95; speechSynthesis.speak(u);
       },
-      getState: function (k) {
-        var s = JSON.parse(localStorage.getItem("fc_kv") || "{}");
-        return s[k];
-      },
-      setState: function (k, v) {
-        var s = JSON.parse(localStorage.getItem("fc_kv") || "{}");
-        s[k] = v; localStorage.setItem("fc_kv", JSON.stringify(s));
-      },
-      undo: function () { }, next: function () { }, prev: function () { },
-      ready: function () { }
+      getState: function () {}, setState: function () {},
+      undo: function () {}, next: function () {}, prev: function () {},
+      ready: function () {}
     };
   }
 
   var root = document.querySelector(".fc-root");
   if (!root) return;
 
-  var preRating = "good"; // 正面预判
+  var card = FC.getCard() || {};
+  var fields = card.fields || {};
+  var sess = card.session || {};
+  var mode = sess.mode || "read";
+  var choices = card.choices || [];
+  var preRating = "good";
+  var pending = null; // 'good' | 'again'
 
-  // ---------- 渲染词组列表 ----------
-  function renderPhrases(card) {
+  // ---------- 词组 ----------
+  function renderPhrases() {
     var box = root.querySelector(".fc-phrase-list");
     if (!box) return;
     box.innerHTML = "";
-    (card.fields.phrases || []).forEach(function (p) {
+    (fields.phrases || []).forEach(function (p) {
       var row = document.createElement("div");
       row.className = "fc-phrase";
-      row.innerHTML =
-        '<span class="en"></span><span class="cn"></span>';
-      row.querySelector(".en").textContent = p.en || "";
-      row.querySelector(".cn").textContent = p.cn || "";
+      var en = document.createElement("span"); en.className = "en"; en.textContent = p.en || "";
+      var cn = document.createElement("span"); cn.className = "cn"; cn.textContent = p.cn || "";
+      row.appendChild(en); row.appendChild(cn);
       box.appendChild(row);
     });
   }
 
-  // ---------- 进词义页 ----------
+  // ---------- read：进词义页 ----------
   function toMeaning(pre) {
     preRating = pre || "good";
-    root.setAttribute("data-pre", preRating); // CSS 靠它决定是否显示【记错了】
+    root.setAttribute("data-pre", preRating);
     root.setAttribute("data-state", "back");
-    var face = root.querySelector(".fc-back");
-    if (face) face.scrollTop = 0;
+    var f = root.querySelector(".fc-back");
+    if (f) f.scrollTop = 0;
   }
 
-  // ---------- 事件委托 ----------
+  // ---------- choice / cloze：渲染选项 ----------
+  function renderOptions() {
+    var box = root.querySelector('.fc-options[data-for="' + mode + '"]');
+    if (!box) return;
+    box.innerHTML = "";
+    choices.forEach(function (c) {
+      var b = document.createElement("button");
+      b.className = "fc-option";
+      b.type = "button";
+      b.textContent = c.text || "";
+      b.setAttribute("data-right", String(c.right === "true" || c.right === true));
+      b.addEventListener("click", function () { pick(b, box); });
+      box.appendChild(b);
+    });
+  }
+
+  function pick(btn, box) {
+    if (pending !== null) return;
+    pending = (btn.getAttribute("data-right") === "true") ? "good" : "again";
+
+    box.querySelectorAll(".fc-option").forEach(function (x) {
+      var right = x.getAttribute("data-right") === "true";
+      if (right) x.classList.add("right");
+      else if (x === btn) x.classList.add("wrong");
+      x.setAttribute("disabled", "disabled");
+    });
+
+    var nb = root.querySelector(".fc-actions-next .fc-btn");
+    if (nb) nb.removeAttribute("disabled");
+  }
+
+  // ---------- cloze：挖空例句 ----------
+  function renderCloze() {
+    var raw = String(fields.sentence_en || "").replace(/<[^>]+>/g, "");
+    var w = String(fields.word || "");
+    var blank = raw;
+    if (w) {
+      try { blank = raw.replace(new RegExp(w, "ig"), "______"); }
+      catch (e) { blank = raw; }
+    }
+    var box = root.querySelector(".fc-cloze-sentence");
+    if (box) box.textContent = blank;
+  }
+
+  // ---------- 事件 ----------
   root.addEventListener("click", function (e) {
     var t = e.target.closest("[data-action],[data-tts]");
     if (!t) return;
@@ -94,44 +117,58 @@
       return;
     }
 
-    var action = t.getAttribute("data-action");
+    var a = t.getAttribute("data-action");
 
-    // 正面三档：一律进词义页
-    if (action === "to-meaning") {
-      toMeaning(t.getAttribute("data-pre"));
-      return;
-    }
+    if (a === "to-meaning") { toMeaning(t.getAttribute("data-pre")); return; }
 
-    // 词义页：这里才评分
-    if (action === "answer") {
+    if (a === "answer") {
       var r = t.getAttribute("data-rating");
-      var final = (r === "again") ? "again" : preRating;
+      var fin = (r === "again") ? "again" : preRating;
       root.querySelectorAll(".fc-actions-back .fc-btn").forEach(function (b) {
         b.setAttribute("disabled", "disabled");
       });
-      FC.answer(final);
+      FC.answer(fin);
+      return;
+    }
+
+    if (a === "submit") {
+      if (pending === null) return;
+      t.setAttribute("disabled", "disabled");
+      FC.answer(pending);
       return;
     }
   });
 
-  // 空格/回车 = 进词义页（正面时，按 good 预判）
+  // 空格 / 回车
   document.addEventListener("keydown", function (e) {
     if (e.code === "Space" || e.code === "Enter") {
       e.preventDefault();
-      if (root.getAttribute("data-state") === "front") toMeaning("good");
+      if (mode === "read") {
+        if (root.getAttribute("data-state") === "front") toMeaning("good");
+      } else if (pending !== null) {
+        var nb = root.querySelector(".fc-actions-next .fc-btn");
+        if (nb) { nb.setAttribute("disabled", "disabled"); FC.answer(pending); }
+      }
     }
   });
 
   // ---------- 初始化 ----------
   function boot() {
-    var card = FC.getCard();
-    if (card && card.fields) renderPhrases(card);
-
+    root.setAttribute("data-mode", mode);
     root.setAttribute("data-state", "front");
     root.setAttribute("data-pre", "");
 
+    if (mode === "read") {
+      renderPhrases();
+    } else if (mode === "choice") {
+      renderOptions();
+    } else if (mode === "cloze") {
+      renderCloze();
+      renderOptions();
+    }
+
     if (FC.ready) FC.ready();
-    console.log("[bubei_dark] card ready:", (card.fields || {}).word);
+    console.log("[bubei_dark] ready mode=" + mode + " word=" + (fields.word || ""));
   }
 
   if (document.readyState === "loading") {
