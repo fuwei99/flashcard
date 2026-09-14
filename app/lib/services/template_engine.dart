@@ -89,6 +89,7 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     getCard: function () { return window.__FLASHCARD_CARD__; },
     answer:  function (r) { post({type:"answer", rating:r}); },
     tts:     function (t, l) { post({type:"tts", text:t, lang:l||"en-US"}); },
+    ttsSeq:  function (list) { post({type:"ttsSeq", items:list||[]}); },
     getState:function (k) { return (window.__FLASHCARD_KV__||{})[k]; },
     setState:function (k, v) { window.__FLASHCARD_KV__[k]=v; post({type:"setState", key:k, value:v}); },
     undo:    function () { post({type:"undo"}); },

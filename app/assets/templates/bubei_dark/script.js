@@ -23,6 +23,18 @@
       },
       getState: function () {}, setState: function () {},
       undo: function () {}, next: function () {}, prev: function () {},
+      ttsSeq: function (list) {
+        if (!("speechSynthesis" in window) || !list || !list.length) return;
+        speechSynthesis.cancel();
+        (function next(i) {
+          if (i >= list.length) return;
+          var it = list[i] || {};
+          var u = new SpeechSynthesisUtterance(String(it.text || ""));
+          u.lang = it.lang || "en-US"; u.rate = 0.95;
+          u.onend = function () { next(i + 1); };
+          speechSynthesis.speak(u);
+        })(0);
+      },
       ready: function () {}, mountCard: function () {}, onMount: function () {}
     };
   }
@@ -38,6 +50,7 @@
   var preRating = "good";
   var pendingAnswer = null; // 'good' | 'again'
   var clickLock = false;
+  var autoTtsTimer = null;  // 正面自动发音的定时器，进词义页时要清掉
 
   // ---------- 朗读纯文本 ----------
   function speak(text, lang) {
@@ -181,6 +194,7 @@
       root.setAttribute("data-state", "back");
       var backEl = root.querySelector(".fc-back");
       if (backEl) backEl.scrollTop = 0;
+      playMeaningAudio();
     }
 
     // 激活底部的「继续」大按钮
@@ -232,6 +246,21 @@
     });
   }
 
+  // ---------- 进词义页：先念单词，念完再念例句 ----------
+  function playMeaningAudio() {
+    // 清掉切卡时挂起的正面自动发音，避免和这里的顺序播放打架
+    if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
+    var seq = [];
+    var w = String(fields.word || "").trim();
+    if (w) seq.push({ text: w, lang: "en-US" });
+    var sent = String(fields.sentence_en || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (sent) seq.push({ text: sent, lang: "en-US" });
+    if (seq.length && FC.ttsSeq) FC.ttsSeq(seq);
+  }
+
   // ---------- 切换到词义页（read 模式） ----------
   function toMeaning(pre) {
     preRating = pre || "good";
@@ -239,6 +268,7 @@
     root.setAttribute("data-state", "back");
     var backEl = root.querySelector(".fc-back");
     if (backEl) backEl.scrollTop = 0;
+    playMeaningAudio();
   }
 
   // ---------- mount：增量刷新全部卡片数据 ----------
@@ -307,8 +337,10 @@
 
     // 7. 自动播放当前单词发音（用户强烈需求！）
     //    cloze 例外：答案就是这个单词，一进卡就念 = 直接泄题。
+    if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
     if (curWord && mode !== "cloze") {
-      setTimeout(function () {
+      autoTtsTimer = setTimeout(function () {
+        autoTtsTimer = null;
         speak(curWord, "en-US");
       }, 70);
     }

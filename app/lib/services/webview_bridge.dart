@@ -36,6 +36,10 @@ class WebViewBridge {
 
   String? _currentCardId;
 
+  /// TTS 顺序朗读的「代」计数：每来一条新的朗读就 +1，
+  /// 正在跑的 ttsSeq 循环发现代号变了就立刻收手，避免和新卡片抢话。
+  int _ttsGen = 0;
+
   WebViewBridge({required this.store, FlutterTts? tts})
       : tts = tts ?? FlutterTts();
 
@@ -147,10 +151,31 @@ class WebViewBridge {
         final text = _plainText((data['text'] ?? '').toString());
         final lang = (data['lang'] ?? 'en-US').toString();
         if (text.isNotEmpty) {
+          _ttsGen++; // 打断可能正在进行的顺序朗读
           try {
             await tts.stop();
             await tts.setLanguage(lang);
             await tts.speak(text);
+          } catch (_) {}
+        }
+        break;
+
+      case 'ttsSeq':
+        // 顺序朗读：念完一条再念下一条（进词义页 = 单词 -> 例句）
+        final items = data['items'];
+        if (items is List) {
+          final myGen = ++_ttsGen;
+          try {
+            await tts.stop();
+            for (final it in items) {
+              if (myGen != _ttsGen) break; // 被新朗读打断，立即收手
+              if (it is! Map) continue;
+              final text = _plainText((it['text'] ?? '').toString());
+              final lang = (it['lang'] ?? 'en-US').toString();
+              if (text.isEmpty) continue;
+              await tts.setLanguage(lang);
+              await tts.speak(text);
+            }
           } catch (_) {}
         }
         break;
