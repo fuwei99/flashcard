@@ -122,7 +122,7 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     final buf = StringBuffer();
     for (final c in s.runes) {
       final ch = String.fromCharCode(c);
-      if (ch == r'\'') {
+      if (ch == r"'") {
         buf.write(r"\'");
       } else if (ch == r'\') {
         buf.write(r'\\');
