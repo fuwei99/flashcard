@@ -17,6 +17,11 @@
 ///   等于送答案。先让所有卡过完 choice，再让所有卡过 cloze。
 ///
 ///   done
+///
+/// 重要变更（2026-09-15，BUG-010 配套）：
+///   重测轮改为「逐卡即时毕业」—— 一张卡 choice + cloze 双过就立刻移入
+///   graduated 并滚出重测池，由屏幕层立即落盘。绝不让已过关的卡陪着
+///   硬骨头坐牢（原实现是整池全过才批量毕业，中途强杀 = 已掌握卡全部丢进度）。
 library;
 
 import 'deck.dart';
@@ -120,11 +125,17 @@ class StudySession {
 
   /// 重测轮：提交一个考法的对错。
   /// 答错 -> 不记通过，后面轮次继续考，**直到两个考法都过**。
+  /// 答对且该卡 choice + cloze 双过 -> **立即毕业**并滚出重测池，
+  /// 屏幕层随即落盘 —— 不再等整池清空（防强杀丢进度）。
   void submitRetest(StudyMode mode, bool ok) {
     if (_queue.isEmpty) return;
     final step = _queue.removeAt(0);
     if (ok) {
       (_passedModes[step.card.id] ??= <String>{}).add(mode.key);
+      if (_allPassed(step.card.id)) {
+        _retestPool.remove(step.card);
+        graduated.add(step.card.id);
+      }
     } else {
       final n = (_wrongCount[step.card.id] ?? 0) + 1;
       _wrongCount[step.card.id] = n;
@@ -152,13 +163,8 @@ class StudySession {
     }
 
     if (phase == SessionPhase.cloze) {
-      // 这一轮走完，池里还有卡没做到「choice + cloze 都过」吗？
-      final pending =
-          _retestPool.where((c) => !_allPassed(c.id)).toList(growable: false);
-      if (pending.isEmpty) {
-        for (final c in _retestPool) {
-          graduated.add(c.id);
-        }
+      // 池里还有没双过的卡吗？没有就是全毕业。
+      if (_retestPool.isEmpty) {
         phase = SessionPhase.done;
         return;
       }
@@ -172,6 +178,7 @@ class StudySession {
     phase = SessionPhase.choice;
     _queue.clear();
     for (final c in _retestPool) {
+      if (graduated.contains(c.id)) continue;
       if ((_passedModes[c.id] ?? const <String>{})
           .contains(StudyMode.choice.key)) {
         continue;
@@ -187,6 +194,7 @@ class StudySession {
     phase = SessionPhase.cloze;
     _queue.clear();
     for (final c in _retestPool) {
+      if (graduated.contains(c.id)) continue;
       if ((_passedModes[c.id] ?? const <String>{})
           .contains(StudyMode.cloze.key)) {
         continue;

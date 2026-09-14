@@ -43,6 +43,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   WebViewController? _controller;
   bool _loading = true;
 
+  /// 骨架页是否已加载完成（onPageFinished）—— 之后才能 mountCard
+  bool _ready = false;
+
   /// 已写入 FSRS 的卡，避免重复落盘
   final Set<String> _written = {};
 
@@ -71,7 +74,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
     // 评分不是恒定的 good，而是 StudySession 按本轮挣扎程度算出来的
     // （一次过 good / 费劲 hard / 硬骨头 again），三档终于真的进了 FSRS。
-    // 注意：重测走完时是「整池一起毕业」，所以这里要遍历全部未落盘的卡。
+    // 重测轮是逐卡即时毕业（一张卡 choice+cloze 双过立刻进 graduated），
+    // 所以这里遍历全部未落盘的卡，逐张补写。
     for (final cid in _session.graduated) {
       if (_written.contains(cid)) continue;
       _write(cid, _session.ratingFor(cid));
@@ -94,21 +98,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _load() {
     final step = _session.current;
     final ctrl = _controller;
-    if (step == null || ctrl == null) return;
-    final html = _bridge.buildCardPage(
+    if (step == null || ctrl == null || !_ready) return;
+    final session = {
+      'phase': _session.phase.name,
+      'mode': step.mode.key,
+      'round': step.round,
+    };
+    _bridge.mountCard(
+      ctrl,
       book: widget.book,
       template: widget.template,
       card: step.card,
       index: _session.doneInRound,
       total: _session.roundTotal,
-      session: {
-        'phase': _session.phase.name,
-        'mode': step.mode.key,
-        'round': step.round,
-      },
+      session: session,
       choices: _choicesFor(step),
     );
-    ctrl.loadHtmlString(html);
   }
 
   /// 生成干扰项
@@ -161,7 +166,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Expanded(
               child: Stack(
                 children: [
-                  WebViewWidget(controller: _ensure()),
+                  if (_ensure() case final c?) WebViewWidget(controller: c),
                   if (_loading)
                     const Center(
                       child: CircularProgressIndicator(
@@ -237,8 +242,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
-  WebViewController _ensure() {
+  WebViewController? _ensure() {
     if (_controller != null) return _controller!;
+    final step = _session.current;
+    if (step == null) return null;
     final c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF141D1F))
@@ -249,12 +256,27 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {
+            _ready = true;
             if (mounted) setState(() => _loading = false);
+            _load();
           },
         ),
       );
     _controller = c;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // 骨架页：只在会话开始时 load 一次，之后全走 mountCard
+    final html = _bridge.buildCardPage(
+      book: widget.book,
+      template: widget.template,
+      card: step.card,
+      index: _session.doneInRound,
+      total: _session.roundTotal,
+      session: {
+        'phase': _session.phase.name,
+        'mode': step.mode.key,
+        'round': step.round,
+      },
+    );
+    c.loadHtmlString(html);
     return c;
   }
 

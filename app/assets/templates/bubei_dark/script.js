@@ -1,11 +1,16 @@
 /* ============================================================
-   不背单词 · 暗黑极简模板 · 交互脚本
+   不背单词 · 暗黑极简模板 · 交互脚本（SPA 版）
    ------------------------------------------------------------
    三种考法，由 card.session.mode 决定：
      read   : 正面三档 -> 词义页两档
      choice : 英 -> 中选义，选完 -> 下一词
      cloze  : 例句挖空 -> 选英词，选完 -> 下一词
-   选项数据来自 card.choices = [{text, right}]
+   选项数据来自 card.choices = [{text, pos, right}]
+
+   SPA 契约（2026-09-15，BUG-010 修复）：
+     - 骨架页只 load 一次，切卡不再整页重载
+     - 原生侧调 Flashcard.mountCard(json) -> 本脚本 mount()
+     - mount() 里带 250ms 连点锁，杜绝 Android 幽灵点击穿透
    ============================================================ */
 (function () {
   "use strict";
@@ -23,7 +28,7 @@
       },
       getState: function () {}, setState: function () {},
       undo: function () {}, next: function () {}, prev: function () {},
-      ready: function () {}
+      ready: function () {}, mountCard: function () {}, onMount: function () {}
     };
   }
 
@@ -130,8 +135,35 @@
     if (box) box.textContent = blank;
   }
 
+  // ---------- 渲染一张卡（mount / 骨架 boot 共用） ----------
+  function mount() {
+    card = FC.getCard() || {};
+    fields = card.fields || {};
+    sess = card.session || {};
+    mode = sess.mode || "read";
+    choices = card.choices || [];
+    preRating = "good";
+    pending = null; // 新卡：清掉上一张的锁定状态
+
+    root.setAttribute("data-mode", mode);
+    root.setAttribute("data-state", "front");
+    root.setAttribute("data-pre", "");
+
+    if (mode === "read") {
+      renderPhrases();
+    } else if (mode === "choice") {
+      renderOptions();
+    } else if (mode === "cloze") {
+      renderCloze();
+      renderOptions();
+    }
+  }
+
   // ---------- 事件 ----------
+  // 连点锁：切卡后 250ms 内吞掉一切点击，阻断幽灵点击穿透到下一张卡
+  var clickLock = false;
   root.addEventListener("click", function (e) {
+    if (clickLock) { e.preventDefault(); return; }
     var t = e.target.closest("[data-action],[data-tts]");
     if (!t) return;
 
@@ -181,22 +213,20 @@
     }
   });
 
-  // ---------- 初始化 ----------
+  // ---------- SPA 挂载注册 ----------
+  if (FC.onMount) {
+    FC.onMount(function () {
+      // 250ms 连点锁
+      clickLock = true;
+      setTimeout(function () { clickLock = false; }, 250);
+      mount();
+      if (FC.ready) FC.ready();
+    });
+  }
+
+  // ---------- 初始化（骨架 boot，空卡不会崩） ----------
   function boot() {
-    root.setAttribute("data-mode", mode);
-    root.setAttribute("data-state", "front");
-    root.setAttribute("data-pre", "");
-
-    if (mode === "read") {
-      renderPhrases();
-    } else if (mode === "choice") {
-      renderOptions();
-    } else if (mode === "cloze") {
-      renderCloze();
-      renderOptions();
-    }
-
-    if (FC.ready) FC.ready();
+    mount();
     console.log("[bubei_dark] ready mode=" + mode + " word=" + (fields.word || ""));
   }
 

@@ -7,6 +7,8 @@
 /// 列表字段（phrases）不在此展开，交给模板自带 script.js 生成 DOM。
 library;
 
+import 'dart:convert';
+
 class TemplateEngine {
   static bool _truthy(dynamic v) {
     if (v == null) return false;
@@ -92,13 +94,43 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     undo:    function () { post({type:"undo"}); },
     next:    function () { post({type:"next"}); },
     prev:    function () { post({type:"prev"}); },
-    ready:   function () { post({type:"ready"}); }
+    ready:   function () { post({type:"ready"}); },
+    // ---- SPA：原生侧切卡调用，一次全页重载改成 DOM 增量替换 ----
+    mountCard: function (jsonStr) {
+      window.__FLASHCARD_CARD__ = JSON.parse(jsonStr);
+      if (window.__FLASHCARD_ONMOUNT__) window.__FLASHCARD_ONMOUNT__();
+    },
+    onMount: function (fn) {
+      window.__FLASHCARD_ONMOUNT__ = fn;
+    }
   };
 })();
 </script>
 <script>$js</script>
 </body>
 </html>''';
+  }
+
+  /// 转成可直接嵌进 JS 单引号字符串的 JSON 文本
+  ///
+  /// json.encode 输出的是合法 JSON（内部控制符已转义为 \\n \\" 等）。
+  /// 这里只补 JS 单引号字符串语境下必要的两层转义：反斜杠、单引号。
+  /// 其他字符原样透传 —— 多加任何转义都会在 JSON.parse 后被二次反转，
+  /// 把 \\n 变成真换行、把 \\" 变成裸引号，直接炸掉 JSON 结构。
+  static String jsonForJs(Object? o) {
+    final s = json.encode(o);
+    final buf = StringBuffer();
+    for (final c in s.runes) {
+      final ch = String.fromCharCode(c);
+      if (ch == r'\'') {
+        buf.write(r"\'");
+      } else if (ch == r'\') {
+        buf.write(r'\\');
+      } else {
+        buf.write(ch);
+      }
+    }
+    return buf.toString();
   }
 
   static String _jsonEncode(Object? o) {

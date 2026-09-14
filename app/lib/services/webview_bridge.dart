@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
@@ -44,10 +45,12 @@ class WebViewBridge {
     await tts.setPitch(1.0);
   }
 
-  /// 组装一张卡牌的完整 HTML 页面
+  /// 组装一张卡牌的完整 HTML 页面 —— SPA 骨架页，只在会话开始时 load 一次。
   ///
   /// [session] 会话上下文：{phase, mode, round}
   /// [choices] 干扰项：[{text, right}]
+  ///
+  /// 骨架页内不含真实卡片数据；每切一张卡由 [mountCard] 增量灌入。
   String buildCardPage({
     required Book book,
     required CardTemplate template,
@@ -57,6 +60,45 @@ class WebViewBridge {
     Map<String, dynamic> session = const {},
     List<Map<String, String>> choices = const [],
   }) {
+    _currentCardId = card.id;
+
+    final fields = <String, dynamic>{};
+    for (final f in book.fieldsOrder) {
+      fields[f] = '';
+    }
+
+    final cardJson = <String, dynamic>{
+      'id': '',
+      'fields': fields,
+      'state': <String, dynamic>{},
+      'index': index,
+      'total': total,
+      'session': session,
+      'choices': choices,
+    };
+
+    return TemplateEngine.buildPage(
+      templateHtml: template.html,
+      css: template.css,
+      js: template.js,
+      fields: fields,
+      cardJson: cardJson,
+      kv: const <String, dynamic>{},
+      extra: {'__index': index + 1, '__total': total},
+    );
+  }
+
+  /// SPA 增量挂卡：把一张卡的数据灌进已加载的骨架页，不重载页面。
+  Future<void> mountCard(
+    WebViewController ctrl, {
+    required Book book,
+    required CardTemplate template,
+    required FlashCard card,
+    required int index,
+    required int total,
+    Map<String, dynamic> session = const {},
+    List<Map<String, String>> choices = const [],
+  }) async {
     _currentCardId = card.id;
 
     final fields = <String, dynamic>{};
@@ -75,16 +117,12 @@ class WebViewBridge {
       'choices': choices,
     };
 
-    return TemplateEngine.buildPage(
-      templateHtml: template.html,
-      css: template.css,
-      js: template.js,
-      fields: fields,
-      cardJson: cardJson,
-      kv: store.kvOf(card.id),
-      extra: {'__index': index + 1, '__total': total},
-    );
+    final jsonStr = TemplateEngine.jsonForJs(cardJson);
+    final js =
+        "window.Flashcard.mountCard('$jsonStr');";
+    await ctrl.runJavaScript(js);
   }
+
 
   /// 处理卡牌脚本发来的一条消息
   Future<void> handleMessage(String raw) async {
