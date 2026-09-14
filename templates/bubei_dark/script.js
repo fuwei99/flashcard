@@ -320,7 +320,13 @@
       el.textContent = phonetic ? ("/" + phonetic.replace(/^\/|\/$/g, "") + "/") : "";
     });
 
-    // 5. 重置底部「继续」按钮为禁用
+    // 5. 重置按钮状态：
+    //    - 上一张卡答完时把词义页「记错了 / 下一词」禁用了，切卡必须重新放开，
+    //      否则第二张卡点「下一词」毫无反应（disabled 按钮不触发 click，整个卡死）。
+    //      以前整页重载会自然清掉，SPA 增量挂卡后 DOM 复用，必须手动复位。
+    //    - 底部「继续」按钮重置为禁用，等选了选项再亮。
+    root.querySelectorAll(".fc-actions-back .fc-btn, .fc-actions-front .fc-btn")
+        .forEach(function (b) { b.removeAttribute("disabled"); });
     var continueBtn = root.querySelector(".fc-btn-continue");
     if (continueBtn) {
       continueBtn.setAttribute("disabled", "disabled");
