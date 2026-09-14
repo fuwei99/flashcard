@@ -1,6 +1,8 @@
-/// 书架：所有书一目了然
-/// 导入：右上角按钮 → 选文件 → 弹窗确认（可选进度，默认不勾）
-/// 导出：长按书籍 → 底部抽屉 → 导出（默认带进度）
+/// 书架（单词 / Card 共用）
+/// ================================================================
+/// 同一套「书 → 章 → 页」导航，按模板引擎过滤出两类内容：
+///   language  -> 单词 Tab（英语背诵）
+///   srs_basic -> Card Tab（Anki 式）
 library;
 
 import 'package:flutter/material.dart';
@@ -12,16 +14,27 @@ import '../services/deck_repository.dart';
 import '../services/study_settings.dart';
 import '../services/transfer_service.dart';
 import 'book_detail_screen.dart';
-import 'settings_screen.dart';
 
-class BookShelfScreen extends StatefulWidget {
+/// 书架的两种归类
+enum LibraryKind { word, card }
+
+/// 一本书属于哪个书架：看它绑定的模板引擎。
+/// 没写 engine 的模板一律当英语书（language）。
+LibraryKind kindOfBook(Book book, Map<String, CardTemplate> templates) {
+  final engine = templates[book.templateId]?.engine ?? 'language';
+  return engine == 'srs_basic' ? LibraryKind.card : LibraryKind.word;
+}
+
+class LibraryScreen extends StatefulWidget {
+  final LibraryKind kind;
   final DeckRepository repo;
   final Map<String, CardTemplate> templates;
   final CardStore store;
   final StudySettings settings;
 
-  const BookShelfScreen({
+  const LibraryScreen({
     super.key,
+    required this.kind,
     required this.repo,
     required this.templates,
     required this.store,
@@ -29,22 +42,27 @@ class BookShelfScreen extends StatefulWidget {
   });
 
   @override
-  State<BookShelfScreen> createState() => _BookShelfScreenState();
+  State<LibraryScreen> createState() => LibraryScreenState();
 }
 
-class _BookShelfScreenState extends State<BookShelfScreen> {
+class LibraryScreenState extends State<LibraryScreen> {
   List<Book>? _books;
+
+  String get _title => widget.kind == LibraryKind.word ? '单词' : 'Card';
 
   @override
   void initState() {
     super.initState();
-    _load();
+    refresh();
   }
 
-  Future<void> _load() async {
-    final books = await widget.repo.loadAllBooks();
+  Future<void> refresh() async {
+    final all = await widget.repo.loadAllBooks();
+    final filtered = all
+        .where((b) => kindOfBook(b, widget.templates) == widget.kind)
+        .toList();
     if (!mounted) return;
-    setState(() => _books = books);
+    setState(() => _books = filtered);
   }
 
   // ---------------------------------------------------------------
@@ -55,13 +73,14 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
       final preview = await TransferService.pickAndParse();
       if (preview == null || !mounted) return;
 
-      bool withProgress = false; // 默认不勾选进度
+      bool withProgress = false;
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setD) => AlertDialog(
             backgroundColor: const Color(0xFF1B2629),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18)),
             title: const Text('导入卡片',
                 style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 17)),
             content: Column(
@@ -77,7 +96,8 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
                 Text(
                   '${preview.book.totalPages} 页'
                   '${preview.book.hasChapters ? " · ${preview.book.chapters.length} 章" : ""}',
-                  style: const TextStyle(color: Color(0xFF8C9DA2), fontSize: 13),
+                  style: const TextStyle(
+                      color: Color(0xFF8C9DA2), fontSize: 13),
                 ),
                 const SizedBox(height: 14),
                 if (preview.hasProgress)
@@ -89,25 +109,30 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
                     value: withProgress,
                     onChanged: (v) => setD(() => withProgress = v ?? false),
                     title: const Text('同时导入背诵进度',
-                        style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 14)),
+                        style:
+                            TextStyle(color: Color(0xFFF0F4F5), fontSize: 14)),
                     subtitle: const Text('默认不勾选，只导入卡片内容',
-                        style: TextStyle(color: Color(0xFF54666C), fontSize: 11.5)),
+                        style: TextStyle(
+                            color: Color(0xFF54666C), fontSize: 11.5)),
                   )
                 else
                   const Text('该文件不含背诵进度',
-                      style: TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+                      style:
+                          TextStyle(color: Color(0xFF54666C), fontSize: 12)),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消', style: TextStyle(color: Color(0xFF8C9DA2))),
+                child: const Text('取消',
+                    style: TextStyle(color: Color(0xFF8C9DA2))),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('确定',
                     style: TextStyle(
-                        color: Color(0xFF00C08B), fontWeight: FontWeight.w600)),
+                        color: Color(0xFF00C08B),
+                        fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -119,7 +144,7 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
       if (withProgress && preview.progress != null) {
         widget.store.importProgress(preview.progress!);
       }
-      await _load();
+      await refresh();
       _toast('已导入《${preview.book.title}》');
     } catch (e) {
       _toast('导入失败：$e');
@@ -127,7 +152,7 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
   }
 
   // ---------------------------------------------------------------
-  // 长按 → 底部抽屉
+  // 长按 → 底部抽屉（导出）
   // ---------------------------------------------------------------
   Future<void> _showBookSheet(Book book) async {
     await showModalBottomSheet(
@@ -142,7 +167,8 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
           children: [
             const SizedBox(height: 8),
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                   color: const Color(0x33FFFFFF),
                   borderRadius: BorderRadius.circular(2)),
@@ -152,7 +178,8 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  const Icon(Icons.menu_book, color: Color(0xFF00C08B), size: 20),
+                  const Icon(Icons.menu_book,
+                      color: Color(0xFF00C08B), size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(book.title,
@@ -166,10 +193,13 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
             ),
             const SizedBox(height: 6),
             ListTile(
-              leading: const Icon(Icons.ios_share, color: Color(0xFF00C08B)),
-              title: const Text('导出', style: TextStyle(color: Color(0xFFF0F4F5))),
+              leading:
+                  const Icon(Icons.ios_share, color: Color(0xFF00C08B)),
+              title: const Text('导出',
+                  style: TextStyle(color: Color(0xFFF0F4F5))),
               subtitle: const Text('导出到 Documents/flashcard',
-                  style: TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+                  style:
+                      TextStyle(color: Color(0xFF54666C), fontSize: 12)),
               onTap: () {
                 Navigator.pop(ctx);
                 _export(book);
@@ -183,13 +213,14 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
   }
 
   Future<void> _export(Book book) async {
-    bool withProgress = true; // 默认勾选进度
+    bool withProgress = true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
           backgroundColor: const Color(0xFF1B2629),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18)),
           title: const Text('导出卡片',
               style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 17)),
           content: Column(
@@ -210,22 +241,26 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
                 value: withProgress,
                 onChanged: (v) => setD(() => withProgress = v ?? true),
                 title: const Text('包含背诵进度',
-                    style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 14)),
+                    style:
+                        TextStyle(color: Color(0xFFF0F4F5), fontSize: 14)),
                 subtitle: const Text('默认导出进度数据，取消则只导卡片',
-                    style: TextStyle(color: Color(0xFF54666C), fontSize: 11.5)),
+                    style: TextStyle(
+                        color: Color(0xFF54666C), fontSize: 11.5)),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消', style: TextStyle(color: Color(0xFF8C9DA2))),
+              child: const Text('取消',
+                  style: TextStyle(color: Color(0xFF8C9DA2))),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('导出',
                   style: TextStyle(
-                      color: Color(0xFF00C08B), fontWeight: FontWeight.w600)),
+                      color: Color(0xFF00C08B),
+                      fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -247,7 +282,6 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
     ));
   }
 
-  // ---------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final books = _books;
@@ -256,8 +290,8 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF141D1F),
         elevation: 0,
-        title: const Text('书架',
-            style: TextStyle(
+        title: Text(_title,
+            style: const TextStyle(
                 color: Color(0xFFF0F4F5),
                 fontWeight: FontWeight.w700,
                 fontSize: 22)),
@@ -268,66 +302,41 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
             tooltip: '导入卡片',
             onPressed: _import,
           ),
-          IconButton(
-            icon: const Icon(Icons.settings, color: Color(0xFF8C9DA2)),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SettingsScreen(settings: widget.settings),
-                ),
-              );
-            },
-          ),
         ],
       ),
       body: books == null
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF00C08B)))
-          : Column(
-              children: [
-                _todayBar(),
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: books.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
-                    itemBuilder: (context, i) => _bookTile(books[i]),
-                  ),
+          : books.isEmpty
+              ? _empty()
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  itemCount: books.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 14),
+                  itemBuilder: (context, i) => _bookTile(books[i]),
                 ),
-              ],
-            ),
     );
   }
 
-  Widget _todayBar() {
-    final s = widget.settings;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+  Widget _empty() {
+    final hint = widget.kind == LibraryKind.word
+        ? '还没有单词书\n点右上角导入'
+        : '还没有 Card 卡组\n需要一个 engine: srs_basic 的模板';
+    return Center(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('今日进度',
-                  style: TextStyle(color: Color(0xFF54666C), fontSize: 12)),
-              Text('${s.todayDone} / ${s.dailyLimit}',
-                  style: const TextStyle(
-                      color: Color(0xFF00C08B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: s.todayProgress,
-              minHeight: 5,
-              backgroundColor: const Color(0x14FFFFFF),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF00C08B)),
-            ),
+          const Icon(Icons.inbox_outlined, color: Color(0xFF54666C), size: 48),
+          const SizedBox(height: 12),
+          Text(hint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF54666C), fontSize: 13)),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _import,
+            child: const Text('导入卡片',
+                style: TextStyle(
+                    color: Color(0xFF00C08B), fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -352,7 +361,7 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
             settings: widget.settings,
           ),
         ),
-      ),
+      ).then((_) => refresh()),
       onLongPress: () => _showBookSheet(book),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -374,8 +383,12 @@ class _BookShelfScreenState extends State<BookShelfScreen> {
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.menu_book,
-                  color: Color(0xFF141D1F), size: 24),
+              child: Icon(
+                  widget.kind == LibraryKind.word
+                      ? Icons.menu_book
+                      : Icons.style,
+                  color: const Color(0xFF141D1F),
+                  size: 24),
             ),
             const SizedBox(width: 14),
             Expanded(

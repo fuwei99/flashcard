@@ -75,6 +75,10 @@ class CardTemplate {
   String get id => (manifest['id'] ?? 'unknown').toString();
   String get name => (manifest['name'] ?? id).toString();
   String get renderMode => (manifest['render_mode'] ?? 'placeholder').toString();
+
+  /// 学习引擎：language（英语背诵）/ srs_basic（Anki 式）。
+  /// 缺省 language —— 老模板没写 engine 也当英语书。
+  String get engine => (manifest['engine'] ?? 'language').toString();
   List<String> get fields =>
       (manifest['fields'] as List?)?.cast<String>() ?? const [];
   Map<String, dynamic> get tts =>

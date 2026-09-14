@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'models/deck.dart';
-import 'screens/bookshelf_screen.dart';
+import 'screens/main_scaffold.dart';
 import 'services/card_store.dart';
 import 'services/deck_repository.dart';
 import 'services/study_settings.dart';
@@ -104,7 +104,7 @@ class _BootstrapState extends State<_Bootstrap> {
         ),
       );
     }
-    return BookShelfScreen(
+    return MainScaffold(
       repo: _repo,
       templates: _templates!,
       store: _store,
