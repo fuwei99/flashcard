@@ -50,6 +50,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 10),
           _limitCard(),
           const SizedBox(height: 24),
+          _sectionLabel('卡片类型'),
+          const SizedBox(height: 10),
+          _modeCard(),
+          const SizedBox(height: 24),
           _sectionLabel('今日'),
           const SizedBox(height: 10),
           _todayCard(),
@@ -133,6 +137,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 fontSize: 13,
                 fontWeight: FontWeight.w600)),
       ),
+    );
+  }
+
+  Widget _modeCard() {
+    final s = widget.settings;
+    Future<void> flip(Future<void> Function(bool) set, bool v) async {
+      await set(v);
+      if (mounted) setState(() {});
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0x0BFFFFFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: Column(
+        children: [
+          _modeSwitch(
+            title: '语义选项',
+            subtitle: '英→中，看单词选释义',
+            value: s.modeChoice,
+            onChanged: (v) => flip(s.setModeChoice, v),
+          ),
+          const Divider(height: 1, color: Color(0x0FFFFFFF)),
+          _modeSwitch(
+            title: '短句选词',
+            subtitle: '真题例句挖空选词',
+            value: s.modeSentenceCloze,
+            onChanged: (v) => flip(s.setModeSentenceCloze, v),
+          ),
+          const Divider(height: 1, color: Color(0x0FFFFFFF)),
+          _modeSwitch(
+            title: '语篇选词',
+            subtitle: '章首文章整篇填词（多邻国式）',
+            value: s.modePassageCloze,
+            onChanged: (v) => flip(s.setModePassageCloze, v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeSwitch({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return SwitchListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      activeColor: const Color(0xFF00C08B),
+      activeTrackColor: const Color(0x3300C08B),
+      value: value,
+      onChanged: onChanged,
+      title: Text(title,
+          style: const TextStyle(
+              color: Color(0xFFF0F4F5),
+              fontSize: 15,
+              fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle,
+          style: const TextStyle(color: Color(0xFF54666C), fontSize: 12)),
     );
   }
 

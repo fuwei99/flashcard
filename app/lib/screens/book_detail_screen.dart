@@ -59,6 +59,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           template: tpl,
           store: widget.store,
           settings: widget.settings,
+          passage: widget.book.passage,
         ),
       ),
     ).then((_) {
@@ -195,6 +196,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 template: widget.template,
                 store: store,
                 settings: widget.settings,
+                passage: ch.passage,
               ),
             ),
           ).then((_) {

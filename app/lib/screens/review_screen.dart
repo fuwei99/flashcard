@@ -2,6 +2,9 @@
 /// ================================================================
 /// 轮内流程交给 StudySession；只有「毕业」才写 CardStore（= 标记已背）。
 /// 忘记 / 模糊 只记在会话内存里，不落盘。
+///
+/// 语篇两阶段（passage 通读 / passageCloze 选词）也是「会话步骤」，
+/// 但不涉及具体卡片，mountCard 时 card 传 null、passage 传本章语篇。
 library;
 
 import 'package:flutter/material.dart';
@@ -23,6 +26,9 @@ class ReviewScreen extends StatefulWidget {
   final CardStore store;
   final StudySettings settings;
 
+  /// 本章语篇（可空 —— 老卡组没有就跳过语篇两阶段）
+  final Passage? passage;
+
   const ReviewScreen({
     super.key,
     required this.title,
@@ -31,6 +37,7 @@ class ReviewScreen extends StatefulWidget {
     required this.template,
     required this.store,
     required this.settings,
+    this.passage,
   });
 
   @override
@@ -52,7 +59,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
   @override
   void initState() {
     super.initState();
-    _session = StudySession(widget.cards);
+    _session = StudySession(
+      widget.cards,
+      passage: widget.passage,
+      passageClozeEnabled: widget.settings.modePassageCloze,
+      retestModes: [
+        if (widget.settings.modeChoice) StudyMode.choice,
+        if (widget.settings.modeSentenceCloze) StudyMode.cloze,
+      ],
+    );
     _bridge = WebViewBridge(store: widget.store);
     _bridge.initTts();
     _bridge.messages.listen(_onMsg);
@@ -72,16 +87,26 @@ class _ReviewScreenState extends State<ReviewScreen> {
       rating = Rating.good;
     }
 
-    if (_session.phase == SessionPhase.learn) {
-      _session.submitLearn(rating);
-    } else {
-      _session.submitRetest(step.mode, rating != Rating.again);
+    switch (_session.phase) {
+      case SessionPhase.passage:
+        _session.submitPassage();
+        break;
+      case SessionPhase.passageCloze:
+        _session.submitPassageCloze(rating != Rating.again);
+        break;
+      case SessionPhase.learn:
+        _session.submitLearn(rating);
+        break;
+      case SessionPhase.choice:
+      case SessionPhase.cloze:
+        _session.submitRetest(step.mode, rating != Rating.again);
+        break;
+      case SessionPhase.done:
+        break;
     }
 
     // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
-    // 评分不是恒定的 good，而是 StudySession 按本轮挣扎程度算出来的
-    // （一次过 good / 费劲 hard / 硬骨头 again），三档终于真的进了 FSRS。
-    // 重测轮是逐卡即时毕业（一张卡 choice+cloze 双过立刻进 graduated），
+    // 重测轮是逐卡即时毕业（启用的考法全过立刻进 graduated），
     // 所以这里遍历全部未落盘的卡，逐张补写。
     for (final cid in _session.graduated) {
       if (_written.contains(cid)) continue;
@@ -106,18 +131,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final step = _session.current;
     final ctrl = _controller;
     if (step == null || ctrl == null || !_ready) return;
+
+    final isPassage = _session.phase == SessionPhase.passage ||
+        _session.phase == SessionPhase.passageCloze;
     final session = {
       'phase': _session.phase.name,
       'mode': step.mode.key,
       'round': step.round,
     };
+
     _bridge.mountCard(
       ctrl,
       book: widget.book,
       template: widget.template,
       card: step.card,
-      index: _session.doneInRound,
-      total: _session.roundTotal,
+      passage: isPassage ? _session.passage : null,
+      passageCards: widget.cards,
+      index: isPassage ? 0 : _session.doneInRound,
+      total: isPassage ? 1 : _session.roundTotal,
       session: session,
       choices: _choicesFor(step),
     );
@@ -127,8 +158,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   ///   choice : 中文义 —— 必须带词性，且带上该项原本的英文单词，便于选错后揭晓
   ///   cloze  : 英文词
   List<Map<String, String>> _choicesFor(StudyStep step) {
-    final all = widget.book.allCards;
     final cur = step.card;
+    if (cur == null) return const [];
+    final all = widget.book.allCards;
     final isChoice = step.mode == StudyMode.choice;
 
     String textOf(FlashCard c) => isChoice
@@ -138,8 +170,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     String posOf(FlashCard c) =>
         isChoice ? (c.fields['pos'] ?? '').toString().trim() : '';
 
-    String wordOf(FlashCard c) =>
-        (c.fields['word'] ?? c.word).toString().trim();
+    String wordOf(FlashCard c) => (c.fields['word'] ?? c.word).toString().trim();
 
     final rightText = textOf(cur);
     if (rightText.isEmpty) return const [];
@@ -207,6 +238,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final prog = total == 0 ? 0.0 : _session.doneInRound / total;
     final today = widget.settings;
     final phaseName = switch (_session.phase) {
+      SessionPhase.passage => '语篇',
+      SessionPhase.passageCloze => '语篇选词',
       SessionPhase.learn => '学习',
       SessionPhase.choice => '重测 R${_session.round - 1}·选义',
       SessionPhase.cloze => '重测 R${_session.round - 1}·填空',

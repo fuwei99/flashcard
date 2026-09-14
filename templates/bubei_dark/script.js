@@ -51,6 +51,10 @@
   var pendingAnswer = null; // 'good' | 'again'
   var clickLock = false;
   var autoTtsTimer = null;  // 正面自动发音的定时器，进词义页时要清掉
+  var passageTipTimer = null; // 语篇通读释义浮层定时器
+  var blanks = [];            // 语篇选词：空格
+  var bank = [];              // 语篇选词：词库
+  var activeBlank = -1;       // 语篇选词：光标所在空格
 
   // ---------- 朗读纯文本 ----------
   function speak(text, lang) {
@@ -246,6 +250,199 @@
     });
   }
 
+  // ---------- 语篇：把 segments 渲染成 DOM ----------
+  function passageSegments() {
+    var p = card.passage || {};
+    return p.segments || [];
+  }
+
+  function renderPassageRead() {
+    var p = card.passage || {};
+    var body = root.querySelector(".fc-passage .fc-passage-body");
+    var titleEl = root.querySelector(".fc-passage .fc-passage-title");
+    var cnEl = root.querySelector(".fc-passage .fc-passage-cn");
+    var tip = root.querySelector(".fc-passage .fc-passage-tip");
+    if (titleEl) titleEl.textContent = p.title || "语篇";
+    if (cnEl) {
+      cnEl.textContent = p.cn || "";
+      cnEl.style.display = p.cn ? "block" : "none";
+    }
+    if (tip) tip.classList.remove("show");
+    if (!body) return;
+    body.innerHTML = "";
+
+    passageSegments().forEach(function (seg) {
+      if (seg.w !== undefined && seg.w !== null) {
+        var span = document.createElement("span");
+        span.className = "fc-pw";
+        span.textContent = seg.w;
+        span.setAttribute("data-word", seg.lemma || seg.w);
+        span.setAttribute("data-pos", seg.pos || "");
+        span.setAttribute("data-meaning", seg.meaning || "");
+        body.appendChild(span);
+      } else {
+        body.appendChild(document.createTextNode(seg.t || ""));
+      }
+    });
+  }
+
+  function showPassageTooltip(el) {
+    var w = el.getAttribute("data-word") || el.textContent || "";
+    var pos = el.getAttribute("data-pos") || "";
+    var mean = el.getAttribute("data-meaning") || "";
+    speak(w, "en-US");
+    var tip = root.querySelector(".fc-passage .fc-passage-tip");
+    if (!tip) return;
+    tip.innerHTML = "";
+    var a = document.createElement("div");
+    a.className = "fc-tip-word";
+    a.textContent = w;
+    var b = document.createElement("div");
+    b.className = "fc-tip-mean";
+    b.textContent = (pos ? pos + " " : "") + (mean || "（本章未收录释义）");
+    tip.appendChild(a);
+    tip.appendChild(b);
+    tip.classList.add("show");
+    if (passageTipTimer) clearTimeout(passageTipTimer);
+    passageTipTimer = setTimeout(function () { tip.classList.remove("show"); }, 3000);
+  }
+
+  // ---------- 语篇选词（多邻国式填词） ----------
+  function renderPassageCloze() {
+    var p = card.passage || {};
+    var titleEl = root.querySelector(".fc-passage-cloze .fc-passage-title");
+    var body = root.querySelector(".fc-cloze-passage");
+    if (titleEl) titleEl.textContent = p.title || "语篇选词";
+    if (!body) return;
+    body.innerHTML = "";
+    blanks = [];
+    bank = [];
+    activeBlank = -1;
+
+    passageSegments().forEach(function (seg) {
+      if (seg.w !== undefined && seg.w !== null) {
+        var idx = blanks.length;
+        var b = document.createElement("span");
+        b.className = "fc-blank";
+        b.setAttribute("data-idx", String(idx));
+        b.textContent = "______";
+        b.addEventListener("click", function () { onTapBlank(idx); });
+        body.appendChild(b);
+        blanks.push({
+          el: b, answer: seg.w, pos: seg.pos || "",
+          meaning: seg.meaning || "", filled: null
+        });
+        bank.push({ surface: seg.w, used: false, el: null });
+      } else {
+        body.appendChild(document.createTextNode(seg.t || ""));
+      }
+    });
+
+    renderBank();
+    setActiveBlank(firstEmptyBlank());
+    updateClozeContinue();
+  }
+
+  function renderBank() {
+    var box = root.querySelector(".fc-wordbank");
+    if (!box) return;
+    box.innerHTML = "";
+    var order = [];
+    for (var i = 0; i < bank.length; i++) order.push(i);
+    for (var k = order.length - 1; k > 0; k--) {
+      var j = Math.floor(Math.random() * (k + 1));
+      var t = order[k]; order[k] = order[j]; order[j] = t;
+    }
+    order.forEach(function (i) {
+      var tile = document.createElement("button");
+      tile.className = "fc-bank-tile";
+      tile.type = "button";
+      tile.textContent = bank[i].surface;
+      tile.addEventListener("click", function () { onPickTile(i); });
+      bank[i].el = tile;
+      box.appendChild(tile);
+    });
+  }
+
+  function firstEmptyBlank() {
+    for (var i = 0; i < blanks.length; i++) {
+      if (blanks[i].filled === null) return i;
+    }
+    return -1;
+  }
+
+  function onTapBlank(idx) {
+    if (clickLock) return;
+    if (idx < 0 || idx >= blanks.length) return;
+    if (blanks[idx].filled !== null) return;
+    setActiveBlank(idx);
+  }
+
+  function setActiveBlank(i) {
+    activeBlank = i;
+    blanks.forEach(function (b, k) {
+      if (b.el) b.el.classList.toggle("is-active", k === i && b.filled === null);
+    });
+    var hint = root.querySelector(".fc-blank-hint");
+    if (!hint) return;
+    if (i < 0) {
+      hint.textContent = "全部填好，点「继续」过关";
+    } else {
+      var b = blanks[i];
+      hint.textContent = "当前空：" + ((b.pos ? b.pos + " " : "") + (b.meaning || "（无语义）"));
+    }
+  }
+
+  function onPickTile(i) {
+    if (clickLock) return;
+    var tile = bank[i];
+    if (!tile || tile.used) return;
+    if (activeBlank < 0 || blanks[activeBlank].filled !== null) {
+      setActiveBlank(firstEmptyBlank());
+    }
+    if (activeBlank < 0) return;
+    var blank = blanks[activeBlank];
+    if (blank.filled !== null) return;
+
+    if (String(tile.surface).toLowerCase() === String(blank.answer).toLowerCase()) {
+      blank.filled = tile.surface;
+      if (blank.el) {
+        blank.el.textContent = tile.surface;
+        blank.el.classList.remove("is-active");
+        blank.el.classList.add("is-filled");
+      }
+      tile.used = true;
+      if (tile.el) {
+        tile.el.classList.add("is-used");
+        tile.el.setAttribute("disabled", "disabled");
+      }
+      speak(blank.answer, "en-US");
+      setActiveBlank(firstEmptyBlank());
+      updateClozeContinue();
+    } else {
+      if (tile.el) {
+        tile.el.classList.add("is-wrong");
+        setTimeout(function () { if (tile.el) tile.el.classList.remove("is-wrong"); }, 450);
+      }
+      if (blank.el) {
+        blank.el.classList.add("is-wrong");
+        setTimeout(function () { if (blank.el) blank.el.classList.remove("is-wrong"); }, 450);
+      }
+    }
+  }
+
+  function updateClozeContinue() {
+    var done = blanks.length > 0 && blanks.every(function (b) { return b.filled !== null; });
+    var btn = root.querySelector(".fc-btn-continue");
+    if (done) {
+      pendingAnswer = "good";
+      if (btn) btn.removeAttribute("disabled");
+    } else {
+      pendingAnswer = null;
+      if (btn) btn.setAttribute("disabled", "disabled");
+    }
+  }
+
   // ---------- 进词义页：先念单词，念完再念例句 ----------
   function playMeaningAudio() {
     // 清掉切卡时挂起的正面自动发音，避免和这里的顺序播放打架
@@ -325,8 +522,9 @@
     //      否则第二张卡点「下一词」毫无反应（disabled 按钮不触发 click，整个卡死）。
     //      以前整页重载会自然清掉，SPA 增量挂卡后 DOM 复用，必须手动复位。
     //    - 底部「继续」按钮重置为禁用，等选了选项再亮。
-    root.querySelectorAll(".fc-actions-back .fc-btn, .fc-actions-front .fc-btn")
-        .forEach(function (b) { b.removeAttribute("disabled"); });
+    root.querySelectorAll(".fc-actions button").forEach(function (b) {
+      b.removeAttribute("disabled");
+    });
     var continueBtn = root.querySelector(".fc-btn-continue");
     if (continueBtn) {
       continueBtn.setAttribute("disabled", "disabled");
@@ -335,7 +533,11 @@
     // 6. 词义页所有模式都渲染 —— choice / cloze 答错要切到 back 看完整词义，
     //    此时 .fc-back 的词性 / 释义 / 例句 / 短语 / 词根必须已经填好。
     renderBackFace();
-    if (mode === "choice") {
+    if (mode === "passage") {
+      renderPassageRead();
+    } else if (mode === "passage_cloze") {
+      renderPassageCloze();
+    } else if (mode === "choice") {
       renderChoiceOptions();
     } else if (mode === "cloze") {
       renderCloze();
@@ -375,6 +577,26 @@
       return;
     }
 
+    // 2b. 语篇通读：点小喇叭 -> 朗读全文
+    var ttsPassage = e.target.closest('[data-role="tts-passage"]');
+    if (ttsPassage) {
+      e.stopPropagation();
+      var ptxt = "";
+      passageSegments().forEach(function (seg) {
+        ptxt += (seg.w !== undefined && seg.w !== null) ? (seg.w + " ") : (seg.t || "");
+      });
+      speak(ptxt, "en-US");
+      return;
+    }
+
+    // 2c. 语篇通读：点划线目标词 -> 浮释义 + 发音
+    var pwTarget = e.target.closest(".fc-pw");
+    if (pwTarget) {
+      e.stopPropagation();
+      showPassageTooltip(pwTarget);
+      return;
+    }
+
     // 3. 底部操作按钮
     var actionTarget = e.target.closest("[data-action]");
     if (!actionTarget) return;
@@ -384,6 +606,14 @@
     // 正面自评 -> 进词义页
     if (act === "to-meaning") {
       toMeaning(actionTarget.getAttribute("data-pre"));
+      return;
+    }
+
+    // 语篇通读 -> 进入单词背诵
+    if (act === "start-drill") {
+      if (actionTarget.hasAttribute("disabled")) return;
+      actionTarget.setAttribute("disabled", "disabled");
+      FC.answer("good");
       return;
     }
 

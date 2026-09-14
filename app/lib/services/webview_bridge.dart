@@ -55,20 +55,18 @@ class WebViewBridge {
 
   /// 组装一张卡牌的完整 HTML 页面 —— SPA 骨架页，只在会话开始时 load 一次。
   ///
-  /// [session] 会话上下文：{phase, mode, round}
-  /// [choices] 干扰项：[{text, right}]
-  ///
   /// 骨架页内不含真实卡片数据；每切一张卡由 [mountCard] 增量灌入。
+  /// 语篇两阶段没有具体卡片，card 传 null。
   String buildCardPage({
     required Book book,
     required CardTemplate template,
-    required FlashCard card,
+    FlashCard? card,
     required int index,
     required int total,
     Map<String, dynamic> session = const {},
     List<Map<String, String>> choices = const [],
   }) {
-    _currentCardId = card.id;
+    _currentCardId = card?.id;
 
     final fields = <String, dynamic>{};
     for (final f in book.fieldsOrder) {
@@ -96,41 +94,76 @@ class WebViewBridge {
     );
   }
 
-  /// SPA 增量挂卡：把一张卡的数据灌进已加载的骨架页，不重载页面。
+  /// SPA 增量挂卡：把一张卡（或一章语篇）的数据灌进已加载的骨架页，不重载页面。
   Future<void> mountCard(
     WebViewController ctrl, {
     required Book book,
     required CardTemplate template,
-    required FlashCard card,
+    FlashCard? card,
+    Passage? passage,
+    List<FlashCard> passageCards = const [],
     required int index,
     required int total,
     Map<String, dynamic> session = const {},
     List<Map<String, String>> choices = const [],
   }) async {
-    _currentCardId = card.id;
+    _currentCardId = card?.id;
 
     final fields = <String, dynamic>{};
     for (final f in book.fieldsOrder) {
-      fields[f] = card.fields[f] ?? '';
+      fields[f] = '';
     }
-    card.fields.forEach((k, v) => fields[k] = v);
+    card?.fields.forEach((k, v) => fields[k] = v);
 
     final cardJson = <String, dynamic>{
-      'id': card.id,
+      'id': card?.id ?? '',
       'fields': fields,
-      'state': store.stateOf(card.id).toJson(),
+      'state':
+          card == null ? <String, dynamic>{} : store.stateOf(card.id).toJson(),
       'index': index,
       'total': total,
       'session': session,
       'choices': choices,
+      if (passage != null && passage.hasContent)
+        'passage': passageJson(passage, passageCards),
     };
 
     final jsonStr = TemplateEngine.jsonForJs(cardJson);
-    final js =
-        "window.Flashcard.mountCard('$jsonStr');";
+    final js = "window.Flashcard.mountCard('$jsonStr');";
     await ctrl.runJavaScript(js);
   }
 
+  /// 把语篇解析成模板友好的 segments，并把每个目标词关联到本章卡片（词性/释义）。
+  /// 模板拿到的是现成结构，不需要自己解析 [word] / [surface|lemma]。
+  Map<String, dynamic> passageJson(Passage p, List<FlashCard> cards) {
+    final byWord = <String, FlashCard>{};
+    for (final c in cards) {
+      byWord[c.word.toLowerCase()] = c;
+      final w = (c.fields['word'] ?? '').toString().toLowerCase();
+      if (w.isNotEmpty) byWord[w] = c;
+    }
+
+    final segs = <Map<String, dynamic>>[];
+    for (final s in p.segments) {
+      if (s.isWord) {
+        final c = byWord[(s.lemma ?? '').toLowerCase()];
+        segs.add({
+          'w': s.surface,
+          'lemma': s.lemma,
+          'pos': (c?.fields['pos'] ?? '').toString(),
+          'meaning': (c?.fields['meaning'] ?? '').toString(),
+        });
+      } else {
+        segs.add({'t': s.text});
+      }
+    }
+
+    return {
+      'title': p.title,
+      'cn': p.cn,
+      'segments': segs,
+    };
+  }
 
   /// 处理卡牌脚本发来的一条消息
   Future<void> handleMessage(String raw) async {

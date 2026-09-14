@@ -117,6 +117,7 @@ class HomeScreenState extends State<HomeScreen> {
           template: tpl,
           store: widget.store,
           settings: widget.settings,
+          passage: b.passage,
         ),
       ),
     ).then((_) => refresh());

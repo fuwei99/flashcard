@@ -112,6 +112,31 @@
     <div class="fc-options" data-for="cloze"></div>
   </section>
 
+  <!-- ============ passage · 语篇通读（辅助记忆） ============ -->
+  <section class="fc-face fc-passage">
+    <div class="fc-passage-head">
+      <div class="fc-passage-title"></div>
+      <button class="fc-block-tts" data-role="tts-passage" title="朗读全文">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+    </div>
+    <div class="fc-passage-body"></div>
+    <div class="fc-passage-cn"></div>
+    <div class="fc-hint-text" style="margin-top:16px;">点按划线单词可查看释义</div>
+    <div class="fc-passage-tip"></div>
+    <div class="fc-spacer"></div>
+  </section>
+
+  <!-- ============ passage_cloze · 语篇选词（多邻国式填词） ============ -->
+  <section class="fc-face fc-passage-cloze">
+    <div class="fc-passage-head">
+      <div class="fc-passage-title"></div>
+    </div>
+    <div class="fc-cloze-passage"></div>
+    <div class="fc-blank-hint"></div>
+    <div class="fc-wordbank"></div>
+  </section>
+
   <!-- ============ read 正面三档按钮 ============ -->
   <footer class="fc-actions fc-actions-front">
     <button class="fc-btn fc-btn-again" data-action="to-meaning" data-pre="again">
@@ -135,7 +160,12 @@
     </button>
   </footer>
 
-  <!-- ============ choice / cloze 底部操作条（选完亮起「继续」） ============ -->
+  <!-- ============ passage 底部：进入单词背诵 ============ -->
+  <footer class="fc-actions fc-actions-passage">
+    <button class="fc-btn-primary" data-action="start-drill">进入单词背诵</button>
+  </footer>
+
+  <!-- ============ choice / cloze / 语篇选词 底部操作条（选完亮起「继续」） ============ -->
   <footer class="fc-actions fc-actions-next">
     <button class="fc-btn-continue" data-action="submit" disabled>
       <span>继续</span>

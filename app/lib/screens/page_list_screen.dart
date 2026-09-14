@@ -19,6 +19,7 @@ class PageListScreen extends StatelessWidget {
   final CardTemplate? template;
   final CardStore store;
   final StudySettings settings;
+  final Passage? passage;
 
   const PageListScreen({
     super.key,
@@ -28,6 +29,7 @@ class PageListScreen extends StatelessWidget {
     required this.template,
     required this.store,
     required this.settings,
+    this.passage,
   });
 
   @override
@@ -51,6 +53,7 @@ class PageListScreen extends StatelessWidget {
         template: template,
         store: store,
         settings: settings,
+        passage: passage,
       ),
     );
   }
@@ -64,6 +67,7 @@ class PageListBody extends StatelessWidget {
   final CardTemplate? template;
   final CardStore store;
   final StudySettings settings;
+  final Passage? passage;
 
   const PageListBody({
     super.key,
@@ -73,6 +77,7 @@ class PageListBody extends StatelessWidget {
     required this.template,
     required this.store,
     required this.settings,
+    this.passage,
   });
 
   void _startReview(BuildContext context, bool shuffle) {
@@ -99,6 +104,7 @@ class PageListBody extends StatelessWidget {
           template: template!,
           store: store,
           settings: settings,
+          passage: passage,
         ),
       ),
     );

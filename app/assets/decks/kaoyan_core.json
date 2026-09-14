@@ -273,7 +273,12 @@
           "syllable": "in·her·ent",
           "word": "inherent"
         }
-      ]
+      ],
+      "passage": {
+        "title": "A Tight New Policy",
+        "text": "The company tried to [impose] a strict new policy. The [inherent] problems made it hard to [comply], and the situation began to [deteriorate]. A manager feared the dispute would [provoke] a strike, but cooler heads [prevailed|prevail]. In the end a [feasible] plan was [endorsed|endorse], though the change was [subtle] and only [intensive] talks could secure it.",
+        "cn": "公司试图[强加]一项严格的新政策。[固有]的问题让人难以[遵从]，局面开始[恶化]。一位经理担心这场纠纷会[激起]罢工，但冷静的一方[占了上风]。最终一项[可行]的方案获得[背书]，不过变化很[微妙]，只有[密集]的商谈才能敲定。"
+      }
     },
     {
       "chapter_id": "ch02",
@@ -523,7 +528,12 @@
           "syllable": "with·stand",
           "word": "withstand"
         }
-      ]
+      ],
+      "passage": {
+        "title": "A Tentative Plan",
+        "text": "Her motives remained [obscure] and her answer [ambiguous]. The [notorious] firm gave a [plausible] excuse, but it could not [restrain] the critics. Young workers are especially [susceptible] to such talk; they made a [tentative] plan and tried to [withstand] the pressure. She was [versatile] yet felt [vulnerable].",
+        "cn": "她的动机依然[晦涩]，回答也[模棱两可]。[声名狼藉]的公司给出了[貌似合理]的借口，却无法[约束]批评者。年轻员工尤其[易受]这类言论影响；他们做了一份[试探性]的计划，试图[顶住]压力。她[多才多艺]，却又感到[脆弱]。"
+      }
     }
   ]
 }

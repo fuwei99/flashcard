@@ -558,3 +558,183 @@ html, body {
 .fc-btn-continue:not([disabled]) .fc-continue-line {
   display: none;
 }
+
+/* ============================================================
+   语篇（passage / passage_cloze）
+   ============================================================ */
+.fc-root[data-mode="passage"] .fc-passage {
+  display: block;
+}
+.fc-root[data-mode="passage_cloze"] .fc-passage-cloze {
+  display: flex;
+  flex-direction: column;
+}
+.fc-root[data-mode="passage"] .fc-actions-passage {
+  display: flex;
+}
+.fc-root[data-mode="passage_cloze"] .fc-actions-next {
+  display: flex;
+}
+
+.fc-passage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.fc-passage-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.2px;
+}
+.fc-passage-body {
+  font-size: 18px;
+  line-height: 1.95;
+  color: var(--txt-main);
+}
+.fc-passage-cn {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--txt-sub);
+}
+
+/* 目标词：下划线 + 点按浮释义 */
+.fc-pw {
+  color: var(--teal);
+  font-weight: 700;
+  border-bottom: 2px solid var(--teal-border);
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+.fc-pw:active {
+  background: var(--teal-soft);
+}
+
+.fc-passage-tip {
+  display: none;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--bg-card);
+  border: 1px solid var(--teal-border);
+}
+.fc-passage-tip.show {
+  display: block;
+  animation: fcFade 0.18s ease;
+}
+.fc-tip-word {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffffff;
+}
+.fc-tip-mean {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--txt-sub);
+  line-height: 1.5;
+}
+
+@keyframes fcFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 语篇页主按钮 */
+.fc-btn-primary {
+  flex: 1;
+  height: 54px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: var(--teal);
+  color: #0d1517;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 199, 149, 0.35);
+}
+.fc-btn-primary:active {
+  transform: scale(0.985);
+}
+.fc-btn-primary[disabled] {
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* ---------- 语篇选词 ---------- */
+.fc-cloze-passage {
+  font-size: 18px;
+  line-height: 2.15;
+  color: var(--txt-main);
+}
+.fc-blank {
+  display: inline-block;
+  min-width: 72px;
+  text-align: center;
+  color: var(--txt-dim);
+  border-bottom: 2px solid var(--line-strong);
+  margin: 0 3px;
+  padding: 0 4px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fc-blank.is-active {
+  color: var(--teal);
+  border-bottom-color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 4px 4px 0 0;
+}
+.fc-blank.is-filled {
+  color: #ffffff;
+  border-bottom-color: var(--teal);
+}
+.fc-blank.is-wrong {
+  color: var(--red);
+  border-bottom-color: var(--red);
+  animation: fcShake 0.3s;
+}
+@keyframes fcShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.fc-blank-hint {
+  margin: 16px 0 12px;
+  font-size: 13px;
+  color: var(--txt-sub);
+  min-height: 18px;
+}
+
+.fc-wordbank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.fc-bank-tile {
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line-strong);
+  color: var(--txt-main);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fc-bank-tile:active {
+  transform: scale(0.95);
+  background: var(--bg-card-hover);
+}
+.fc-bank-tile.is-used {
+  opacity: 0.28;
+  pointer-events: none;
+}
+.fc-bank-tile.is-wrong {
+  border-color: var(--red);
+  color: var(--red);
+  animation: fcShake 0.3s;
+}

@@ -232,9 +232,15 @@ jobs:
           path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
 
-      # tag 推送时自动建 Release
+      # tag 推送时自动建 Release（版本号 = tag，如 v0.3.0）
       - name: Release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: flashcard ${{ github.ref_name }}
+          body: |
+            flashcard ${{ github.ref_name }} · arm64-v8a release APK
+
+            - 语篇（passage）：章首短文通读 + 语篇选词（多邻国式填词）
+            - 设置可开关：语义选项 / 短句选词 / 语篇选词
           files: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
