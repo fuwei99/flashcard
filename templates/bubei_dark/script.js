@@ -153,6 +153,10 @@
 
   // ---------- 用户点击选项处理（图 1 红绿反馈） ----------
   function handleChoicePick(pickedBtn, box, isRight) {
+    // 连点锁：切卡后 250ms 内的幽灵点击，即使落在选项上也一律忽略。
+    // （root 上的委托监听检查了 clickLock，但选项按钮是直接绑的，
+    //   事件在 target 阶段先于 root 冒泡执行，必须在这里再挡一道。）
+    if (clickLock) return;
     if (pendingAnswer !== null) return;
     pendingAnswer = isRight ? "good" : "again";
 
@@ -170,6 +174,15 @@
       }
     });
 
+    // 答错 -> 切到词义页，把词 + 音标 + 词性 + 释义 + 例句完整看一遍（BUG-009）。
+    //         这张卡后面仍会被重考，但中间不能只是干巴巴重复「选错 -> 下一题」。
+    // 答对 -> 停在原题看红绿反馈，直接「继续」。
+    if (!isRight) {
+      root.setAttribute("data-state", "back");
+      var backEl = root.querySelector(".fc-back");
+      if (backEl) backEl.scrollTop = 0;
+    }
+
     // 激活底部的「继续」大按钮
     var continueBtn = root.querySelector(".fc-btn-continue");
     if (continueBtn) {
@@ -183,7 +196,10 @@
     var w = String(fields.word || "");
     var blank = raw;
     if (w) {
-      try { blank = raw.replace(new RegExp(w, "ig"), "______"); }
+      // 转义正则元字符（a.m. / e.g. / (up)on 等），并只替换「整词、首次」。
+      // 否则 act 会把 practice 挖成 pr______ice，new RegExp 还可能直接抛异常。
+      var safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      try { blank = raw.replace(new RegExp("\\b" + safe + "\\b", "i"), "______"); }
       catch (e) { blank = raw; }
     }
     var box = root.querySelector(".fc-cloze-box");
@@ -280,17 +296,18 @@
       continueBtn.setAttribute("disabled", "disabled");
     }
 
-    // 6. 分模式渲染考法区域
-    if (mode === "read") {
-      renderBackFace();
-    } else if (mode === "choice") {
+    // 6. 词义页所有模式都渲染 —— choice / cloze 答错要切到 back 看完整词义，
+    //    此时 .fc-back 的词性 / 释义 / 例句 / 短语 / 词根必须已经填好。
+    renderBackFace();
+    if (mode === "choice") {
       renderChoiceOptions();
     } else if (mode === "cloze") {
       renderCloze();
     }
 
     // 7. 自动播放当前单词发音（用户强烈需求！）
-    if (curWord) {
+    //    cloze 例外：答案就是这个单词，一进卡就念 = 直接泄题。
+    if (curWord && mode !== "cloze") {
       setTimeout(function () {
         speak(curWord, "en-US");
       }, 70);
@@ -380,6 +397,11 @@
 
   // ---------- 首次启动 ----------
   function boot() {
+    // 真机：骨架页首帧 __FLASHCARD_CARD__ 是空壳（id 为空），先不渲染空卡，
+    //       等原生 mountCard 灌入真实数据（onMount 回调里再 mount）。
+    // 预览 mock：没有注入 __FLASHCARD_CARD__，直接渲染。
+    var injected = window.__FLASHCARD_CARD__;
+    if (injected && !injected.id) return;
     mount();
     console.log("[bubei_dark v2] mounted mode=" + mode);
   }

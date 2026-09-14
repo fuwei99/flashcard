@@ -63,7 +63,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final step = _session.current;
     if (step == null) return;
 
-    final rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
+    // fromKey 对未知评分会 throw，且 _onMsg 是 async 没有捕获 —— 兜底成 good，
+    // 避免一条脏消息把整个会话打断（例如 data-rating="next" 被误回传）。
+    Rating rating;
+    try {
+      rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
+    } catch (_) {
+      rating = Rating.good;
+    }
 
     if (_session.phase == SessionPhase.learn) {
       _session.submitLearn(rating);
