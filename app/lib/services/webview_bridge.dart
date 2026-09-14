@@ -40,9 +40,13 @@ class WebViewBridge {
       : tts = tts ?? FlutterTts();
 
   Future<void> initTts() async {
-    await tts.setLanguage('en-US');
-    await tts.setSpeechRate(0.48);
-    await tts.setPitch(1.0);
+    try {
+      await tts.setLanguage('en-US');
+      await tts.setSpeechRate(0.48);
+      await tts.setVolume(1.0);
+      await tts.setPitch(1.0);
+      await tts.awaitSpeakCompletion(true);
+    } catch (_) {}
   }
 
   /// 组装一张卡牌的完整 HTML 页面 —— SPA 骨架页，只在会话开始时 load 一次。
@@ -143,9 +147,11 @@ class WebViewBridge {
         final text = _plainText((data['text'] ?? '').toString());
         final lang = (data['lang'] ?? 'en-US').toString();
         if (text.isNotEmpty) {
-          await tts.stop();
-          await tts.setLanguage(lang);
-          await tts.speak(text);
+          try {
+            await tts.stop();
+            await tts.setLanguage(lang);
+            await tts.speak(text);
+          } catch (_) {}
         }
         break;
 

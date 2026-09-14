@@ -117,7 +117,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   /// 生成干扰项
-  ///   choice : 中文义 —— 必须带词性，否则光看释义没法选
+  ///   choice : 中文义 —— 必须带词性，且带上该项原本的英文单词，便于选错后揭晓
   ///   cloze  : 英文词
   List<Map<String, String>> _choicesFor(StudyStep step) {
     final all = widget.book.allCards;
@@ -131,6 +131,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     String posOf(FlashCard c) =>
         isChoice ? (c.fields['pos'] ?? '').toString().trim() : '';
 
+    String wordOf(FlashCard c) =>
+        (c.fields['word'] ?? c.word).toString().trim();
+
     final rightText = textOf(cur);
     if (rightText.isEmpty) return const [];
 
@@ -141,12 +144,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
       final t = textOf(c);
       if (t.isEmpty || seen.contains(t)) continue;
       seen.add(t);
-      pool.add({'text': t, 'pos': posOf(c), 'right': 'false'});
+      pool.add({
+        'word': wordOf(c),
+        'text': t,
+        'pos': posOf(c),
+        'right': 'false',
+      });
     }
     pool.shuffle();
 
     final opts = <Map<String, String>>[
-      {'text': rightText, 'pos': posOf(cur), 'right': 'true'},
+      {
+        'word': wordOf(cur),
+        'text': rightText,
+        'pos': posOf(cur),
+        'right': 'true',
+      },
       ...pool.take(3),
     ]..shuffle();
 
