@@ -56,11 +56,18 @@ class StudySettings {
   // 调试日志
   static const _kTtsLog = 'fc_tts_log';
 
+  // 每日复习上限
+  static const _kReviewLimit = 'fc_review_limit';
+
   /// 每日单词背诵量：背完 = 单词过关 😁
   int wordDailyLimit = 20;
 
   /// 每日卡牌背诵量：背完 = 卡牌过关 😁
   int cardDailyLimit = 20;
+
+  /// 每日复习上限：到期词一天最多复习这么多，超出的顺延到明天。
+  /// 默认 200。复习不吃 [wordDailyLimit] 那档，单独算。
+  int reviewDailyLimit = 200;
 
   String todayDate = '';
   int todayWordDone = 0;
@@ -119,6 +126,7 @@ class StudySettings {
     final legacyLimit = _prefs!.getInt(_kLegacyLimit);
     wordDailyLimit = _prefs!.getInt(_kWordLimit) ?? legacyLimit ?? 20;
     cardDailyLimit = _prefs!.getInt(_kCardLimit) ?? legacyLimit ?? 20;
+    reviewDailyLimit = _prefs!.getInt(_kReviewLimit) ?? 200;
 
     todayDate = _prefs!.getString(_kTodayDate) ?? '';
     todayWordDone =
@@ -155,6 +163,7 @@ class StudySettings {
   Map<String, dynamic> toJson() => {
         'word_daily_limit': wordDailyLimit,
         'card_daily_limit': cardDailyLimit,
+        'review_daily_limit': reviewDailyLimit,
         'today_date': todayDate,
         'today_word_done': todayWordDone,
         'today_card_done': todayCardDone,
@@ -188,6 +197,7 @@ class StudySettings {
 
     wordDailyLimit = i('word_daily_limit', wordDailyLimit).clamp(1, 999);
     cardDailyLimit = i('card_daily_limit', cardDailyLimit).clamp(1, 999);
+    reviewDailyLimit = i('review_daily_limit', reviewDailyLimit).clamp(1, 9999);
     todayDate = s('today_date', todayDate);
     todayWordDone = i('today_word_done', todayWordDone);
     todayCardDone = i('today_card_done', todayCardDone);
@@ -213,6 +223,7 @@ class StudySettings {
     DataDir.writeJsonSync(_fileName, toJson());
     _prefs?.setInt(_kWordLimit, wordDailyLimit);
     _prefs?.setInt(_kCardLimit, cardDailyLimit);
+    _prefs?.setInt(_kReviewLimit, reviewDailyLimit);
     _prefs?.setString(_kTodayDate, todayDate);
     _prefs?.setInt(_kTodayWordDone, todayWordDone);
     _prefs?.setInt(_kTodayCardDone, todayCardDone);
@@ -267,6 +278,12 @@ class StudySettings {
 
   Future<void> setCardDailyLimit(int n) async {
     cardDailyLimit = n.clamp(1, 999);
+    _persist();
+  }
+
+  /// 每日复习上限：填多少就是多少，超出的顺延明天
+  Future<void> setReviewDailyLimit(int n) async {
+    reviewDailyLimit = n.clamp(1, 9999);
     _persist();
   }
 

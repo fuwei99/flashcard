@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/data_dir.dart';
 import '../services/reminder_service.dart';
@@ -19,12 +20,21 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late int _wordLimit;
   late int _cardLimit;
+  late final TextEditingController _reviewCtrl;
 
   @override
   void initState() {
     super.initState();
     _wordLimit = widget.settings.wordDailyLimit;
     _cardLimit = widget.settings.cardDailyLimit;
+    _reviewCtrl =
+        TextEditingController(text: '${widget.settings.reviewDailyLimit}');
+  }
+
+  @override
+  void dispose() {
+    _reviewCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _saveWord() async {
@@ -36,6 +46,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveCard() async {
     await widget.settings.setCardDailyLimit(_cardLimit);
     if (!mounted) return;
+    setState(() {});
+  }
+
+  /// 复习上限：填空式，填多少就是多少；填了坨不是数字的，滚回原值
+  Future<void> _saveReviewLimit() async {
+    final n = int.tryParse(_reviewCtrl.text.trim());
+    if (n == null || n <= 0) {
+      _reviewCtrl.text = '${widget.settings.reviewDailyLimit}';
+      return;
+    }
+    await widget.settings.setReviewDailyLimit(n);
+    if (!mounted) return;
+    _reviewCtrl.text = '${widget.settings.reviewDailyLimit}';
     setState(() {});
   }
 
@@ -79,6 +102,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _saveCard();
             },
           ),
+          const SizedBox(height: 24),
+          _sectionLabel('每日复习上限'),
+          const SizedBox(height: 10),
+          _reviewLimitCard(),
           const SizedBox(height: 24),
           _sectionLabel('卡片类型'),
           const SizedBox(height: 10),
@@ -176,6 +203,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: sel ? const Color(0xFF00C08B) : const Color(0xFF8C9DA2),
                 fontSize: 13,
                 fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+
+  /// 每日复习上限：填空式，填多少就是多少
+  Widget _reviewLimitCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0x0BFFFFFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('到期词每天最多复习多少个',
+              style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 15)),
+          const SizedBox(height: 4),
+          const Text('超出的顺延到明天；复习不吃「每日单词量」那档',
+              style: TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _reviewCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: const TextStyle(
+                      color: Color(0xFFF0F4F5),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: '200',
+                    hintStyle: TextStyle(color: Color(0xFF54666C)),
+                    suffixText: '词 / 天',
+                    suffixStyle: TextStyle(color: Color(0xFF8C9DA2)),
+                    enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0x22FFFFFF))),
+                    focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF00C08B))),
+                  ),
+                  onSubmitted: (_) => _saveReviewLimit(),
+                  onTapOutside: (_) => _saveReviewLimit(),
+                ),
+              ),
+              const SizedBox(width: 14),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00C08B),
+                  foregroundColor: const Color(0xFF141D1F),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                onPressed: _saveReviewLimit,
+                child: const Text('保存',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

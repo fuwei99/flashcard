@@ -45,6 +45,14 @@ class _Group {
       chapter != null ? chapter!.cards : inlineCards;
 }
 
+/// 全局排序用的「到期引用」：一张到期卡 + 它属于哪个分组
+class _DueRef {
+  final DateTime? due;
+  final _Group group;
+  final String cardId;
+  const _DueRef(this.due, this.group, this.cardId);
+}
+
 class StudyPlanner {
   static List<_Group> _groups(Book b) {
     if (b.hasChapters) {
@@ -69,47 +77,84 @@ class StudyPlanner {
   }
 
   /// 复习段：书 → 章，一章一个单元，语篇只挖该章今天到期的词。
-  /// 一章的到期词**不拆批**，全在这个单元里连续背。
-  static List<StudyUnit> reviewUnits(List<Book> books, CardStore store) {
-    final out = <StudyUnit>[];
+  ///
+  /// [limit] = 今日复习上限（null/<=0 = 不限）。**全局**排序后截断：
+  /// 先按到期时间升序把所有到期词排一遍，取前 limit 个，再按书→章原顺序
+  /// 重新分组。没被取到的卡 due 不变，明天照旧在队列里 —— 天然顺延。
+  static List<StudyUnit> reviewUnits(List<Book> books, CardStore store,
+      {int? limit}) {
+    // 一次生成、全程复用同一批 _Group 实例（下面拿它当 Map key，靠 identity）
+    final groups = <_Group>[];
     for (final b in books) {
-      for (final g in _groups(b)) {
-        // ① 先只用 id 问「这章有到期的吗」—— 不读章节文件
-        final ids = g.ids;
-        if (ids.isEmpty) continue;
-        final dueIds = store.reviewDue(ids).toSet();
-        if (dueIds.isEmpty) continue;
+      groups.addAll(_groups(b));
+    }
 
-        // ② 真有到期的，才把这一章读进来
-        final cards = g.cards;
-        if (cards.isEmpty) continue;
-
-        final due = cards.where((c) => dueIds.contains(c.id)).toList()
-          ..sort((a, b2) {
-            final da = store.stateOf(a.id).due;
-            final db = store.stateOf(b2.id).due;
-            if (da == null && db == null) return 0;
-            if (da == null) return -1;
-            if (db == null) return 1;
-            return da.compareTo(db);
-          });
-
-        // 语篇只挖「该章今天到期、且语篇里确实出现」的词
-        final blanks =
-            due.map(_lemmaOf).toSet().intersection(_passageLemmas(g.passage));
-        // 一个都没命中就不挂语篇，避免出现 0 空格的空页面
-        final withPassage = blanks.isNotEmpty;
-
-        out.add(StudyUnit(
-          passage: withPassage ? g.passage : null,
-          cards: due,
-          blankLemmas: withPassage ? blanks : null,
-          readFirst: false,
-          isReview: true,
-          passageCards: cards,
-          title: g.title,
-        ));
+    // ① 先只用 id 问「这章有到期的吗」—— 不读章节文件
+    final refs = <_DueRef>[];
+    for (final g in groups) {
+      final ids = g.ids;
+      if (ids.isEmpty) continue;
+      for (final id in store.reviewDue(ids)) {
+        refs.add(_DueRef(store.stateOf(id).due, g, id));
       }
+    }
+    if (refs.isEmpty) return const [];
+
+    // ② 全局按到期时间升序：最该复习的排前面
+    refs.sort((a, b) {
+      final da = a.due;
+      final db = b.due;
+      if (da == null && db == null) return 0;
+      if (da == null) return -1;
+      if (db == null) return 1;
+      return da.compareTo(db);
+    });
+
+    // ③ 全局截断：超出的今天不背，明天还在队列里
+    final chosen =
+        (limit == null || limit <= 0) ? refs : refs.take(limit).toList();
+
+    // ④ 按书→章原顺序重新分组（同一章的词仍然连续背）
+    final byGroup = <_Group, List<String>>{};
+    for (final r in chosen) {
+      (byGroup[r.group] ??= <String>[]).add(r.cardId);
+    }
+
+    final out = <StudyUnit>[];
+    for (final g in groups) {
+      final picked = byGroup[g];
+      if (picked == null || picked.isEmpty) continue;
+
+      // 到这一步才真读盘
+      final cards = g.cards;
+      if (cards.isEmpty) continue;
+
+      final idSet = picked.toSet();
+      final due = cards.where((c) => idSet.contains(c.id)).toList()
+        ..sort((a, b2) {
+          final da = store.stateOf(a.id).due;
+          final db = store.stateOf(b2.id).due;
+          if (da == null && db == null) return 0;
+          if (da == null) return -1;
+          if (db == null) return 1;
+          return da.compareTo(db);
+        });
+
+      // 语篇只挖「该章今天到期、且语篇里确实出现」的词
+      final blanks =
+          due.map(_lemmaOf).toSet().intersection(_passageLemmas(g.passage));
+      // 一个都没命中就不挂语篇，避免出现 0 空格的空页面
+      final withPassage = blanks.isNotEmpty;
+
+      out.add(StudyUnit(
+        passage: withPassage ? g.passage : null,
+        cards: due,
+        blankLemmas: withPassage ? blanks : null,
+        readFirst: false,
+        isReview: true,
+        passageCards: cards,
+        title: g.title,
+      ));
     }
     return out;
   }
@@ -142,14 +187,16 @@ class StudyPlanner {
   }
 
   /// 单词总计划：复习段 + 新学段
+  /// [reviewLimit] 只作用于复习段（每日复习上限，null/<=0 = 不限）
   static List<StudyUnit> wordPlan({
     required List<Book> books,
     required CardStore store,
     required bool withReview,
     required bool withNew,
+    int? reviewLimit,
   }) {
     return [
-      if (withReview) ...reviewUnits(books, store),
+      if (withReview) ...reviewUnits(books, store, limit: reviewLimit),
       if (withNew) ...newUnits(books, store),
     ];
   }

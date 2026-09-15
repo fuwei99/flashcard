@@ -136,6 +136,7 @@ class HomeScreenState extends State<HomeScreen> {
       store: widget.store,
       withReview: true,
       withNew: false,
+      reviewLimit: widget.settings.reviewDailyLimit,
     );
     if (units.isEmpty) {
       _toast('今天没有要复习的$name 🎉');
@@ -220,6 +221,10 @@ class HomeScreenState extends State<HomeScreen> {
     final s = widget.settings;
     final wordBooks = _ofKind(LibraryKind.word);
     final cardBooks = _ofKind(LibraryKind.card);
+    final wordDue = _due(wordBooks);
+    // 按钮显示「实际会复习多少」= min(到期, 每日上限)
+    final wordReview =
+        wordDue > s.reviewDailyLimit ? s.reviewDailyLimit : wordDue;
 
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
@@ -250,7 +255,8 @@ class HomeScreenState extends State<HomeScreen> {
               _taskCard(
                 icon: Icons.menu_book,
                 title: '单词',
-                due: _due(wordBooks),
+                due: wordDue,
+                reviewCount: wordReview,
                 fresh: _fresh(wordBooks),
                 learned: _learned(wordBooks),
                 passed: s.wordPassed,
@@ -503,6 +509,7 @@ class HomeScreenState extends State<HomeScreen> {
     required IconData icon,
     required String title,
     required int due,
+    int? reviewCount,
     required int fresh,
     required int learned,
     required bool passed,
@@ -599,7 +606,10 @@ class HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: onReview,
-                    child: Text(due > 0 ? '开始复习($due)' : '开始复习',
+                    child: Text(
+                        (reviewCount ?? due) > 0
+                            ? '开始复习(${reviewCount ?? due})'
+                            : '开始复习',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   ),
                 ),
