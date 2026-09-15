@@ -49,7 +49,8 @@
           "sentence_cn": "这门课程要求在短时间内进行高强度学习。",
           "sentence_en": "The course requires <u>intensive</u> study over a short period.",
           "syllable": "in·ten·sive",
-          "word": "intensive"
+          "word": "intensive",
+          "meaning_plain": "密集的，加强的；集约的"
         },
         {
           "exam_tag": "考研高频词 · 重点辨析",
@@ -71,7 +72,8 @@
           "sentence_cn": "这两个概念之间有着微妙的差异。",
           "sentence_en": "There is a <u>subtle</u> difference between the two concepts.",
           "syllable": "sub·tle",
-          "word": "subtle"
+          "word": "subtle",
+          "meaning_plain": "微妙的；难以捉摸的；细致精妙的；敏锐的"
         },
         {
           "exam_tag": "社会类阅读高频词",
@@ -93,7 +95,8 @@
           "sentence_cn": "在压力之下，她的健康状况开始迅速恶化。",
           "sentence_en": "Her health began to <u>deteriorate</u> rapidly under the pressure.",
           "syllable": "de·te·ri·o·rate",
-          "word": "deteriorate"
+          "word": "deteriorate",
+          "meaning_plain": "恶化，变坏；退化"
         },
         {
           "exam_tag": "法律经济类高频词",
@@ -115,7 +118,8 @@
           "sentence_cn": "所有公司都必须遵守新的环保法规。",
           "sentence_en": "All companies must <u>comply</u> with the new environmental regulations.",
           "syllable": "com·ply",
-          "word": "comply"
+          "word": "comply",
+          "meaning_plain": "遵从，服从；答应，同意"
         },
         {
           "exam_tag": "政治经济类必考词",
@@ -141,7 +145,8 @@
           "sentence_cn": "政府决定对进口实施更严格的控制。",
           "sentence_en": "The government decided to <u>impose</u> stricter controls on imports.",
           "syllable": "im·pose",
-          "word": "impose"
+          "word": "impose",
+          "meaning_plain": "强加，施加；征收；把…强加于"
         },
         {
           "exam_tag": "考研高频词 · 熟词生义",
@@ -167,7 +172,8 @@
           "sentence_cn": "常识最终战胜了恐慌。",
           "sentence_en": "Common sense finally <u>prevailed</u> over panic.",
           "syllable": "pre·vail",
-          "word": "prevail"
+          "word": "prevail",
+          "meaning_plain": "盛行，流行；获胜，占优势"
         },
         {
           "exam_tag": "阅读态度题高频词",
@@ -193,7 +199,8 @@
           "sentence_cn": "该提案在学者中引发了激烈的争论。",
           "sentence_en": "The proposal <u>provoked</u> a fierce debate among scholars.",
           "syllable": "pro·voke",
-          "word": "provoke"
+          "word": "provoke",
+          "meaning_plain": "激怒，挑动；引起，激起"
         },
         {
           "exam_tag": "商业与政治类高频词",
@@ -219,7 +226,8 @@
           "sentence_cn": "几位著名科学家公开支持了这一新理论。",
           "sentence_en": "Several major scientists publicly <u>endorsed</u> the new theory.",
           "syllable": "en·dorse",
-          "word": "endorse"
+          "word": "endorse",
+          "meaning_plain": "赞同，支持；为代言；在背面签名"
         },
         {
           "exam_tag": "考研高频词 · 写作可用",
@@ -245,7 +253,8 @@
           "sentence_cn": "在一周内完成这个项目是不可行的。",
           "sentence_en": "It is not <u>feasible</u> to finish the project within a week.",
           "syllable": "fea·si·ble",
-          "word": "feasible"
+          "word": "feasible",
+          "meaning_plain": "可行的，行得通的；可能的"
         },
         {
           "exam_tag": "考研高频词 · 哲学社科类",
@@ -271,7 +280,8 @@
           "sentence_cn": "任何投资都存在固有的风险。",
           "sentence_en": "There are <u>inherent</u> risks in any investment.",
           "syllable": "in·her·ent",
-          "word": "inherent"
+          "word": "inherent",
+          "meaning_plain": "固有的，内在的，与生俱来的"
         }
       ],
       "passage": {
@@ -304,7 +314,8 @@
           "sentence_cn": "合同的细节对大多数员工来说仍然晦涩不清。",
           "sentence_en": "The details of the contract remained <u>obscure</u> to most employees.",
           "syllable": "ob·scure",
-          "word": "obscure"
+          "word": "obscure",
+          "meaning_plain": "adj. 模糊的；晦涩难懂的；无名的 vt. 使模糊；遮蔽"
         },
         {
           "exam_tag": "阅读态度题高频词",
@@ -326,7 +337,8 @@
           "sentence_cn": "他对我的提问的回答有些模棱两可。",
           "sentence_en": "His reply to my question was somewhat <u>ambiguous</u>.",
           "syllable": "am·big·u·ous",
-          "word": "ambiguous"
+          "word": "ambiguous",
+          "meaning_plain": "模棱两可的，含糊不清的；不明确的"
         },
         {
           "exam_tag": "阅读高频词 · 注意褒贬",
@@ -348,7 +360,8 @@
           "sentence_cn": "这座城市因交通拥堵和空气污染而声名狼藉。",
           "sentence_en": "The city is <u>notorious</u> for its heavy traffic and air pollution.",
           "syllable": "no·to·ri·ous",
-          "word": "notorious"
+          "word": "notorious",
+          "meaning_plain": "臭名昭著的，声名狼藉的"
         },
         {
           "exam_tag": "考研高频词 · 阅读推断题",
@@ -370,7 +383,8 @@
           "sentence_cn": "他的解释听起来似乎合理，但实际上是假的。",
           "sentence_en": "His explanation sounded <u>plausible</u> but was actually false.",
           "syllable": "plau·si·ble",
-          "word": "plausible"
+          "word": "plausible",
+          "meaning_plain": "似乎合理的，貌似可信的"
         },
         {
           "exam_tag": "考研高频词 · 完形常考",
@@ -396,7 +410,8 @@
           "sentence_cn": "听到这个消息时，她几乎抑制不住自己的眼泪。",
           "sentence_en": "She could hardly <u>restrain</u> her tears when hearing the news.",
           "syllable": "re·strain",
-          "word": "restrain"
+          "word": "restrain",
+          "meaning_plain": "抑制，克制；约束，管制"
         },
         {
           "exam_tag": "医学社会类高频词",
@@ -422,7 +437,8 @@
           "sentence_cn": "幼儿尤其容易感染这种病毒。",
           "sentence_en": "Young children are especially <u>susceptible</u> to this virus.",
           "syllable": "sus·cep·ti·ble",
-          "word": "susceptible"
+          "word": "susceptible",
+          "meaning_plain": "易受影响的；易患病的；敏感的"
         },
         {
           "exam_tag": "考研高频词 · 写作可用",
@@ -448,7 +464,8 @@
           "sentence_cn": "我们就这个问题达成了初步协议。",
           "sentence_en": "We have reached a <u>tentative</u> agreement on the issue.",
           "syllable": "ten·ta·tive",
-          "word": "tentative"
+          "word": "tentative",
+          "meaning_plain": "试探性的，暂时的；不确定的，犹豫的"
         },
         {
           "exam_tag": "考研高频词 · 人物描述",
@@ -474,7 +491,8 @@
           "sentence_cn": "他是一位多才多艺的演员，喜剧和悲剧都能演。",
           "sentence_en": "He is a <u>versatile</u> actor who can play both comedy and tragedy.",
           "syllable": "ver·sa·tile",
-          "word": "versatile"
+          "word": "versatile",
+          "meaning_plain": "多才多艺的；多功能的，用途广泛的"
         },
         {
           "exam_tag": "考研高频词 · 社会类阅读",
@@ -500,7 +518,8 @@
           "sentence_cn": "老年人更容易感染流感。",
           "sentence_en": "Elderly people are more <u>vulnerable</u> to the flu.",
           "syllable": "vul·ner·a·ble",
-          "word": "vulnerable"
+          "word": "vulnerable",
+          "meaning_plain": "易受伤害的；脆弱的；易受攻击的"
         },
         {
           "exam_tag": "考研高频词 · 科技类阅读",
@@ -526,7 +545,8 @@
           "sentence_cn": "这座桥被设计成能够承受强烈地震。",
           "sentence_en": "The bridge was designed to <u>withstand</u> powerful earthquakes.",
           "syllable": "with·stand",
-          "word": "withstand"
+          "word": "withstand",
+          "meaning_plain": "经受住，承受；抵挡，反抗"
         }
       ],
       "passage": {

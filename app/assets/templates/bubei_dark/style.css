@@ -738,3 +738,17 @@ html, body {
   color: var(--red);
   animation: fcShake 0.3s;
 }
+
+/* ------------------------------------------------------------
+   cloze 答错时，补在错误选项上的那行中文释义。
+   cloze 的选项本身只有英文单词，答错后要让你知道
+   「我刚才选的那个词是什么意思」，再点「继续」才进词义页。
+   ------------------------------------------------------------ */
+.fc-opt-btn .fc-opt-plain {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 400;
+  color: #FF7A7A;
+  opacity: 0.95;
+}

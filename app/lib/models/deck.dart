@@ -18,6 +18,28 @@ class FlashCard {
 
   String get word => (fields['word'] ?? id).toString();
 
+  /// 完整释义（带括号里的常用短语 / 搭配）—— **只在词义页显示**
+  String get meaningFull => (fields['meaning'] ?? '').toString().trim();
+
+  /// 纯中文释义：去掉括号里的短语，用于选义 / 填词 / 语篇选词的提示。
+  /// 否则「…(prevail over/against)」这种会把答案直接写在脸上。
+  /// 优先用 json 里显式给的 `meaning_plain`，没有就现场剥括号兜底。
+  String get meaningPlain {
+    final v = (fields['meaning_plain'] ?? '').toString().trim();
+    if (v.isNotEmpty) return v;
+    return stripParenthetical(meaningFull);
+  }
+
+  /// 去掉 () （） 里的内容（一般是常用短语 / 搭配 / 近义标注）。
+  /// 全剥没了就退回原串 —— 宁可留着，也别显示成空白。
+  static String stripParenthetical(String s) {
+    if (s.isEmpty) return s;
+    var t = s.replaceAll(RegExp(r'[（(][^（()）]*[)）]'), '');
+    t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    t = t.replaceAll(RegExp(r'[；;、,，]\s*$'), '').trim();
+    return t.isEmpty ? s : t;
+  }
+
   /// 序列化：id 单列，其余字段平铺
   Map<String, dynamic> toJson() => {'id': id, ...fields};
 }

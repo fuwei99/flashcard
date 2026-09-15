@@ -56,6 +56,7 @@
   var blanks = [];            // 语篇选词：空格
   var bank = [];              // 语篇选词：词库
   var activeBlank = -1;       // 语篇选词：光标所在空格
+  var wrongToMeaning = false; // 答错后：先看错误项释义，点「继续」才进词义页
 
   // ---------- 朗读纯文本 ----------
   function speak(text, lang) {
@@ -135,6 +136,7 @@
       btn.type = "button";
       var isRight = (c.right === "true" || c.right === true);
       btn.setAttribute("data-right", String(isRight));
+      btn.setAttribute("data-plain", c.plain || "");
 
       // 选完后揭晓的真实英文单词（图 1 核心亮点！）
       var revealEl = document.createElement("div");
@@ -192,21 +194,41 @@
       }
     });
 
-    // 答错 -> 切到词义页，把词 + 音标 + 词性 + 释义 + 例句完整看一遍（BUG-009）。
-    //         这张卡后面仍会被重考，但中间不能只是干巴巴重复「选错 -> 下一题」。
-    // 答对 -> 停在原题看红绿反馈，直接「继续」。
-    if (!isRight) {
-      root.setAttribute("data-state", "back");
-      var backEl = root.querySelector(".fc-back");
-      if (backEl) backEl.scrollTop = 0;
-      playMeaningAudio();
+    // 答完都读一遍正确选项。
+    // cloze 进卡时故意不读（答案就是这个单词，读了直接泄题）；这里已经答完，可以读了。
+    speak(fields.word || "", "en-US");
+
+    if (isRight) {
+      // 答对 -> 停在原题看绿色反馈，点「继续」进下一题
+      wrongToMeaning = false;
+    } else {
+      // 答错 -> **不要**立刻跳词义页：先把「你选的那个」的中文意思亮出来，
+      //         让你知道错在哪；点「继续」才去看完整词义。
+      if (mode === "cloze") revealPickedMeaning(pickedBtn);
+      wrongToMeaning = true;
     }
 
     // 激活底部的「继续」大按钮
     var continueBtn = root.querySelector(".fc-btn-continue");
     if (continueBtn) {
       continueBtn.removeAttribute("disabled");
+      var lbl = continueBtn.querySelector("span");
+      if (lbl) lbl.textContent = wrongToMeaning ? "看词义" : "继续";
     }
+  }
+
+  /// 在选错的那个选项上补一行中文释义，让用户知道自己选的是什么意思
+  function revealPickedMeaning(btn) {
+    if (!btn) return;
+    var plain = btn.getAttribute("data-plain") || "";
+    if (!plain) return;
+    var el = btn.querySelector(".fc-opt-plain");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "fc-opt-plain";
+      btn.appendChild(el);
+    }
+    el.textContent = plain;
   }
 
   // ---------- cloze 填空考法 ----------
@@ -235,6 +257,8 @@
       btn.type = "button";
       var isRight = (c.right === "true" || c.right === true);
       btn.setAttribute("data-right", String(isRight));
+      // cloze 的选项是英文词，答错时要补一行中文释义，让用户知道错在哪
+      btn.setAttribute("data-plain", c.plain || "");
 
       var mainEl = document.createElement("div");
       mainEl.className = "fc-opt-main";
@@ -350,7 +374,7 @@
         body.appendChild(b);
         blanks.push({
           el: b, answer: seg.w, pos: seg.pos || "",
-          meaning: seg.meaning || "", filled: null
+          meaning: seg.meaning || "", plain: seg.plain || "", filled: null
         });
         bank.push({ surface: seg.w, used: false, el: null });
       } else {
@@ -409,7 +433,9 @@
       hint.textContent = "全部填好，点「继续」过关";
     } else {
       var b = blanks[i];
-      hint.textContent = "当前空：" + ((b.pos ? b.pos + " " : "") + (b.meaning || "（无语义）"));
+      // 用纯中文释义：带短语的完整释义会把答案（这个词本身）写进提示里
+      hint.textContent = "当前空：" +
+          ((b.pos ? b.pos + " " : "") + (b.plain || b.meaning || "（无语义）"));
     }
   }
 
@@ -498,6 +524,7 @@
     choices = card.choices || [];
     preRating = "good";
     pendingAnswer = null;
+    wrongToMeaning = false;
 
     var curWord = fields.word || card.id || "";
     var curSyllable = fields.syllable || curWord;
@@ -549,6 +576,8 @@
     var continueBtn = root.querySelector(".fc-btn-continue");
     if (continueBtn) {
       continueBtn.setAttribute("disabled", "disabled");
+      var continueLbl = continueBtn.querySelector("span");
+      if (continueLbl) continueLbl.textContent = "继续";
     }
 
     // 6. 词义页所有模式都渲染 —— choice / cloze 答错要切到 back 看完整词义，
@@ -656,6 +685,14 @@
     if (act === "submit") {
       if (pendingAnswer === null) return;
       actionTarget.setAttribute("disabled", "disabled");
+      if (wrongToMeaning) {
+        // 答错后点「继续」= 进词义页（按 again 计）。
+        // 看完词义再点「下一词」才算真正作答 —— 这张卡后面仍会被重考。
+        wrongToMeaning = false;
+        pendingAnswer = null;
+        toMeaning("again");
+        return;
+      }
       FC.answer(pendingAnswer);
       return;
     }

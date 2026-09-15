@@ -220,8 +220,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final all = widget.distractorPool;
     final isChoice = step.mode == StudyMode.choice;
 
+    // 选义用「纯中文释义」（剥掉括号里的短语，否则答案直接写在脸上）
     String textOf(FlashCard c) => isChoice
-        ? (c.fields['meaning'] ?? '').toString().trim()
+        ? c.meaningPlain
         : (c.fields['word'] ?? c.word).toString().trim();
 
     String posOf(FlashCard c) =>
@@ -243,6 +244,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         'word': wordOf(c),
         'text': t,
         'pos': posOf(c),
+        'plain': c.meaningPlain,
         'right': 'false',
       });
     }
@@ -253,6 +255,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         'word': wordOf(cur),
         'text': rightText,
         'pos': posOf(cur),
+        'plain': cur.meaningPlain,
         'right': 'true',
       },
       ...pool.take(3),
