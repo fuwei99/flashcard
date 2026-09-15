@@ -155,6 +155,8 @@ jobs:
         run: |
           # 1) 解码 keystore 到 app/flashcard.p12
           echo "$KEYSTORE_B64" | base64 -d > android/app/flashcard.p12
+          test -s android/app/flashcard.p12 || { echo "::error::KEYSTORE_B64 解码为空"; exit 1; }
+          echo "keystore bytes: $(wc -c < android/app/flashcard.p12)"
 
           # 2) key.properties（Gradle root = android/）
           cat > android/key.properties <<EOF
@@ -225,10 +227,19 @@ jobs:
                   s = s.replace("android {", load_kts + "\nandroid {\n" + signing_kts, 1)
                   s = s.replace('signingConfig = signingConfigs.getByName("debug")',
                                 'signingConfig = signingConfigs.getByName("release")')
+                  if 'getByName("debug")' in s:
+                      raise SystemExit("kts: buildTypes 仍指向 debug 签名，补丁没生效")
               else:
                   s = s.replace("android {", load_groovy + "\nandroid {\n" + signing_groovy, 1)
+                  # Flutter 3.24 模板是 `signingConfig = signingConfigs.debug`（**带等号**），
+                  # 老补丁只匹配不带等号的写法，于是替换静默失败 —— APK 一直是 debug 签名，
+                  # 而 CI 每次都是新机器，debug keystore 每次重新生成，指纹每次都变。
+                  s = s.replace("signingConfig = signingConfigs.debug",
+                                "signingConfig = signingConfigs.release")
                   s = s.replace("signingConfig signingConfigs.debug",
                                 "signingConfig signingConfigs.release")
+                  if "signingConfigs.debug" in s:
+                      raise SystemExit("build.gradle 仍指向 debug 签名，补丁没生效")
               open(f, "w").write(s)
               print("signed:", f)
               done = True
@@ -248,13 +259,21 @@ jobs:
             --target-platform=android-arm64 \
             --split-per-abi
 
+      # 硬校验：必须是我们的 release keystore，不能是 CI 现场生成的 debug key
       - name: Verify signature
         working-directory: app
         run: |
+          set -e
           ls -lh build/app/outputs/flutter-apk/
           APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           BT=$(ls -d $ANDROID_HOME/build-tools/* 2>/dev/null | tail -1)
-          "$BT/apksigner" verify --print-certs "$APK" | head -8 || true
+          OUT=$("$BT/apksigner" verify --print-certs "$APK")
+          echo "$OUT"
+          if echo "$OUT" | grep -q "CN=Android Debug"; then
+            echo "::error::APK 仍是 debug 签名（每次 CI 指纹都变，无法覆盖安装）"
+            exit 1
+          fi
+          echo "signature OK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
