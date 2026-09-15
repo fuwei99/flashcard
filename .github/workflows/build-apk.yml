@@ -301,14 +301,28 @@ jobs:
           path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
 
-      # tag 推送时自动建 Release（版本号 = tag，如 v0.3.0）
-      - name: Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # 从 pubspec.yaml 抠版本号（去掉 +build 后缀），供 Release tag 用
+      - name: Resolve version
+        id: ver
+        working-directory: app
+        run: |
+          V=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "resolved version = $V"
+
+      # 管你打不打 tag、改不改版本号，只要 push 成功就出 Release。
+      # tag 名默认「v<版本号>-build<run_number>」保证每次唯一（不改版本号也不会撞），
+      # softprops 会在 tag 不存在时自动基于当前 commit 建 tag。
+      # 若本身就是推 tag，则直接用那个 tag 名。
+      - name: Publish Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
-          name: flashcard ${{ github.ref_name }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}-build{1}', steps.ver.outputs.version, github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('flashcard {0}', github.ref_name) || format('flashcard v{0} (build {1})', steps.ver.outputs.version, github.run_number) }}
           body: |
-            flashcard ${{ github.ref_name }} · arm64-v8a release APK
+            flashcard v${{ steps.ver.outputs.version }} · build ${{ github.run_number }} · arm64-v8a release APK
+            commit: `${{ github.sha }}`
 
             - 语篇（passage）：章首短文通读 + 语篇选词（多邻国式填词）
             - 连续打卡：连续天数 / 最长纪录 / 今日已打卡
@@ -316,3 +330,4 @@ jobs:
             - 背诵提醒：系统通知，每天固定时间提醒（默认 22:50，可自设）
             - 设置可开关：语义选项 / 短句选词 / 语篇选词；每日单词 / 卡牌背诵量
           files: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          make_latest: true
