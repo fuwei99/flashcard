@@ -680,18 +680,18 @@ html, body {
 
 /* ---------- 语篇选词 ---------- */
 .fc-cloze-passage {
-  font-size: 18px;
-  line-height: 2.15;
+  font-size: 16px;
+  line-height: 1.95;
   color: var(--txt-main);
 }
 .fc-blank {
   display: inline-block;
-  min-width: 72px;
+  min-width: 56px;
   text-align: center;
   color: var(--txt-dim);
   border-bottom: 2px solid var(--line-strong);
-  margin: 0 3px;
-  padding: 0 4px;
+  margin: 0 2px;
+  padding: 0 2px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
