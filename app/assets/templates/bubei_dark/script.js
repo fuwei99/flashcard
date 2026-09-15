@@ -330,6 +330,17 @@
 
     passageSegments().forEach(function (seg) {
       if (seg.w !== undefined && seg.w !== null) {
+        // 今天不复习这个词（blank === false）：只作划线词展示，不挖空、不进词库
+        if (seg.blank === false) {
+          var pw = document.createElement("span");
+          pw.className = "fc-pw";
+          pw.textContent = seg.w;
+          pw.setAttribute("data-word", seg.lemma || seg.w);
+          pw.setAttribute("data-pos", seg.pos || "");
+          pw.setAttribute("data-meaning", seg.meaning || "");
+          body.appendChild(pw);
+          return;
+        }
         var idx = blanks.length;
         var b = document.createElement("span");
         b.className = "fc-blank";
@@ -441,7 +452,8 @@
   }
 
   function updateClozeContinue() {
-    var done = blanks.length > 0 && blanks.every(function (b) { return b.filled !== null; });
+    // blanks 为空（本批词在语篇里一个都没命中）也视为完成，避免卡死
+    var done = blanks.every(function (b) { return b.filled !== null; });
     var btn = root.querySelector(".fc-btn-continue");
     if (done) {
       pendingAnswer = "good";

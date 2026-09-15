@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../models/book.dart';
 import '../models/deck.dart';
 import '../services/card_store.dart';
+import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import 'review_screen.dart';
 
@@ -99,12 +100,19 @@ class PageListBody extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
           title: title,
-          cards: list,
-          book: book,
+          units: [
+            StudyPlanner.singleUnit(
+              passage: passage,
+              cards: list,
+              passageCards: cards,
+              readFirst: true,
+            ),
+          ],
           template: template!,
+          fieldsOrder: book.fieldsOrder,
+          distractorPool: cards,
           store: store,
           settings: settings,
-          passage: passage,
           isCard: template!.engine == 'srs_basic',
         ),
       ),

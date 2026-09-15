@@ -307,14 +307,69 @@ class LibraryScreenState extends State<LibraryScreen> {
       body: books == null
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF00C08B)))
-          : books.isEmpty
-              ? _empty()
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                  itemCount: books.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 14),
-                  itemBuilder: (context, i) => _bookTile(books[i]),
-                ),
+          : _list(books),
+    );
+  }
+
+  Widget _list(List<Book> books) {
+    final showNotebook = widget.kind == LibraryKind.word;
+    if (books.isEmpty && !showNotebook) return _empty();
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemCount: books.length + (showNotebook ? 1 : 0),
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      itemBuilder: (context, i) {
+        if (showNotebook && i == 0) return _notebookTile();
+        return _bookTile(books[i - (showNotebook ? 1 : 0)]);
+      },
+    );
+  }
+
+  /// 生词本入口（只挂在「单词」页，首页不再放）
+  Widget _notebookTile() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _toast('生词本还在建设中 ⭐'),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0x0BFFFFFF),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0x14FFFFFF)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 62,
+              decoration: BoxDecoration(
+                color: const Color(0x1FFFCF5C),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.star_border,
+                  color: Color(0xFFFFCF5C), size: 24),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('生词本',
+                      style: TextStyle(
+                          color: Color(0xFFF0F4F5),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600)),
+                  SizedBox(height: 3),
+                  Text('收藏的单词 · 跨书汇总（开发中）',
+                      style:
+                          TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFF00C08B)),
+          ],
+        ),
+      ),
     );
   }
 

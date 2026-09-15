@@ -58,7 +58,7 @@ class WebViewBridge {
   /// 骨架页内不含真实卡片数据；每切一张卡由 [mountCard] 增量灌入。
   /// 语篇两阶段没有具体卡片，card 传 null。
   String buildCardPage({
-    required Book book,
+    required List<String> fieldsOrder,
     required CardTemplate template,
     FlashCard? card,
     required int index,
@@ -69,7 +69,7 @@ class WebViewBridge {
     _currentCardId = card?.id;
 
     final fields = <String, dynamic>{};
-    for (final f in book.fieldsOrder) {
+    for (final f in fieldsOrder) {
       fields[f] = '';
     }
 
@@ -97,11 +97,12 @@ class WebViewBridge {
   /// SPA 增量挂卡：把一张卡（或一章语篇）的数据灌进已加载的骨架页，不重载页面。
   Future<void> mountCard(
     WebViewController ctrl, {
-    required Book book,
+    required List<String> fieldsOrder,
     required CardTemplate template,
     FlashCard? card,
     Passage? passage,
     List<FlashCard> passageCards = const [],
+    Set<String>? blankLemmas,
     required int index,
     required int total,
     Map<String, dynamic> session = const {},
@@ -110,7 +111,7 @@ class WebViewBridge {
     _currentCardId = card?.id;
 
     final fields = <String, dynamic>{};
-    for (final f in book.fieldsOrder) {
+    for (final f in fieldsOrder) {
       fields[f] = '';
     }
     card?.fields.forEach((k, v) => fields[k] = v);
@@ -125,7 +126,7 @@ class WebViewBridge {
       'session': session,
       'choices': choices,
       if (passage != null && passage.hasContent)
-        'passage': passageJson(passage, passageCards),
+        'passage': passageJson(passage, passageCards, blankLemmas),
     };
 
     final jsonStr = TemplateEngine.jsonForJs(cardJson);
@@ -135,7 +136,9 @@ class WebViewBridge {
 
   /// 把语篇解析成模板友好的 segments，并把每个目标词关联到本章卡片（词性/释义）。
   /// 模板拿到的是现成结构，不需要自己解析 [word] / [surface|lemma]。
-  Map<String, dynamic> passageJson(Passage p, List<FlashCard> cards) {
+  /// [blankLemmas] 为 null 时挖全部标记词；否则只挖命中的 lemma。
+  Map<String, dynamic> passageJson(Passage p, List<FlashCard> cards,
+      [Set<String>? blankLemmas]) {
     final byWord = <String, FlashCard>{};
     for (final c in cards) {
       byWord[c.word.toLowerCase()] = c;
@@ -146,12 +149,14 @@ class WebViewBridge {
     final segs = <Map<String, dynamic>>[];
     for (final s in p.segments) {
       if (s.isWord) {
-        final c = byWord[(s.lemma ?? '').toLowerCase()];
+        final lemma = (s.lemma ?? '').toLowerCase();
+        final c = byWord[lemma];
         segs.add({
           'w': s.surface,
           'lemma': s.lemma,
           'pos': (c?.fields['pos'] ?? '').toString(),
           'meaning': (c?.fields['meaning'] ?? '').toString(),
+          'blank': blankLemmas == null || blankLemmas.contains(lemma),
         });
       } else {
         segs.add({'t': s.text});

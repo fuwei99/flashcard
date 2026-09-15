@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
+import '../models/study_session.dart';
 import '../services/card_store.dart';
 import '../services/deck_repository.dart';
+import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import 'library_screen.dart';
 import 'review_screen.dart';
@@ -72,39 +74,23 @@ class HomeScreenState extends State<HomeScreen> {
     return n;
   }
 
-  /// 开始某一类的背诵：优先复习到期，其次新学
-  void _start(LibraryKind k) {
-    final books = _ofKind(k);
-    final name = k == LibraryKind.word ? '单词' : 'Card';
+  List<FlashCard> _poolOf(List<Book> books) =>
+      books.expand((b) => b.allCards).toList();
+
+  /// 打开一组编排好的单元
+  void _openUnits(
+      List<Book> books, List<StudyUnit> units, String title, bool isCard) {
     if (books.isEmpty) {
-      _toast('还没有$name内容，去「$name」页导入');
+      _toast('还没有内容，去对应页面导入');
       return;
     }
-    for (final b in books) {
-      final ids = b.allCards.map((c) => c.id).toList();
-      final dueIds = widget.store.reviewDue(ids).toSet();
-      if (dueIds.isNotEmpty) {
-        final dueCards =
-            b.allCards.where((c) => dueIds.contains(c.id)).toList();
-        _open(b, dueCards, '${b.title} · 复习', k == LibraryKind.card);
-        return;
-      }
+    if (units.isEmpty) {
+      _toast('今天没有要背的卡片 🎉');
+      return;
     }
-    for (final b in books) {
-      final fresh =
-          b.allCards.where((c) => !widget.store.isLearned(c.id)).toList();
-      if (fresh.isNotEmpty) {
-        _open(b, fresh, '${b.title} · 新学', k == LibraryKind.card);
-        return;
-      }
-    }
-    _toast('$name今天没有要背的卡片 🎉');
-  }
-
-  void _open(Book b, List<FlashCard> cards, String title, bool isCard) {
-    final tpl = widget.templates[b.templateId];
+    final tpl = widget.templates[books.first.templateId];
     if (tpl == null) {
-      _toast('模板缺失：${b.templateId}');
+      _toast('模板缺失：${books.first.templateId}');
       return;
     }
     Navigator.push(
@@ -112,16 +98,99 @@ class HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
           title: title,
-          cards: cards,
-          book: b,
+          units: units,
           template: tpl,
+          fieldsOrder: books.first.fieldsOrder,
+          distractorPool: _poolOf(books),
           store: widget.store,
           settings: widget.settings,
-          passage: b.passage,
           isCard: isCard,
         ),
       ),
     ).then((_) => refresh());
+  }
+
+  /// 只复习到期词（跨牌组，语篇只挖今天要复习的词）
+  void _startReview(LibraryKind k) {
+    final books = _ofKind(k);
+    final name = k == LibraryKind.word ? '单词' : 'Card';
+    if (books.isEmpty) {
+      _toast('还没有$name内容，去「$name」页导入');
+      return;
+    }
+    final units = StudyPlanner.wordPlan(
+      books: books,
+      store: widget.store,
+      withReview: true,
+      withNew: false,
+    );
+    if (units.isEmpty) {
+      _toast('今天没有要复习的$name 🎉');
+      return;
+    }
+    _openUnits(books, units, '$name · 复习', k == LibraryKind.card);
+  }
+
+  /// 只背新词（跨牌组，按章带语篇）
+  void _startNew(LibraryKind k) {
+    final books = _ofKind(k);
+    final name = k == LibraryKind.word ? '单词' : 'Card';
+    if (books.isEmpty) {
+      _toast('还没有$name内容，去「$name」页导入');
+      return;
+    }
+    final units = StudyPlanner.wordPlan(
+      books: books,
+      store: widget.store,
+      withReview: false,
+      withNew: true,
+    );
+    if (units.isEmpty) {
+      _toast('$name今天没有要背的卡片 🎉');
+      return;
+    }
+    _openUnits(books, units, '$name · 背诵', k == LibraryKind.card);
+  }
+
+  /// 首页「开始背诵」：有到期词先弹窗问一句
+  Future<void> _onWordStart() async {
+    final due = _due(_ofKind(LibraryKind.word));
+    if (due > 0) {
+      final go = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1B2629),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('先复习一下吧',
+              style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 17)),
+          content: const Text('今日还有单词未复习，可以先复习完已背词再背新词哦~',
+              style: TextStyle(color: Color(0xFF8C9DA2), fontSize: 14)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'review'),
+              child: const Text('开始复习',
+                  style: TextStyle(
+                      color: Color(0xFF00C08B),
+                      fontWeight: FontWeight.w600)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'new'),
+              child: const Text('先背新词',
+                  style: TextStyle(color: Color(0xFF8C9DA2))),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (go == 'review') {
+        _startReview(LibraryKind.word);
+      } else if (go == 'new') {
+        _startNew(LibraryKind.word);
+      }
+      return;
+    }
+    _startNew(LibraryKind.word);
   }
 
   void _toast(String m) {
@@ -172,7 +241,8 @@ class HomeScreenState extends State<HomeScreen> {
                 fresh: _fresh(wordBooks),
                 learned: _learned(wordBooks),
                 passed: s.wordPassed,
-                onStart: () => _start(LibraryKind.word),
+                onStart: _onWordStart,
+                onReview: () => _startReview(LibraryKind.word),
               ),
               const SizedBox(height: 14),
               _taskCard(
@@ -182,20 +252,7 @@ class HomeScreenState extends State<HomeScreen> {
                 fresh: _fresh(cardBooks),
                 learned: _learned(cardBooks),
                 passed: s.cardPassed,
-                onStart: () => _start(LibraryKind.card),
-              ),
-              const SizedBox(height: 20),
-              const Text('快捷入口',
-                  style: TextStyle(
-                      color: Color(0xFF8C9DA2),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600)),
-              const SizedBox(height: 10),
-              _shortcut(
-                icon: Icons.star_border,
-                label: '生词本',
-                sub: '收藏的单词（开发中）',
-                onTap: () => _toast('生词本还在建设中 ⭐'),
+                onStart: () => _startNew(LibraryKind.card),
               ),
             ],
           ),
@@ -437,6 +494,7 @@ class HomeScreenState extends State<HomeScreen> {
     required int learned,
     required bool passed,
     required VoidCallback onStart,
+    VoidCallback? onReview,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -498,20 +556,42 @@ class HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00C08B),
-                foregroundColor: const Color(0xFF141D1F),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+          Row(
+            children: [
+              Expanded(
+                flex: (onReview != null && due > 0) ? 3 : 1,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00C08B),
+                    foregroundColor: const Color(0xFF141D1F),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: onStart,
+                  child: const Text('开始背诵',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
               ),
-              onPressed: onStart,
-              child: Text(due > 0 ? '开始复习（$due）' : '开始背诵',
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
-            ),
+              if (onReview != null && due > 0) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF00C08B),
+                      side: const BorderSide(color: Color(0x3300C08B)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: onReview,
+                    child: Text('开始复习($due)',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

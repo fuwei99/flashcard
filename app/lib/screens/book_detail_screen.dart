@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../models/book.dart';
 import '../models/deck.dart';
 import '../services/card_store.dart';
+import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import 'page_list_screen.dart';
 import 'review_screen.dart';
@@ -35,12 +36,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final tpl = widget.template;
     if (tpl == null) return;
 
-    final allIds = widget.book.allCards.map((c) => c.id).toList();
-    final dueIds = widget.store.reviewDue(allIds).toSet();
-    final dueCards =
-        widget.book.allCards.where((c) => dueIds.contains(c.id)).toList();
+    final units = StudyPlanner.wordPlan(
+      books: [widget.book],
+      store: widget.store,
+      withReview: true,
+      withNew: false,
+    );
 
-    if (dueCards.isEmpty) {
+    if (units.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('今日没有要复习的卡片'),
         backgroundColor: Color(0xFF1B2629),
@@ -54,12 +57,12 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
           title: '${widget.book.title} · 复习',
-          cards: dueCards,
-          book: widget.book,
+          units: units,
           template: tpl,
+          fieldsOrder: widget.book.fieldsOrder,
+          distractorPool: widget.book.allCards,
           store: widget.store,
           settings: widget.settings,
-          passage: widget.book.passage,
           isCard: tpl.engine == 'srs_basic',
         ),
       ),

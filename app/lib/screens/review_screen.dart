@@ -1,16 +1,16 @@
 /// 背诵模式：会话状态机驱动 + 全屏 WebView 卡牌
 /// ================================================================
+/// 一次会话 = 若干 StudyUnit 顺序走完（跨牌组复习时会有很多单元）。
 /// 轮内流程交给 StudySession；只有「毕业」才写 CardStore（= 标记已背）。
-/// 忘记 / 模糊 只记在会话内存里，不落盘。
 ///
-/// 语篇两阶段（passage 通读 / passageCloze 选词）也是「会话步骤」，
-/// 但不涉及具体卡片，mountCard 时 card 传 null、passage 传本章语篇。
+/// 单元内：语篇（通读/选词）-> 逐卡 learn -> 重测轮 -> 下一个单元。
+/// 语篇两阶段没有具体卡片，mountCard 时 card 传 null、passage 传当前单元的语篇，
+/// 并用 blankLemmas 限定「只挖今天要复习的那几个词」。
 library;
 
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../models/book.dart';
 import '../models/deck.dart';
 import '../models/study_session.dart';
 import '../services/card_store.dart';
@@ -20,14 +20,20 @@ import '../services/webview_bridge.dart';
 
 class ReviewScreen extends StatefulWidget {
   final String title;
-  final List<FlashCard> cards;
-  final Book book;
+
+  /// 编排好的学习单元（复习段 + 新学段）
+  final List<StudyUnit> units;
+
   final CardTemplate template;
+
+  /// 骨架页字段顺序（跨牌组时取第一本书的）
+  final List<String> fieldsOrder;
+
+  /// 干扰项池：跨牌组复习时是所有单词卡，单本书时是本书卡片
+  final List<FlashCard> distractorPool;
+
   final CardStore store;
   final StudySettings settings;
-
-  /// 本章语篇（可空 —— 老卡组没有就跳过语篇两阶段）
-  final Passage? passage;
 
   /// 是否卡牌（Card Tab）：决定今日进度算进「单词」还是「卡牌」
   final bool isCard;
@@ -35,12 +41,12 @@ class ReviewScreen extends StatefulWidget {
   const ReviewScreen({
     super.key,
     required this.title,
-    required this.cards,
-    required this.book,
+    required this.units,
     required this.template,
+    required this.fieldsOrder,
+    required this.distractorPool,
     required this.store,
     required this.settings,
-    this.passage,
     this.isCard = false,
   });
 
@@ -64,8 +70,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void initState() {
     super.initState();
     _session = StudySession(
-      widget.cards,
-      passage: widget.passage,
+      widget.units,
       passageClozeEnabled: widget.settings.modePassageCloze,
       retestModes: [
         if (widget.settings.modeChoice) StudyMode.choice,
@@ -110,8 +115,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
 
     // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
-    // 重测轮是逐卡即时毕业（启用的考法全过立刻进 graduated），
-    // 所以这里遍历全部未落盘的卡，逐张补写。
     final s = widget.settings;
     final wasPassed = widget.isCard ? s.cardPassed : s.wordPassed;
     for (final cid in _session.graduated) {
@@ -147,21 +150,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final ctrl = _controller;
     if (step == null || ctrl == null || !_ready) return;
 
+    final unit = _session.currentUnit;
     final isPassage = _session.phase == SessionPhase.passage ||
         _session.phase == SessionPhase.passageCloze;
     final session = {
       'phase': _session.phase.name,
       'mode': step.mode.key,
       'round': step.round,
+      'review': (unit?.isReview ?? false) ? 1 : 0,
     };
 
     _bridge.mountCard(
       ctrl,
-      book: widget.book,
+      fieldsOrder: widget.fieldsOrder,
       template: widget.template,
       card: step.card,
-      passage: isPassage ? _session.passage : null,
-      passageCards: widget.cards,
+      passage: isPassage ? unit?.passage : null,
+      passageCards: unit?.passageLookup ?? const [],
+      blankLemmas: isPassage ? unit?.blankLemmas : null,
       index: isPassage ? 0 : _session.doneInRound,
       total: isPassage ? 1 : _session.roundTotal,
       session: session,
@@ -175,7 +181,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   List<Map<String, String>> _choicesFor(StudyStep step) {
     final cur = step.card;
     if (cur == null) return const [];
-    final all = widget.book.allCards;
+    final all = widget.distractorPool;
     final isChoice = step.mode == StudyMode.choice;
 
     String textOf(FlashCard c) => isChoice
@@ -262,6 +268,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
       SessionPhase.cloze => '重测 R${_session.round - 1}·填空',
       SessionPhase.done => '完成',
     };
+    final unitLabel = _session.unitCount > 1
+        ? '第 ${_session.unitIndex + 1}/${_session.unitCount} 组 · '
+        : '';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -286,7 +295,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
               ),
-              Text('$phaseName ${_session.doneInRound}/$total',
+              Text('$unitLabel$phaseName ${_session.doneInRound}/$total',
                   style: const TextStyle(
                       color: Color(0xFF00C08B),
                       fontSize: 13,
@@ -335,7 +344,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _controller = c;
     // 骨架页：只在会话开始时 load 一次，之后全走 mountCard
     final html = _bridge.buildCardPage(
-      book: widget.book,
+      fieldsOrder: widget.fieldsOrder,
       template: widget.template,
       card: step.card,
       index: _session.doneInRound,

@@ -3,22 +3,13 @@
 /// 只管「这一轮」的事：队列、阶段、轮次、通过与否。
 /// 绝不碰持久层 —— 卡片的长期调度（FSRS）由屏幕在「毕业」时写。
 ///
-/// 流程（2026-09 语篇版）：
-///   passage 轮（章首语篇通读，辅助记忆）        [仅当本章带 passage]
-///     点「进入单词背诵」-> passageCloze（若开启）或直接 learn
-///   passageCloze 轮（语篇选词，整篇配对，过关才走）  [可被设置关闭]
-///   learn 轮（逐卡 read 自评）
-///     记得        -> 直接毕业
-///     模糊 / 忘记  -> 进重测池
-///   重测轮（循环，直到池内每张卡把「启用的考法」全过）
-///     考法顺序固定：choice（语义选项）-> cloze（短句选词），
-///     关闭的考法直接跳过。每个考法各一次把池里没过的卡考完；
-///     一轮走完还有没过 -> round++，回第一个启用的考法。
-///     一张卡启用的考法全过 -> **立即毕业**并滚出重测池。
-///   done
+/// 2026-09 起支持「多单元」：一次会话 = 若干 StudyUnit 顺序走完。
+/// 单元 = 可选语篇 + 一批卡片，单元内流程：
+///   passage（通读，仅 readFirst）-> passageCloze（挖空）-> learn -> 重测轮
+///   本单元重测轮走完 -> 下一个单元；全部单元走完 -> done
 ///
-/// 两阶段分开的原因（老规矩）：不让同一张卡的 choice / cloze 挨着考 ——
-/// 先让所有卡过完 choice，再让所有卡过 cloze，避免上一题刚见过答案。
+/// 单词复习「跨牌组 + 语篇只挖今天要复习的词」的编排由 StudyPlanner 负责，
+/// 这里只负责把编排好的单元依次执行。
 library;
 
 import 'book.dart';
@@ -43,7 +34,7 @@ enum StudyMode {
 }
 
 /// 队列里的一个步骤：某张卡 + 某个考法 + 第几轮。
-/// 语篇两轮没有具体卡片，card 为 null。
+/// 语篇两阶段没有具体卡片，card 为 null。
 class StudyStep {
   final FlashCard? card;
   final StudyMode mode;
@@ -51,11 +42,63 @@ class StudyStep {
   const StudyStep(this.card, this.mode, this.round);
 }
 
+/// 一个学习单元 = 可选语篇 + 一批卡片。
+///
+/// 新学单元：readFirst = true（先通读），blankLemmas = null（挖全部标记词）
+/// 复习单元：readFirst = false（直接填词），blankLemmas = 这批要复习的词，
+///           语篇里其余目标词只作普通文本展示，不挖空。
+class StudyUnit {
+  /// 本单元前面的语篇（可空）
+  final Passage? passage;
+
+  /// 本单元的卡片（复习 = 一批到期词；新学 = 本章未学词）
+  final List<FlashCard> cards;
+
+  /// 语篇里只挖这些 lemma（小写）。null = 挖全部标记词
+  final Set<String>? blankLemmas;
+
+  /// 是否先通读语篇
+  final bool readFirst;
+
+  /// 是否复习单元（影响进度/文案）
+  final bool isReview;
+
+  /// 语篇释义查表用的卡片（该章全部卡片，通常比 cards 多）；为空时用 cards
+  final List<FlashCard>? passageCards;
+
+  /// 单元标题（章名 / 分组名），仅用于展示
+  final String title;
+
+  const StudyUnit({
+    this.passage,
+    required this.cards,
+    this.blankLemmas,
+    this.readFirst = false,
+    this.isReview = false,
+    this.passageCards,
+    this.title = '',
+  });
+
+  /// 语篇释义查表用（未指定就用本单元卡片）
+  List<FlashCard> get passageLookup => passageCards ?? cards;
+
+  bool get hasPassage => passage != null && passage!.hasContent;
+}
+
 class StudySession {
+  /// 编排好的单元列表（顺序执行）
+  final List<StudyUnit> units;
+
+  /// 语篇选词是否开启（设置项）
+  final bool passageClozeEnabled;
+
+  /// 启用的重测考法，按顺序（语义选项在前、短句选词在后）
+  final List<StudyMode> retestModes;
+
   final List<StudyStep> _queue = [];
   final List<FlashCard> _retestPool = [];
 
-  /// 已毕业的卡 id（本轮内）
+  /// 已毕业的卡 id（整场会话内）
   final Set<String> graduated = {};
 
   /// 重测阶段里每张卡的考法通过记录：cardId -> {mode keys}
@@ -67,39 +110,35 @@ class StudySession {
   /// 这张卡答错的次数
   final Map<String, int> _wrongCount = {};
 
-  /// 本章语篇（可空 —— 老卡组没写就跳过语篇两阶段）
-  final Passage? passage;
-
-  /// 语篇选词是否开启（设置项）
-  final bool passageClozeEnabled;
-
-  /// 启用的重测考法，按顺序（语义选项在前、短句选词在后）
-  final List<StudyMode> retestModes;
-
-  SessionPhase phase = SessionPhase.learn;
+  int _unitIdx = 0;
+  SessionPhase phase = SessionPhase.done;
   int round = 1;
   int _roundTotal = 0;
   int _modeIdx = 0;
 
   StudySession(
-    List<FlashCard> cards, {
-    this.passage,
+    List<StudyUnit> units, {
     this.passageClozeEnabled = true,
     this.retestModes = const [StudyMode.choice, StudyMode.cloze],
-  }) {
-    _queue.addAll(cards.map((c) => StudyStep(c, StudyMode.read, 1)));
-    _roundTotal = _queue.length;
-
-    if (passage != null && passage!.hasContent) {
-      phase = SessionPhase.passage;
-    } else if (cards.isEmpty) {
+  }) : units = units {
+    if (units.isEmpty) {
       phase = SessionPhase.done;
     } else {
-      phase = SessionPhase.learn;
+      _startUnit();
     }
   }
 
-  bool get hasPassage => passage != null && passage!.hasContent;
+  StudyUnit? get currentUnit =>
+      (_unitIdx >= 0 && _unitIdx < units.length) ? units[_unitIdx] : null;
+
+  /// 当前单元的语篇（语篇两阶段挂它）
+  Passage? get passage => currentUnit?.passage;
+
+  bool get hasPassage => currentUnit?.hasPassage ?? false;
+
+  /// 当前单元序号（0 基）/ 总单元数
+  int get unitIndex => _unitIdx;
+  int get unitCount => units.length;
 
   StudyStep? get current {
     switch (phase) {
@@ -136,6 +175,42 @@ class StudySession {
     }
   }
 
+  // ---------- 单元切换 ----------
+
+  void _startUnit() {
+    _queue.clear();
+    _retestPool.clear();
+    _passedModes.clear();
+    _wrongCount.clear();
+    round = 1;
+    _modeIdx = 0;
+
+    final u = currentUnit;
+    if (u == null) {
+      phase = SessionPhase.done;
+      return;
+    }
+    _queue.addAll(u.cards.map((c) => StudyStep(c, StudyMode.read, 1)));
+    _roundTotal = _queue.length;
+
+    if (u.hasPassage && u.readFirst) {
+      phase = SessionPhase.passage;
+    } else if (u.hasPassage && passageClozeEnabled) {
+      phase = SessionPhase.passageCloze;
+    } else {
+      _enterLearn();
+    }
+  }
+
+  void _nextUnit() {
+    _unitIdx++;
+    if (_unitIdx >= units.length) {
+      phase = SessionPhase.done;
+      return;
+    }
+    _startUnit();
+  }
+
   /// 语篇通读完成 -> 语篇选词（若开启）或直接进入逐卡 learn
   void submitPassage() {
     if (passageClozeEnabled && hasPassage) {
@@ -152,12 +227,14 @@ class StudySession {
 
   void _enterLearn() {
     if (_queue.isEmpty) {
-      phase = SessionPhase.done;
+      _nextUnit();
     } else {
       phase = SessionPhase.learn;
       _roundTotal = _queue.length;
     }
   }
+
+  // ---------- 逐卡 ----------
 
   /// 抬高一张卡的挣扎程度（只增不减）
   void _bump(String cardId, int e) {
@@ -227,7 +304,7 @@ class StudySession {
 
     if (phase == SessionPhase.learn) {
       if (_retestPool.isEmpty || retestModes.isEmpty) {
-        phase = SessionPhase.done;
+        _nextUnit();
         return;
       }
       round = 2;
@@ -242,7 +319,7 @@ class StudySession {
   }
 
   /// 从当前 _modeIdx 起，找第一个「还有没过卡」的启用考法，组一轮队列。
-  /// 全部考法都走完：池空 -> done；还有卡没过 -> round++ 重来。
+  /// 全部考法都走完：池空 -> 下一个单元；还有卡没过 -> round++ 重来。
   void _startMode() {
     while (_modeIdx < retestModes.length) {
       final m = retestModes[_modeIdx];
@@ -263,9 +340,8 @@ class StudySession {
       return;
     }
 
-    // 本轮所有考法都走完
     if (_retestPool.isEmpty) {
-      phase = SessionPhase.done;
+      _nextUnit();
     } else {
       round++;
       _modeIdx = 0;
