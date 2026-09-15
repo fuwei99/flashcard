@@ -16,17 +16,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 模板/卡组的唯一真源 = 仓库根 templates/ 与 decks/。
-      # app/assets/ 下的只是打包副本，曾经出现「改了根目录、APK 里还是旧模板」的坑。
-      # 这里在构建前强制同步，保证以后只改根目录就够了。
-      - name: Sync templates & decks into app assets
+      # 模板 / 卡组 / 说明文档的唯一真源都在仓库根目录：
+      #   templates/  卡牌模板（HTML/CSS/JS）
+      #   decks/      卡组数据
+      #   text/readme/ 给 Agent 看的说明文档（如「如何管理单词.md」）
+      # app/assets/ 下的只是打包副本。这里构建前强制同步，
+      # 保证以后只改根目录就够了 —— 改文档不用动任何 Dart 代码。
+      - name: Sync templates, decks & readme into app assets
         run: |
           set -e
-          mkdir -p app/assets/templates app/assets/decks
-          [ -d templates ] && cp -r templates/. app/assets/templates/ || true
-          [ -d decks ]     && cp -r decks/.     app/assets/decks/     || true
+          mkdir -p app/assets/templates app/assets/decks app/assets/readme
+          [ -d templates ]   && cp -r templates/.   app/assets/templates/ || true
+          [ -d decks ]       && cp -r decks/.       app/assets/decks/     || true
+          [ -d text/readme ] && cp -r text/readme/. app/assets/readme/    || true
           echo "--- synced assets ---"
-          find app/assets/templates app/assets/decks -type f | sort
+          find app/assets/templates app/assets/decks app/assets/readme -type f | sort
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

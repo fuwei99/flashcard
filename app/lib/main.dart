@@ -69,6 +69,8 @@ class _BootstrapState extends State<_Bootstrap> {
       await _applyReminder();
       // 首次运行：把内置模板铺到公共目录，之后改 CSS/HTML/JS 直接改文件
       await _repo.seedPublicTemplates();
+      // 说明文档也铺到公共目录（版本感知，用户改过的不覆盖）
+      await _repo.seedReadme();
       final templates = await _repo.loadAllTemplates();
       if (!mounted) return;
       setState(() => _templates = templates);

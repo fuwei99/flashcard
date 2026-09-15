@@ -81,6 +81,64 @@ class DeckRepository {
     return copied;
   }
 
+  // ===============================================================
+  // 说明文档（给 Agent / 用户看）
+  // ===============================================================
+
+  /// 内置说明文档在 assets 里的目录（真源在仓库 text/readme/，CI 同步过来）
+  static const _readmeAssetDir = 'assets/readme';
+
+  /// 文档自带的版本号：头部 front-matter 里的 `doc_version: N`
+  static int _docVersionOf(String text) {
+    final m = RegExp(r'^doc_version:\s*(\d+)', multiLine: true).firstMatch(text);
+    if (m == null) return 0;
+    return int.tryParse(m.group(1)!) ?? 0;
+  }
+
+  /// 列出 assets/readme/ 下所有 .md。
+  /// 走 AssetManifest 动态枚举 —— **新增文档不用改任何代码**。
+  Future<List<String>> _readmeAssets() async {
+    try {
+      final m = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final keys = m
+          .listAssets()
+          .where((k) => k.startsWith('$_readmeAssetDir/') && k.endsWith('.md'))
+          .toList()
+        ..sort();
+      if (keys.isNotEmpty) return keys;
+    } catch (_) {}
+    return const ['$_readmeAssetDir/如何管理单词.md'];
+  }
+
+  /// 把内置说明文档铺到公共目录（直接铺在 Flashcard/ 下），让 Agent 能直接读。
+  ///
+  /// **版本感知**：文档头部有 `doc_version: N`
+  ///   - 公共目录没有            → 写入
+  ///   - 公共目录版本更旧        → 覆盖（schema 更新能推下去）
+  ///   - 公共目录版本相同或更新  → 不动（用户自己改过、批注过的保留）
+  ///
+  /// 返回写入的文件数；公共目录不可用返回 -1。
+  Future<int> seedReadme() async {
+    final root = await DataDir.root();
+    if (root == null) return -1;
+    var written = 0;
+    for (final asset in await _readmeAssets()) {
+      final name = asset.split('/').last;
+      if (name.isEmpty) continue;
+      try {
+        final bundled = await rootBundle.loadString(asset);
+        final f = File('${root.path}/$name');
+        if (await f.exists()) {
+          final local = await f.readAsString();
+          if (_docVersionOf(local) >= _docVersionOf(bundled)) continue;
+        }
+        await f.writeAsString(bundled);
+        written++;
+      } catch (_) {}
+    }
+    return written;
+  }
+
   /// 从一个目录读模板包（文件名以 manifest 里的 files 为准）
   Future<CardTemplate?> _loadTemplateFromDir(Directory dir) async {
     try {
