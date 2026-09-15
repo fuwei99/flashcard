@@ -221,6 +221,9 @@ class JsTtsEngine extends TtsEngine {
       );
 
   @override
+  Future<void> stop() async => host.cancelCurrent();
+
+  @override
   Future<void> dispose() => host.dispose();
 }
 

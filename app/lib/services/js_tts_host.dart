@@ -231,6 +231,19 @@ class JsTtsHost {
   static String _safeName(String n) =>
       n.replaceAll('..', '_').replaceAll('/', '_').replaceAll('\\', '_');
 
+  /// 取消在途合成：先叫插件 onStop（关它的 ws），再关宿主侧所有 session。
+  /// 新朗读开始前调用，否则上一条的音频会写进下一条的会话（读串）。
+  void cancelCurrent() {
+    try {
+      _rt.evaluate(
+          "if (typeof PluginJS !== 'undefined' && PluginJS.onStop) { try { PluginJS.onStop(); } catch (e) {} }");
+    } catch (_) {}
+    for (final s in _sessions.values) {
+      if (!s.out.isClosed) s.out.close();
+    }
+    _sessions.clear();
+  }
+
   Future<void> dispose() async {
     for (final ws in _sockets.values) {
       try {

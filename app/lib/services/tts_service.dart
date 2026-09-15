@@ -42,6 +42,9 @@ class TtsService {
   /// 插件 id → 引擎（同插件复用；换插件才新建，JS 插件不必重载脚本）
   final Map<String, TtsEngine> _engines = {};
 
+  /// 最近一次用过的引擎：_stopAll 时负责取消它在途的合成
+  TtsEngine? _lastEngine;
+
   TtsService({required this.settings});
 
   Future<void> init() async {
@@ -129,6 +132,7 @@ class TtsService {
 
     final engine = await _ensureEngine(opts?.pluginId);
     if (engine != null) {
+      _lastEngine = engine; // 供 _stopAll 打断在途合成
       // 落盘三态：
       //   显式 true / "name" → 强制落盘
       //   显式 false        → 强制不落（流式）
@@ -143,6 +147,7 @@ class TtsService {
       if (ok) return;
     }
 
+    if (gen != _gen) return; // 已被新朗读打断，别再兜底出声
     await _speakSystem(text, lang, opts);
   }
 
@@ -177,6 +182,7 @@ class TtsService {
       } else {
         final bytes = await _collect(engine, text);
         if (bytes == null || bytes.isEmpty) return false;
+        if (gen != _gen) return true; // 被打断，别写半截缓存
         await file.parent.create(recursive: true);
         await file.writeAsBytes(bytes, flush: true);
         if (!isSingleWord(text)) {
@@ -230,12 +236,25 @@ class TtsService {
     }
   }
 
-  /// 长句：音频流直接喂播放器，边收边播
+  /// 长句 / 不落盘的句子：先把整段音频收齐，写临时文件再播。
+  ///
+  /// 早先直接拿 engine.synthesize() 的一次性流喂 StreamAudioSource，
+  /// just_audio 会二次订阅同一个流 → 必报 "Source error" → 兜底跑去系统 TTS
+  /// （例句一直念系统音就是这来的）。收齐再播最稳，音色仍是插件音色。
   Future<bool> _speakStreamed(
       TtsEngine engine, String text, int gen, TtsOptions? opts) async {
     try {
-      await _player.setAudioSource(_EngineStreamSource(
-          engine.synthesize(text, opts: opts), engine.contentType));
+      final bytes = await _collect(engine, text);
+      if (bytes == null || bytes.isEmpty) return false;
+      if (gen != _gen) return true; // 已被新朗读打断
+      final dir = await DataDir.sub('cache/tts/tmp');
+      if (dir == null) return false;
+      await _pruneTmp(dir);
+      final f = File('${dir.path}/'
+          '${DateTime.now().microsecondsSinceEpoch}${_extDot(engine.contentType)}');
+      await f.writeAsBytes(bytes, flush: true);
+      if (gen != _gen) return true;
+      await _player.setFilePath(f.path);
       if (gen != _gen) return true;
       await _player.play();
       return true;
@@ -243,6 +262,30 @@ class TtsService {
       await TtsLog.write('stream', 'ERROR: $e\n$st');
       return false;
     }
+  }
+
+  /// 清掉一小时前的临时音频，免得 cache/tts/tmp 越堆越多
+  static Future<void> _pruneTmp(Directory dir) async {
+    try {
+      final cut = DateTime.now().subtract(const Duration(hours: 1));
+      await for (final e in dir.list()) {
+        if (e is File) {
+          try {
+            if ((await e.stat()).modified.isBefore(cut)) await e.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  static String _extDot(String contentType) {
+    final c = contentType.toLowerCase();
+    if (c.contains('mpeg') || c.contains('mp3')) return '.mp3';
+    if (c.contains('wav')) return '.wav';
+    if (c.contains('aac')) return '.aac';
+    if (c.contains('opus')) return '.opus';
+    if (c.contains('flac')) return '.flac';
+    return '.bin';
   }
 
   /// 缓存文件路径：<单词>-<speaker>-<sha1前12位>.<ext>
@@ -311,6 +354,11 @@ class TtsService {
     } catch (_) {}
     try {
       await _sysTts.stop();
+    } catch (_) {}
+    // 关键：打断插件的在途合成（豆包那条 websocket）。否则上一条的音频
+    // 会写进下一条的会话 —— 语篇选词「读成上一个词」就是这么来的。
+    try {
+      await _lastEngine?.stop();
     } catch (_) {}
   }
 

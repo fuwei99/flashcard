@@ -6,6 +6,8 @@ let ws = null // Websocket
 let conn_id = null
 let sess_id = null
 let step = 0 // 0: start, 1: wait_task, 2: wait_session, 3: tts_running
+let taskSeq = 0 // 合成任务号，每次 +1
+let curTask = 0 // 当前有效任务号；旧任务的回调发现对不上就整帧丢弃
 
 function check() {
     cookie || function () { throw "未设置变量Cookie" }()
@@ -240,14 +242,26 @@ let PluginJS = {
     },
 
     "onStop": function () {
+        // 作废在途任务：旧回调全部失效，关掉它的 ws
+        curTask = ++taskSeq
         if (ws != null) {
-            ws.cancel()
+            try { ws.cancel() } catch (e) {}
+            ws = null
         }
+        step = 0
     },
 
 
     "getAudioV2": function (request, callback2) {
         check()
+
+        // 打断上一次未完成的合成：旧 ws 作废、旧回调失效。
+        // 否则上一条词的音频帧会写进本次 callback ——「读成上一个词」的根因。
+        curTask = ++taskSeq
+        if (ws != null) {
+            try { ws.cancel() } catch (e) {}
+            ws = null
+        }
 
         let rate = request.rate / 50.0  // 转换成 1.0 左右的倍率
         if (rate <= 0) rate = 1.0;
@@ -267,11 +281,11 @@ let PluginJS = {
         conn_id = null
         sess_id = null
         step = 0
-        getAudio()
+        getAudio(curTask)
     },
 }
 
-function getAudio() {
+function getAudio(myTask) {
     if (ws == null) {
         logger.i("init Websocket")
         let url = `wss://frontier-audio-web-ws.doubao.com/api/v2/sami/voicegenie?` + commonParams()
@@ -283,6 +297,7 @@ function getAudio() {
         ws = new Websocket(url, headers)
 
         ws.on('close', function (code, reason) {
+            if (myTask !== curTask) return
             ws = null
             if (code == 1000) {
                 callback.close()
@@ -292,12 +307,14 @@ function getAudio() {
         })
 
         ws.on('error', function (err, resp) {
+            if (myTask !== curTask) return
             ws = null
             console.error(resp.text())
             callback.error(err)
         })
 
         ws.on('binary', function (buffer) {
+            if (myTask !== curTask) return
             try {
                 let fields = parseServerMessage(buffer);
                 let eventBytes = fields[4];
@@ -330,27 +347,27 @@ function getAudio() {
                     }
                 } else if (event === "TTSEnded" || event === "TTSSentenceEnd") {
                     logger.i("TTS finished cleanly: " + event);
-                    ws.cancel();
-                    ws = null;
+                    if (ws != null) { ws.cancel(); ws = null; }
                     callback.close();
                 } else if (event === "SessionFailed" || (statusCode && statusCode !== 20000000)) {
                     let errMsgBytes = fields[6];
                     let errMsg = errMsgBytes ? bytesToString(errMsgBytes) : "Unknown error";
                     callback.error("SAMI Error (" + statusCode + "): " + errMsg);
-                    ws.cancel();
-                    ws = null;
+                    if (ws != null) { ws.cancel(); ws = null; }
                 }
             } catch (e) {
                 logger.e("Error parsing binary frame: " + e);
-                callback.error(e);
+                if (myTask === curTask) callback.error(e);
             }
         })
 
         ws.on('text', function (msg) {
+            if (myTask !== curTask) return
             console.log(msg)
         })
 
         ws.on('open', function () {
+            if (myTask !== curTask) return
             logger.d("open")
             nextStep()
         })
