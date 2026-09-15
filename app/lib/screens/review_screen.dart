@@ -314,7 +314,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
           const SizedBox(height: 5),
           Text(
-              '毕业 ${_session.graduated.length} · 待重测 ${_session.retestPoolSize} · 今日 $doneToday/$limitToday',
+              [
+                if ((_session.currentUnit?.title ?? '').isNotEmpty)
+                  _session.currentUnit!.title,
+                '毕业 ${_session.graduated.length}',
+                '待重测 ${_session.retestPoolSize}',
+                '今日 $doneToday/$limitToday',
+              ].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Color(0xFF54666C), fontSize: 11)),
         ],
       ),
