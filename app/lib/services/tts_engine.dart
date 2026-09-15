@@ -31,7 +31,7 @@ abstract class TtsEngine {
 }
 
 /// OpenAI 兼容 HTTP TTS（声明式插件：/audio/speech）
-class OpenAiTtsEngine implements TtsEngine {
+class OpenAiTtsEngine extends TtsEngine {
   final String baseUrl;
   final String apiKey;
   final String model;
@@ -91,7 +91,7 @@ class OpenAiTtsEngine implements TtsEngine {
 }
 
 /// JS 脚本插件（豆包那类，跑在内置 QuickJS 宿主上）
-class JsTtsEngine implements TtsEngine {
+class JsTtsEngine extends TtsEngine {
   final JsTtsHost host;
   final String voice;
   final double rate;
