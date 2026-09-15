@@ -133,6 +133,9 @@ jobs:
                   'android.permission.READ_EXTERNAL_STORAGE',
                   'android.permission.POST_NOTIFICATIONS',
                   'android.permission.RECEIVE_BOOT_COMPLETED',
+                  # release 包默认没有 INTERNET（只有 debug manifest 自带），
+                  # 「检查更新」要联网查 GitHub，必须显式声明
+                  'android.permission.INTERNET',
               ]
               add = ''
               for p in want:

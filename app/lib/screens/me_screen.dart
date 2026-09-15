@@ -2,10 +2,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/card_store.dart';
 import '../services/data_dir.dart';
 import '../services/study_settings.dart';
+import '../services/update_service.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 
@@ -28,6 +30,71 @@ class MeScreen extends StatefulWidget {
 }
 
 class MeScreenState extends State<MeScreen> {
+  String _version = '';
+  String _build = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  /// 读真实版本号（以前这里是写死的 'v1.0.0'，所以永远不更新）
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _version = info.version;
+        _build = info.buildNumber;
+      });
+    } catch (_) {}
+  }
+
+  /// 点版本号：跟 GitHub 最新 release 比一比
+  Future<void> _checkUpdate() async {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('正在检查更新…'),
+      duration: Duration(seconds: 1),
+      behavior: SnackBarBehavior.floating,
+    ));
+    final remote = await UpdateService.latestVersion();
+    if (!mounted) return;
+
+    String title;
+    String body;
+    if (remote == null) {
+      title = '检查失败';
+      body = '拿不到远端版本信息。\n要么没网，要么 GitHub API 限流了，过会儿再试。';
+    } else if (_version.isEmpty) {
+      title = '本机版本未知';
+      body = '远端最新：v$remote';
+    } else if (UpdateService.isNewer(remote, _version)) {
+      title = '有新版本';
+      body = '本机 v$_version（+$_build）\n远端 v$remote\n\n去 GitHub Release 拉新的 APK。';
+    } else {
+      title = '已是最新版';
+      body = '本机 v$_version（+$_build）\n远端 v$remote';
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2629),
+        title:
+            Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content:
+            Text(body, style: const TextStyle(color: Color(0xFFB7C4C8), fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('好', style: TextStyle(color: Color(0xFF00C08B))),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> refresh() async {
     if (mounted) setState(() {});
   }
@@ -178,8 +245,8 @@ class MeScreenState extends State<MeScreen> {
           _entry(
             icon: Icons.info_outline,
             label: 'flashcard',
-            value: 'v1.0.0',
-            onTap: () {},
+            value: _version.isEmpty ? '读取中…' : 'v$_version',
+            onTap: _checkUpdate,
           ),
         ],
       ),
