@@ -105,6 +105,7 @@ class PageListBody extends StatelessWidget {
           store: store,
           settings: settings,
           passage: passage,
+          isCard: template!.engine == 'srs_basic',
         ),
       ),
     );

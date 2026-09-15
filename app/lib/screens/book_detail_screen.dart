@@ -60,6 +60,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           store: widget.store,
           settings: widget.settings,
           passage: widget.book.passage,
+          isCard: tpl.engine == 'srs_basic',
         ),
       ),
     ).then((_) {

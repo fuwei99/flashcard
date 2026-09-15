@@ -193,6 +193,13 @@ class WebViewBridge {
         }
         break;
 
+      case 'ttsStop':
+        _ttsGen++; // 打断可能正在进行的顺序朗读
+        try {
+          await tts.stop();
+        } catch (_) {}
+        break;
+
       case 'ttsSeq':
         // 顺序朗读：念完一条再念下一条（进词义页 = 单词 -> 例句）
         final items = data['items'];

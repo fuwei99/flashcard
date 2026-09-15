@@ -15,16 +15,24 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late int _limit;
+  late int _wordLimit;
+  late int _cardLimit;
 
   @override
   void initState() {
     super.initState();
-    _limit = widget.settings.dailyLimit;
+    _wordLimit = widget.settings.wordDailyLimit;
+    _cardLimit = widget.settings.cardDailyLimit;
   }
 
-  Future<void> _save() async {
-    await widget.settings.setDailyLimit(_limit);
+  Future<void> _saveWord() async {
+    await widget.settings.setWordDailyLimit(_wordLimit);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _saveCard() async {
+    await widget.settings.setCardDailyLimit(_cardLimit);
     if (!mounted) return;
     setState(() {});
   }
@@ -46,9 +54,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _sectionLabel('每日背诵量'),
+          _sectionLabel('每日单词背诵量'),
           const SizedBox(height: 10),
-          _limitCard(),
+          _limitCard(
+            value: _wordLimit,
+            onChanged: (v) => setState(() => _wordLimit = v.round()),
+            onSave: _saveWord,
+            onPreset: (n) {
+              setState(() => _wordLimit = n);
+              _saveWord();
+            },
+          ),
+          const SizedBox(height: 24),
+          _sectionLabel('每日卡牌背诵量'),
+          const SizedBox(height: 10),
+          _limitCard(
+            value: _cardLimit,
+            onChanged: (v) => setState(() => _cardLimit = v.round()),
+            onSave: _saveCard,
+            onPreset: (n) {
+              setState(() => _cardLimit = n);
+              _saveCard();
+            },
+          ),
           const SizedBox(height: 24),
           _sectionLabel('卡片类型'),
           const SizedBox(height: 10),
@@ -69,7 +97,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           fontWeight: FontWeight.w600,
           letterSpacing: .5));
 
-  Widget _limitCard() {
+  Widget _limitCard({
+    required int value,
+    required ValueChanged<double> onChanged,
+    required VoidCallback onSave,
+    required void Function(int) onPreset,
+  }) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -83,9 +116,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text('每天背多少个卡片',
+              const Text('每天背多少个',
                   style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 15)),
-              Text('$_limit',
+              Text('$value',
                   style: const TextStyle(
                       color: Color(0xFF00C08B),
                       fontSize: 30,
@@ -94,20 +127,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 6),
           Slider(
-            value: _limit.toDouble(),
+            value: value.toDouble(),
             min: 5,
             max: 200,
             divisions: 39,
             activeColor: const Color(0xFF00C08B),
             inactiveColor: const Color(0x22FFFFFF),
-            onChanged: (v) => setState(() => _limit = v.round()),
-            onChangeEnd: (_) => _save(),
+            onChanged: onChanged,
+            onChangeEnd: (_) => onSave(),
           ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             children: [10, 20, 30, 50, 80, 100]
-                .map((n) => _presetChip(n))
+                .map((n) => _presetChip(n, value, onPreset))
                 .toList(),
           ),
         ],
@@ -115,14 +148,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _presetChip(int n) {
-    final sel = _limit == n;
+  Widget _presetChip(int n, int cur, void Function(int) onPreset) {
+    final sel = cur == n;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
-      onTap: () {
-        setState(() => _limit = n);
-        _save();
-      },
+      onTap: () => onPreset(n),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
@@ -215,18 +245,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('今日已背',
-                  style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 15)),
-              Text('${s.todayDone} / ${s.dailyLimit}',
-                  style: const TextStyle(
-                      color: Color(0xFF00C08B),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
+          _todayRow('单词', s.todayWordDone, s.wordDailyLimit, s.wordPassed),
+          const SizedBox(height: 12),
+          _todayRow('卡牌', s.todayCardDone, s.cardDailyLimit, s.cardPassed),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
@@ -248,6 +269,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _todayRow(String label, int done, int limit, bool passed) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Text('今日$label已背',
+                style: const TextStyle(color: Color(0xFFF0F4F5), fontSize: 15)),
+            if (passed) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x1F00C08B),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text('已过关 😁',
+                    style: TextStyle(
+                        color: Color(0xFF00C08B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ],
+        ),
+        Text('$done / $limit',
+            style: TextStyle(
+                color:
+                    passed ? const Color(0xFF00C08B) : const Color(0xFFF0F4F5),
+                fontSize: 16,
+                fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }

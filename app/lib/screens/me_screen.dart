@@ -59,7 +59,7 @@ class MeScreenState extends State<MeScreen> {
                           style: TextStyle(
                               color: Color(0xFF54666C), fontSize: 12)),
                       const SizedBox(height: 3),
-                      Text('${s.todayDone} / ${s.dailyLimit}',
+                      Text('单词 ${s.todayWordDone}/${s.wordDailyLimit} · 卡牌 ${s.todayCardDone}/${s.cardDailyLimit}',
                           style: const TextStyle(
                               color: Color(0xFFF0F4F5),
                               fontSize: 18,
@@ -76,7 +76,7 @@ class MeScreenState extends State<MeScreen> {
           _entry(
             icon: Icons.tune,
             label: '每日背诵量',
-            value: '${s.dailyLimit}',
+            value: '单词 ${s.wordDailyLimit} · 卡牌 ${s.cardDailyLimit}',
             onTap: () async {
               await Navigator.push(
                 context,

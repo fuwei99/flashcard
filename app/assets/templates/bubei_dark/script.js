@@ -35,7 +35,8 @@
           speechSynthesis.speak(u);
         })(0);
       },
-      ready: function () {}, mountCard: function () {}, onMount: function () {}
+      ready: function () {}, mountCard: function () {}, onMount: function () {},
+      ttsStop: function () {}
     };
   }
 
@@ -254,6 +255,14 @@
   function passageSegments() {
     var p = card.passage || {};
     return p.segments || [];
+  }
+
+  function passageText() {
+    var t = "";
+    passageSegments().forEach(function (seg) {
+      t += (seg.w !== undefined && seg.w !== null) ? (seg.w + " ") : (seg.t || "");
+    });
+    return t;
   }
 
   function renderPassageRead() {
@@ -546,11 +555,18 @@
     // 7. 自动播放当前单词发音（用户强烈需求！）
     //    cloze 例外：答案就是这个单词，一进卡就念 = 直接泄题。
     if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
+    if (FC.ttsStop) FC.ttsStop(); // 切卡先掐断上一张可能还在念的语音
     if (curWord && mode !== "cloze") {
       autoTtsTimer = setTimeout(function () {
         autoTtsTimer = null;
         speak(curWord, "en-US");
       }, 70);
+    } else if (mode === "passage") {
+      // 语篇通读：进页自动朗读全文（保持旧版「进卡即读」的听感）
+      autoTtsTimer = setTimeout(function () {
+        autoTtsTimer = null;
+        speak(passageText(), "en-US");
+      }, 260);
     }
   }
 
@@ -581,11 +597,7 @@
     var ttsPassage = e.target.closest('[data-role="tts-passage"]');
     if (ttsPassage) {
       e.stopPropagation();
-      var ptxt = "";
-      passageSegments().forEach(function (seg) {
-        ptxt += (seg.w !== undefined && seg.w !== null) ? (seg.w + " ") : (seg.t || "");
-      });
-      speak(ptxt, "en-US");
+      speak(passageText(), "en-US");
       return;
     }
 

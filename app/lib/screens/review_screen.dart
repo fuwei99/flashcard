@@ -29,6 +29,9 @@ class ReviewScreen extends StatefulWidget {
   /// 本章语篇（可空 —— 老卡组没有就跳过语篇两阶段）
   final Passage? passage;
 
+  /// 是否卡牌（Card Tab）：决定今日进度算进「单词」还是「卡牌」
+  final bool isCard;
+
   const ReviewScreen({
     super.key,
     required this.title,
@@ -38,6 +41,7 @@ class ReviewScreen extends StatefulWidget {
     required this.store,
     required this.settings,
     this.passage,
+    this.isCard = false,
   });
 
   @override
@@ -108,10 +112,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
     // 重测轮是逐卡即时毕业（启用的考法全过立刻进 graduated），
     // 所以这里遍历全部未落盘的卡，逐张补写。
+    final s = widget.settings;
+    final wasPassed = widget.isCard ? s.cardPassed : s.wordPassed;
     for (final cid in _session.graduated) {
       if (_written.contains(cid)) continue;
       _write(cid, _session.ratingFor(cid));
-      await widget.settings.markDone();
+      await s.markDone(card: widget.isCard);
+    }
+    // 完成每日背诵量 → 过关 😁
+    final nowPassed = widget.isCard ? s.cardPassed : s.wordPassed;
+    if (!wasPassed && nowPassed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(widget.isCard ? '🎉 今日卡牌背诵量已达成，过关！' : '🎉 今日单词背诵量已达成，过关！'),
+        backgroundColor: const Color(0xFF00C08B),
+        behavior: SnackBarBehavior.floating,
+      ));
     }
 
     if (!mounted) return;
@@ -237,6 +252,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final total = _session.roundTotal;
     final prog = total == 0 ? 0.0 : _session.doneInRound / total;
     final today = widget.settings;
+    final doneToday = widget.isCard ? today.todayCardDone : today.todayWordDone;
+    final limitToday = widget.isCard ? today.cardDailyLimit : today.wordDailyLimit;
     final phaseName = switch (_session.phase) {
       SessionPhase.passage => '语篇',
       SessionPhase.passageCloze => '语篇选词',
@@ -288,7 +305,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
           const SizedBox(height: 5),
           Text(
-              '毕业 ${_session.graduated.length} · 待重测 ${_session.retestPoolSize} · 今日 ${today.todayDone}/${today.dailyLimit}',
+              '毕业 ${_session.graduated.length} · 待重测 ${_session.retestPoolSize} · 今日 $doneToday/$limitToday',
               style: const TextStyle(color: Color(0xFF54666C), fontSize: 11)),
         ],
       ),

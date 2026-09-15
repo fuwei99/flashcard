@@ -86,7 +86,7 @@ class HomeScreenState extends State<HomeScreen> {
       if (dueIds.isNotEmpty) {
         final dueCards =
             b.allCards.where((c) => dueIds.contains(c.id)).toList();
-        _open(b, dueCards, '${b.title} · 复习');
+        _open(b, dueCards, '${b.title} · 复习', k == LibraryKind.card);
         return;
       }
     }
@@ -94,14 +94,14 @@ class HomeScreenState extends State<HomeScreen> {
       final fresh =
           b.allCards.where((c) => !widget.store.isLearned(c.id)).toList();
       if (fresh.isNotEmpty) {
-        _open(b, fresh, '${b.title} · 新学');
+        _open(b, fresh, '${b.title} · 新学', k == LibraryKind.card);
         return;
       }
     }
     _toast('$name今天没有要背的卡片 🎉');
   }
 
-  void _open(Book b, List<FlashCard> cards, String title) {
+  void _open(Book b, List<FlashCard> cards, String title, bool isCard) {
     final tpl = widget.templates[b.templateId];
     if (tpl == null) {
       _toast('模板缺失：${b.templateId}');
@@ -118,6 +118,7 @@ class HomeScreenState extends State<HomeScreen> {
           store: widget.store,
           settings: widget.settings,
           passage: b.passage,
+          isCard: isCard,
         ),
       ),
     ).then((_) => refresh());
@@ -166,6 +167,7 @@ class HomeScreenState extends State<HomeScreen> {
                 due: _due(wordBooks),
                 fresh: _fresh(wordBooks),
                 learned: _learned(wordBooks),
+                passed: s.wordPassed,
                 onStart: () => _start(LibraryKind.word),
               ),
               const SizedBox(height: 14),
@@ -175,6 +177,7 @@ class HomeScreenState extends State<HomeScreen> {
                 due: _due(cardBooks),
                 fresh: _fresh(cardBooks),
                 learned: _learned(cardBooks),
+                passed: s.cardPassed,
                 onStart: () => _start(LibraryKind.card),
               ),
               const SizedBox(height: 20),
@@ -213,33 +216,73 @@ class HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('今日进度',
-                  style: TextStyle(
-                      color: Color(0xFFF0F4F5),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600)),
-              Text('${s.todayDone} / ${s.dailyLimit}',
-                  style: const TextStyle(
-                      color: Color(0xFF00C08B),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: s.todayProgress,
-              minHeight: 6,
-              backgroundColor: const Color(0x14FFFFFF),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF00C08B)),
-            ),
-          ),
+          const Text('今日进度',
+              style: TextStyle(
+                  color: Color(0xFFF0F4F5),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 14),
+          _progressRow('单词', s.todayWordDone, s.wordDailyLimit, s.wordProgress,
+              s.wordPassed),
+          const SizedBox(height: 12),
+          _progressRow('卡牌', s.todayCardDone, s.cardDailyLimit, s.cardProgress,
+              s.cardPassed),
         ],
       ),
+    );
+  }
+
+  Widget _progressRow(
+      String label, int done, int limit, double prog, bool passed) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        color: Color(0xFF8C9DA2), fontSize: 13)),
+                if (passed) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1F00C08B),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text('已过关 😁',
+                        style: TextStyle(
+                            color: Color(0xFF00C08B),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ],
+            ),
+            Text('$done / $limit',
+                style: TextStyle(
+                    color: passed
+                        ? const Color(0xFF00C08B)
+                        : const Color(0xFFF0F4F5),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: prog,
+            minHeight: 6,
+            backgroundColor: const Color(0x14FFFFFF),
+            valueColor: const AlwaysStoppedAnimation(Color(0xFF00C08B)),
+          ),
+        ),
+      ],
     );
   }
 
@@ -249,6 +292,7 @@ class HomeScreenState extends State<HomeScreen> {
     required int due,
     required int fresh,
     required int learned,
+    required bool passed,
     required VoidCallback onStart,
   }) {
     return Container(
@@ -276,11 +320,31 @@ class HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: const TextStyle(
-                            color: Color(0xFFF0F4F5),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
+                    Row(
+                      children: [
+                        Text(title,
+                            style: const TextStyle(
+                                color: Color(0xFFF0F4F5),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                        if (passed) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0x1F00C08B),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text('已过关 😁',
+                                style: TextStyle(
+                                    color: Color(0xFF00C08B),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: 3),
                     Text('到期 $due · 新学 $fresh · 已掌握 $learned',
                         style: const TextStyle(
