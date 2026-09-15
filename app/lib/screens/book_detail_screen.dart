@@ -1,17 +1,15 @@
-/// 书内页：顶部「开始复习」入口 + 章节/页面列表
+/// 书内页：章节 / 页面列表
 /// 有章节 -> 章节目录（文件夹）；无章节 -> 直接页面列表
+/// 复习入口在首页，这里不再单独放「开始复习」栏（那个一直 0 灰色、点了没反应）。
 library;
 
 import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
-import '../models/study_session.dart';
 import '../services/card_store.dart';
-import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import 'page_list_screen.dart';
-import 'review_screen.dart';
 
 class BookDetailScreen extends StatefulWidget {
   final Book book;
@@ -32,64 +30,8 @@ class BookDetailScreen extends StatefulWidget {
 }
 
 class _BookDetailScreenState extends State<BookDetailScreen> {
-  // ---------- 复习：按 FSRS 到期队列 ----------
-  void _startReview() {
-    final tpl = widget.template;
-    if (tpl == null) return;
-
-    final units = StudyPlanner.wordPlan(
-      books: [widget.book],
-      store: widget.store,
-      withReview: true,
-      withNew: false,
-    );
-
-    if (units.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('今日没有要复习的卡片'),
-        backgroundColor: Color(0xFF1B2629),
-        behavior: SnackBarBehavior.floating,
-      ));
-      return;
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ReviewScreen(
-          title: '${widget.book.title} · 复习',
-          units: units,
-          template: tpl,
-          fieldsOrder: widget.book.fieldsOrder,
-          distractorPool: _poolFromUnits(units),
-          store: widget.store,
-          settings: widget.settings,
-          isCard: tpl.engine == 'srs_basic',
-        ),
-      ),
-    ).then((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  /// 干扰项池：只从**已经载入的**单元里取
-  List<FlashCard> _poolFromUnits(List<StudyUnit> units) {
-    final out = <FlashCard>[];
-    final seen = <String>{};
-    for (final u in units) {
-      final src = u.passageCards ?? u.cards;
-      for (final c in src) {
-        if (seen.add(c.id)) out.add(c);
-      }
-    }
-    return out;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final allIds = widget.book.allCardIds;
-    final dueCount = widget.store.reviewDueCount(allIds);
-
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
       appBar: AppBar(
@@ -104,7 +46,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       ),
       body: Column(
         children: [
-          _reviewBar(dueCount),
           Expanded(
             child: widget.book.hasChapters
                 ? _chapterList(context)
@@ -118,72 +59,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// 顶部复习栏：直接显示今日待复习数量
-  Widget _reviewBar(int dueCount) {
-    final enabled = dueCount > 0 && widget.template != null;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: enabled ? _startReview : null,
-        child: Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: enabled ? const Color(0x1F00C08B) : const Color(0x08FFFFFF),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: enabled
-                    ? const Color(0x3300C08B)
-                    : const Color(0x14FFFFFF)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.refresh,
-                  color: enabled
-                      ? const Color(0xFF00C08B)
-                      : const Color(0xFF54666C),
-                  size: 20),
-              const SizedBox(width: 10),
-              Text('开始复习',
-                  style: TextStyle(
-                      color: enabled
-                          ? const Color(0xFFF0F4F5)
-                          : const Color(0xFF54666C),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600)),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                decoration: BoxDecoration(
-                  color: enabled
-                      ? const Color(0xFF00C08B)
-                      : const Color(0x14FFFFFF),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text('$dueCount',
-                    style: TextStyle(
-                        color: enabled
-                            ? const Color(0xFF141D1F)
-                            : const Color(0xFF54666C),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(width: 6),
-              Text('待复习',
-                  style: TextStyle(
-                      color: enabled
-                          ? const Color(0xFF00C08B)
-                          : const Color(0xFF54666C),
-                      fontSize: 12)),
-            ],
-          ),
-        ),
       ),
     );
   }

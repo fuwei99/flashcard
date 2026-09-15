@@ -483,6 +483,14 @@ html, body {
   display: none;
 }
 
+/* ---------- 单卡预览（章节词表点进来）：只读词义页，不显示任何动作条 ---------- */
+.fc-root[data-preview="1"] .fc-actions {
+  display: none !important;
+}
+.fc-root[data-preview="1"] .fc-top-right {
+  display: none;
+}
+
 .fc-actions .fc-btn {
   flex: 1;
 }

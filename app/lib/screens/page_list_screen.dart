@@ -10,6 +10,7 @@ import '../models/deck.dart';
 import '../services/card_store.dart';
 import '../services/study_plan.dart';
 import '../services/study_settings.dart';
+import 'card_preview_screen.dart';
 import 'review_screen.dart';
 
 /// 某一章的页面列表（带自己的 AppBar）
@@ -195,59 +196,121 @@ class PageListBody extends StatelessWidget {
     );
   }
 
+  /// 词表一行：点开 -> 单卡预览（词义页）
+  /// 显示：单词 + 词性标签 + 音标 + 释义（最多两行）
   Widget _pageTile(BuildContext context, int i) {
     final card = cards[i];
     final learned = store.isLearned(card.id);
-    final phonetic = (card.fields['phonetic_us'] ?? '').toString();
+    final phonetic =
+        (card.fields['phonetic_us'] ?? card.fields['phonetic_uk'] ?? '')
+            .toString();
+    final pos = card.posLabel;
+    final meaning = card.meaningFull;
+    final tpl = template;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      decoration: BoxDecoration(
-        color: const Color(0x08FFFFFF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x10FFFFFF)),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 26,
-            child: Text('${i + 1}',
-                style: const TextStyle(
-                    color: Color(0xFF54666C),
-                    fontSize: 12,
-                    fontFeatures: [FontFeature.tabularFigures()])),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(card.word,
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: tpl == null
+          ? null
+          : () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CardPreviewScreen(
+                    card: card,
+                    template: tpl,
+                    fieldsOrder: book.fieldsOrder,
+                    store: store,
+                    settings: settings,
+                  ),
+                ),
+              ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: const Color(0x08FFFFFF),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0x10FFFFFF)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 26,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text('${i + 1}',
                     style: const TextStyle(
-                        color: Color(0xFFF0F4F5),
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w600)),
-                if (phonetic.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(phonetic,
-                      style: const TextStyle(
-                          color: Color(0xFF54666C), fontSize: 12)),
-                ],
-              ],
-            ),
-          ),
-          if (learned)
-            const Icon(Icons.check_circle,
-                color: Color(0xFF00C08B), size: 18)
-          else
-            Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0x33FFFFFF), width: 1.5),
+                        color: Color(0xFF54666C),
+                        fontSize: 12,
+                        fontFeatures: [FontFeature.tabularFigures()])),
               ),
             ),
-        ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Flexible(
+                        child: Text(card.word,
+                            style: const TextStyle(
+                                color: Color(0xFFF0F4F5),
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                      if (pos.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0x1F00C08B),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(pos,
+                              style: const TextStyle(
+                                  color: Color(0xFF00C08B), fontSize: 10.5)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (phonetic.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(phonetic,
+                        style: const TextStyle(
+                            color: Color(0xFF54666C), fontSize: 12)),
+                  ],
+                  if (meaning.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(meaning,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Color(0xFF8C9DA2),
+                            fontSize: 12.5,
+                            height: 1.35)),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (learned)
+              const Icon(Icons.check_circle,
+                  color: Color(0xFF00C08B), size: 18)
+            else
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border:
+                      Border.all(color: const Color(0x33FFFFFF), width: 1.5),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
