@@ -175,22 +175,22 @@ class HomeScreenState extends State<HomeScreen> {
           backgroundColor: const Color(0xFF1B2629),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Text('先复习一下吧',
+          title: const Text('先复习一下？',
               style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 17)),
-          content: const Text('今日还有单词未复习，可以先复习完已背词再背新词哦~',
+          content: const Text('今天还有未复习的单词，建议先复习完旧词再背诵新词哟~',
               style: TextStyle(color: Color(0xFF8C9DA2), fontSize: 14)),
           actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'new'),
+              child: const Text('直接背诵',
+                  style: TextStyle(color: Color(0xFF8C9DA2))),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'review'),
               child: const Text('开始复习',
                   style: TextStyle(
                       color: Color(0xFF00C08B),
                       fontWeight: FontWeight.w600)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 'new'),
-              child: const Text('先背新词',
-                  style: TextStyle(color: Color(0xFF8C9DA2))),
             ),
           ],
         ),
@@ -572,7 +572,7 @@ class HomeScreenState extends State<HomeScreen> {
           Row(
             children: [
               Expanded(
-                flex: (onReview != null && due > 0) ? 3 : 1,
+                flex: onReview != null ? 3 : 1,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00C08B),
@@ -586,7 +586,7 @@ class HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ),
-              if (onReview != null && due > 0) ...[
+              if (onReview != null) ...[
                 const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
@@ -599,7 +599,7 @@ class HomeScreenState extends State<HomeScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     onPressed: onReview,
-                    child: Text('开始复习($due)',
+                    child: Text(due > 0 ? '开始复习($due)' : '开始复习',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   ),
                 ),
