@@ -1,7 +1,7 @@
 name: flashcard
 description: "flashcard - 卡牌即网页的极简背单词壳。原生只发牌，交互全在卡牌里。"
 publish_to: 'none'
-version: 0.7.1+14
+version: 0.7.2+15
 
 environment:
   sdk: ^3.5.0

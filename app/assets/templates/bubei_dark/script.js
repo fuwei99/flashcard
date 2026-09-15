@@ -232,19 +232,76 @@
   }
 
   // ---------- cloze 填空考法 ----------
-  function renderCloze() {
-    var raw = String(fields.sentence_en || "").replace(/<[^>]+>/g, "");
-    var w = String(fields.word || "");
-    var blank = raw;
-    if (w) {
-      // 转义正则元字符（a.m. / e.g. / (up)on 等），并只替换「整词、首次」。
-      // 否则 act 会把 practice 挖成 pr______ice，new RegExp 还可能直接抛异常。
-      var safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      try { blank = raw.replace(new RegExp("\\b" + safe + "\\b", "i"), "______"); }
-      catch (e) { blank = raw; }
+  // 常见变形后缀白名单：只有「词干 + 这些后缀」才认，
+  // 避免 act 把 practice 误抠成 pr______ice。
+  var BLANK_SUFFIXES = ["", "s", "es", "ed", "d", "ing", "ion", "ions", "ation",
+    "ations", "ment", "ments", "ly", "ness", "er", "ers", "est", "ive", "ives",
+    "al", "ally", "ence", "ance", "ful", "less", "ity", "ities", "ize", "ized",
+    "izes", "izing", "t"];
+
+  // 把例句里的目标词抠成 ______，返回 { text, answer }
+  //
+  //   1) 优先认 <u>/<b>/<em>/<strong> 标记 —— json 里已经像语篇一样把词划好线了，
+  //      直接整段精准抠掉。这样 prevailed / provoked / endorsed 这些**变形词**
+  //      也不会漏，不会再出现「匹配不上原形 → 空挖不出来 → 整句连答案一起显示」。
+  //   2) 没有标记的老数据，退回「原形整词」匹配。
+  //   3) 还没有，做变形兜底：词干 + 后缀白名单（comply→complied、impose→imposed…）。
+  function blankSentence(raw, word) {
+    var src = String(raw || "");
+    var w = String(word || "").trim();
+
+    // 1) 标记优先：数据里已经划好线了，精准抠
+    var m = src.match(/<(u|b|em|strong)\b[^>]*>([\s\S]*?)<\/\1>/i);
+    if (m) {
+      var inner = m[2].replace(/<[^>]+>/g, "").trim();
+      if (inner) {
+        return {
+          text: src.slice(0, m.index) + "______" + src.slice(m.index + m[0].length),
+          answer: inner
+        };
+      }
     }
+
+    var plain = src.replace(/<[^>]+>/g, "");
+    if (!w) return { text: plain, answer: "" };
+
+    // 2) 原形整词（转义 a.m. / e.g. / (up)on 这些正则元字符）
+    var safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var re = null;
+    try { re = new RegExp("\\b" + safe + "\\b", "i"); } catch (e) { re = null; }
+    var hit = re ? plain.match(re) : null;
+    if (hit) {
+      return {
+        text: plain.slice(0, hit.index) + "______" + plain.slice(hit.index + hit[0].length),
+        answer: hit[0]
+      };
+    }
+
+    // 3) 变形兜底：词干 + 后缀白名单
+    var stem = w.toLowerCase();
+    if (/y$/.test(stem) && !/[aeiou]y$/.test(stem)) stem = stem.slice(0, -1) + "i";
+    else if (/e$/.test(stem)) stem = stem.slice(0, -1);
+
+    var tokRe = /\b[A-Za-z][A-Za-z'’-]*\b/g, t;
+    while ((t = tokRe.exec(plain)) !== null) {
+      var low = t[0].toLowerCase();
+      if (low.indexOf(stem) !== 0) continue;
+      if (BLANK_SUFFIXES.indexOf(low.slice(stem.length)) < 0) continue;
+      return {
+        text: plain.slice(0, t.index) + "______" + plain.slice(t.index + t[0].length),
+        answer: t[0]
+      };
+    }
+
+    return { text: plain, answer: "" };
+  }
+
+  function renderCloze() {
+    var res = blankSentence(fields.sentence_en || "", fields.word || "");
+    // 抠完再把残留的标签洗掉（______ 留着）
+    var shown = res.text.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
     var box = root.querySelector(".fc-cloze-box");
-    if (box) box.textContent = blank;
+    if (box) box.textContent = shown;
 
     // 渲染 cloze 选项
     var optBox = root.querySelector('.fc-options[data-for="cloze"]');
