@@ -23,6 +23,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/book.dart';
 import 'card_store.dart';
 import 'data_dir.dart';
+import 'deck_repository.dart';
 
 class ExportResult {
   final bool ok;
@@ -86,7 +87,7 @@ class TransferService {
         'book': book.toJson(),
       };
       if (withProgress) {
-        final ids = book.allCards.map((c) => c.id).toList();
+        final ids = book.allCardIds;
         payload['progress'] = store.exportProgress(ids);
       }
 
@@ -142,18 +143,14 @@ class TransferService {
     );
   }
 
-  /// 把导入的书落盘到 <公共目录>/Flashcard/books/<book_id>.json
-  /// —— Agent 可以直接在这里塞一本书进去
+  /// 把导入的书落盘：有章节 → 分片目录（一章一个 json），无章节 → 单文件。
+  /// 统一走仓库层，保证导入和「Agent 手动丢进 books/」是同一种格式。
   static Future<void> saveImportedBook(Book book) async {
-    final booksDir = await _publicOrPrivate('books');
-    final file = File('${booksDir.path}/${book.bookId}.json');
-    await file.writeAsString(json.encode(book.toJson()));
+    await DeckRepository().saveImportedBook(book);
   }
 
-  /// 删除一本导入的书
+  /// 删除一本导入的书（分片目录 / 单文件都删）
   static Future<void> deleteImportedBook(String bookId) async {
-    final booksDir = await _publicOrPrivate('books');
-    final file = File('${booksDir.path}/$bookId.json');
-    if (await file.exists()) await file.delete();
+    await DeckRepository().deleteImportedBook(bookId);
   }
 }

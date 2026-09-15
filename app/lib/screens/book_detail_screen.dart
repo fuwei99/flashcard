@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
+import '../models/study_session.dart';
 import '../services/card_store.dart';
 import '../services/study_plan.dart';
 import '../services/study_settings.dart';
@@ -60,7 +61,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           units: units,
           template: tpl,
           fieldsOrder: widget.book.fieldsOrder,
-          distractorPool: widget.book.allCards,
+          distractorPool: _poolFromUnits(units),
           store: widget.store,
           settings: widget.settings,
           isCard: tpl.engine == 'srs_basic',
@@ -71,9 +72,22 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     });
   }
 
+  /// 干扰项池：只从**已经载入的**单元里取
+  List<FlashCard> _poolFromUnits(List<StudyUnit> units) {
+    final out = <FlashCard>[];
+    final seen = <String>{};
+    for (final u in units) {
+      final src = u.passageCards ?? u.cards;
+      for (final c in src) {
+        if (seen.add(c.id)) out.add(c);
+      }
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final allIds = widget.book.allCards.map((c) => c.id).toList();
+    final allIds = widget.book.allCardIds;
     final dueCount = widget.store.reviewDueCount(allIds);
 
     return Scaffold(
@@ -183,7 +197,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
         final ch = book.chapters[i];
-        final ids = ch.cards.map((c) => c.id).toList();
+        final ids = ch.ids;
         final learned = store.countLearned(ids);
         final total = ids.length;
         final progress = total == 0 ? 0.0 : learned / total;

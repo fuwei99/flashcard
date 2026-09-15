@@ -2,18 +2,22 @@
 /// ================================================================
 /// **模板**（HTML/CSS/JS/manifest）优先从公共目录读：
 ///   <Documents>/Flashcard/templates/<template_id>/
-///     ├── manifest.json
-///     ├── template.html
-///     ├── style.css
-///     └── script.js
 /// 首次运行会把内置模板铺一份过去（已存在的不覆盖）。
 /// 之后想怎么美化 CSS / 改 HTML / 改 JS，直接改文件 → 「我的」页点
 /// 「重载模板」即可生效，不用重新编译 APK。
 ///
-/// **书本**来源三处，按 bookId 去重：
-///   1. 内置 asset（assets/decks/*.json，只读）
-///   2. <Documents>/Flashcard/books/*.json（Agent 可直接丢书进来）
-///   3. app 私有目录 <appdoc>/books/*.json（老数据，兼容读）
+/// **书本**有两种落盘格式：
+///   1. 分片（新，v0.7.0）：
+///        books/<book_id>/index.json     书元信息 + 章节目录（标题/卡片数/卡片 id/语篇）
+///        books/<book_id>/ch_0001.json   第 1 章，只有卡片
+///      —— 启动只读 index.json，首页算「今天到期/新词」一张卡都不用载入；
+///         真开背才按章读盘；Agent 改第 3 章就只动 ch_0003.json。
+///   2. 单文件（旧）：books/<book_id>.json
+///      —— 读到之后自动拆成分片目录，原文件改名 .json.bak 留底。
+///
+/// 来源目录：
+///   1. <Documents>/Flashcard/books/   （公共目录，Agent 可直接丢书）
+///   2. <appdoc>/books/                （老数据，兼容读）
 library;
 
 import 'dart:convert';
@@ -46,6 +50,9 @@ class DeckRepository {
 
   /// 公共目录里的模板根目录
   static String get templatesPath => '${DataDir.publicPath}/templates';
+
+  /// 公共目录里的书本根目录
+  static String get booksPath => '${DataDir.publicPath}/books';
 
   // ===============================================================
   // 模板
@@ -160,13 +167,13 @@ class DeckRepository {
   // 书本
   // ===============================================================
 
-  /// 读一本书（asset）
+  /// 读一本书（内置 asset，老格式）
   Future<Book> loadBookAsset(String assetPath) async {
     final raw = await rootBundle.loadString(assetPath);
     return Book.fromJson(json.decode(raw) as Map<String, dynamic>);
   }
 
-  /// 用户导入 / 手动放入的书所在目录（公共目录优先）
+  /// 用户书的来源目录（公共目录优先）
   Future<List<Directory>> _booksDirs() async {
     final dirs = <Directory>[];
     final pub = await DataDir.sub('books', create: false);
@@ -178,7 +185,17 @@ class DeckRepository {
     return dirs;
   }
 
-  /// 用户导入的书
+  /// 公共/私有 books 目录（写入用；优先公共）
+  Future<Directory> writableBooksDir() async {
+    final pub = await DataDir.sub('books');
+    if (pub != null) return pub;
+    final base = await getApplicationDocumentsDirectory();
+    final dir = Directory('${base.path}/books');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// 用户导入 / 手动放入的书
   Future<List<Book>> loadImportedBooks() async {
     final out = <Book>[];
     final seen = <String>{};
@@ -186,16 +203,140 @@ class DeckRepository {
       try {
         if (!await dir.exists()) continue;
         await for (final e in dir.list()) {
-          if (e is! File || !e.path.endsWith('.json')) continue;
           try {
-            final raw = await e.readAsString();
-            final b = Book.fromJson(json.decode(raw) as Map<String, dynamic>);
-            if (seen.add(b.bookId)) out.add(b);
+            if (e is Directory) {
+              // 分片格式
+              final idx = File('${e.path}/index.json');
+              if (!await idx.exists()) continue;
+              final raw = await idx.readAsString();
+              final b = Book.fromIndex(
+                  json.decode(raw) as Map<String, dynamic>, e.path);
+              if (seen.add(b.bookId)) out.add(b);
+            } else if (e is File && e.path.endsWith('.json')) {
+              // 老的单文件格式 → 读 + 自动拆片
+              final raw = await e.readAsString();
+              final b = Book.fromJson(json.decode(raw) as Map<String, dynamic>);
+              if (!seen.add(b.bookId)) continue;
+              out.add(b);
+              await _shardLegacy(b, dir.path, e);
+            }
           } catch (_) {}
         }
       } catch (_) {}
     }
     return out;
+  }
+
+  /// 把老的「单文件带章节」书拆成分片目录，原文件改名 .json.bak 留底。
+  /// 没有章节的书保持单文件（通常很小，不值得拆）。
+  Future<bool> _shardLegacy(Book b, String parent, File from) async {
+    if (!b.hasChapters) return false;
+    final dir = Directory('$parent/${b.bookId}');
+    try {
+      if (await dir.exists()) return false;
+      await dir.create(recursive: true);
+
+      final metas = <Map<String, dynamic>>[];
+      var i = 0;
+      for (final c in b.chapters) {
+        i++;
+        final name = 'ch_${i.toString().padLeft(4, '0')}.json';
+        await File('${dir.path}/$name').writeAsString(
+          const JsonEncoder.withIndent('  ').convert(c.toJson()),
+        );
+        metas.add({
+          'chapter_id': c.chapterId,
+          'title': c.title,
+          if (c.passage != null) 'passage': c.passage!.toJson(),
+          'file': name,
+          'card_count': c.cards.length,
+          'card_ids': [for (final x in c.cards) x.id],
+        });
+      }
+
+      final index = <String, dynamic>{
+        'format': 'flashcard.book.v2',
+        'book_id': b.bookId,
+        'title': b.title,
+        'subtitle': b.subtitle,
+        'template': b.templateId,
+        'fields_order': b.fieldsOrder,
+        if (b.passage != null) 'passage': b.passage!.toJson(),
+        'chapters': metas,
+      };
+      await File('${dir.path}/index.json').writeAsString(
+        const JsonEncoder.withIndent('  ').convert(index),
+      );
+
+      try {
+        await from.rename('${from.path}.bak');
+      } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 把一本书写成分片目录（有章节）/ 单文件（无章节）
+  Future<void> saveImportedBook(Book book) async {
+    final booksDir = await writableBooksDir();
+
+    if (!book.hasChapters) {
+      final file = File('${booksDir.path}/${book.bookId}.json');
+      await file.writeAsString(json.encode(book.toJson()));
+      return;
+    }
+
+    final dir = Directory('${booksDir.path}/${book.bookId}');
+    if (await dir.exists()) await dir.delete(recursive: true);
+    await dir.create(recursive: true);
+
+    final metas = <Map<String, dynamic>>[];
+    var i = 0;
+    for (final c in book.chapters) {
+      i++;
+      final name = 'ch_${i.toString().padLeft(4, '0')}.json';
+      await File('${dir.path}/$name').writeAsString(
+        const JsonEncoder.withIndent('  ').convert(c.toJson()),
+      );
+      metas.add({
+        'chapter_id': c.chapterId,
+        'title': c.title,
+        if (c.passage != null) 'passage': c.passage!.toJson(),
+        'file': name,
+        'card_count': c.cards.length,
+        'card_ids': [for (final x in c.cards) x.id],
+      });
+    }
+
+    final index = <String, dynamic>{
+      'format': 'flashcard.book.v2',
+      'book_id': book.bookId,
+      'title': book.title,
+      'subtitle': book.subtitle,
+      'template': book.templateId,
+      'fields_order': book.fieldsOrder,
+      if (book.passage != null) 'passage': book.passage!.toJson(),
+      'chapters': metas,
+    };
+    await File('${dir.path}/index.json').writeAsString(
+      const JsonEncoder.withIndent('  ').convert(index),
+    );
+
+    // 顺手清掉可能存在的同名单文件
+    final old = File('${booksDir.path}/${book.bookId}.json');
+    if (await old.exists()) await old.delete();
+  }
+
+  /// 删除一本导入的书（分片目录 / 单文件都删）
+  Future<void> deleteImportedBook(String bookId) async {
+    final booksDir = await writableBooksDir();
+    final dir = Directory('${booksDir.path}/$bookId');
+    if (await dir.exists()) await dir.delete(recursive: true);
+    for (final suffix in ['', '.bak']) {
+      final f = File('${booksDir.path}/$bookId.json$suffix');
+      if (await f.exists()) await f.delete();
+    }
   }
 
   /// 书架上的所有书 = 内置 + 导入

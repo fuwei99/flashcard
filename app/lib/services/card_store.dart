@@ -1,24 +1,33 @@
 /// 卡牌状态存储：调度状态 + 卡牌私有 KV
 /// ================================================================
-/// 落盘位置：<公共目录>/Flashcard/progress.json
+/// 落盘位置（公共目录）：
+///   <Documents>/Flashcard/progress.json        快照（全量）
+///   <Documents>/Flashcard/progress.log.jsonl   追加日志（一行一次变更）
 ///
-///   {
-///     "card_states": { "<cardId>": { ...FSRS 状态... } },
-///     "card_kv":     { "<cardId>": { ...卡片私有数据... } }
-///   }
+/// 为什么要拆成两个文件：
+///   以前每答一张卡都要把整份状态 `json.encode` 再写盘 —— 1 万张卡时
+///   每次滑动要重写 ~1MB，越背越卡。现在改成 **append-only**：
+///   答一张卡 = 往 jsonl 追加一行，O(1)；启动时先读快照、再按顺序
+///   叠加日志（后写覆盖先写）；日志行数超过阈值就 compact 回快照。
 ///
-/// 这个文件可以直接用文本编辑器 / Agent 改，改完重启 app 生效。
+/// 追加日志的额外好处：崩了不丢（append 是原子的），而且 Agent 能直接
+/// 读 jsonl 看到「最近改了什么」。
+///
 /// 公共目录不可用时退回 SharedPreferences（app 私有，Agent 读不到）。
 library;
 
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data_dir.dart';
 import 'scheduler.dart';
 
 class CardStore {
-  static const _fileName = 'progress.json';
+  static const _snapFile = 'progress.json';
+  static const _journalFile = 'progress.log.jsonl';
 
   // 公共文件不可用时的兜底（老版本数据也在这）
   static const _kStates = 'fc_card_states_v1';
@@ -28,90 +37,69 @@ class CardStore {
   final Map<String, Map<String, dynamic>> _kv = {};
   SharedPreferences? _prefs;
 
+  File? _snap;
+  File? _journal;
+  int _journalLines = 0;
+
   /// 是否落在公共文件上（Agent 可读）
   bool get fileBacked => DataDir.available;
 
   Future<void> init() async {
-    await DataDir.root(); // 先解析公共目录，后面同步写才有根
+    await DataDir.root(); // 先解析公共目录
     _prefs = await SharedPreferences.getInstance();
 
-    // 1) 公共文件优先 —— Agent 改过的以它为准
-    final doc = DataDir.readJsonSync(_fileName);
+    final root = DataDir.cachedRoot;
+    if (root != null) {
+      _snap = File('${root.path}/$_snapFile');
+      _journal = File('${root.path}/$_journalFile');
+    }
+
+    var fromFile = false;
+
+    // 1) 快照
+    final doc = DataDir.readJsonSync(_snapFile);
     if (doc != null) {
       _applyDoc(doc);
-      _flushPrefs(); // 顺手备份一份到 prefs
+      fromFile = true;
+    }
+
+    // 2) 叠加追加日志（后写覆盖先写）
+    final j = _journal;
+    if (j != null && j.existsSync()) {
+      _replayJournal(j);
+      fromFile = true;
+    }
+
+    if (fromFile) {
+      _flushPrefs();
+      // 日志太长就压一次
+      if (_journalLines > _compactThreshold) _compact();
       return;
     }
 
-    // 2) 退回 prefs（老版本数据）
+    // 3) 都没有 → 退回 prefs（老版本数据），然后写成新格式
     _loadPrefs();
-
-    // 3) 首次：把老数据搬到公共文件
-    _flushFile();
+    _compact();
+    _flushPrefs();
   }
 
-  void _loadPrefs() {
-    final rawStates = _prefs?.getString(_kStates);
-    if (rawStates != null) {
-      try {
-        final m = json.decode(rawStates) as Map<String, dynamic>;
-        m.forEach((k, v) {
-          _states[k] = CardState.fromJson(Map<String, dynamic>.from(v as Map));
-        });
-      } catch (_) {}
-    }
-    final rawKv = _prefs?.getString(_kKv);
-    if (rawKv != null) {
-      try {
-        final m = json.decode(rawKv) as Map<String, dynamic>;
-        m.forEach((k, v) {
-          _kv[k] = Map<String, dynamic>.from(v as Map);
-        });
-      } catch (_) {}
-    }
-  }
-
-  void _applyDoc(Map<String, dynamic> doc) {
-    _states.clear();
-    _kv.clear();
-    final states = doc['card_states'];
-    if (states is Map) {
-      states.forEach((k, v) {
-        if (v is Map) {
-          _states[k.toString()] =
-              CardState.fromJson(Map<String, dynamic>.from(v));
-        }
-      });
-    }
-    final kv = doc['card_kv'];
-    if (kv is Map) {
-      kv.forEach((k, v) {
-        if (v is Map) _kv[k.toString()] = Map<String, dynamic>.from(v);
-      });
-    }
-  }
-
-  Map<String, dynamic> toDoc() => {
-        'card_states': _states.map((k, v) => MapEntry(k, v.toJson())),
-        'card_kv': _kv,
-      };
-
-  // ---------- 读 ----------
+  // ---------- 读 / 写 ----------
 
   CardState stateOf(String cardId) => _states[cardId] ?? CardState();
 
   Map<String, dynamic> kvOf(String cardId) => _kv[cardId] ?? {};
 
-  // ---------- 写 ----------
-
   void putKv(String cardId, String key, dynamic value) {
-    (_kv[cardId] ??= {})[key] = value;
-    _flush();
+    final rec = _kv[cardId] ??= <String, dynamic>{};
+    rec[key] = value;
+    _append(cardId, kv: rec);
+    _flushPrefs();
   }
 
   void putState(String cardId, CardState st) {
     _states[cardId] = st;
-    _flush();
+    _append(cardId, st: st);
+    _flushPrefs();
   }
 
   /// 到期 / 新卡 的复习队列
@@ -133,9 +121,7 @@ class CardStore {
 
   int get dueCount => _states.values
       .where((s) =>
-          !s.isNew &&
-          s.due != null &&
-          !s.due!.isAfter(DateTime.now()))
+          !s.isNew && s.due != null && !s.due!.isAfter(DateTime.now()))
       .length;
 
   /// 已学过的卡片数（state != new）
@@ -199,7 +185,8 @@ class CardStore {
         if (v is Map) _kv[k.toString()] = Map<String, dynamic>.from(v);
       });
     }
-    _flush();
+    _compact();
+    _flushPrefs();
   }
 
   Future<void> reset() async {
@@ -207,18 +194,121 @@ class CardStore {
     _kv.clear();
     await _prefs?.remove(_kStates);
     await _prefs?.remove(_kKv);
-    _flush();
+    _compact();
   }
 
-  // ---------- 落盘 ----------
+  // ---------- 追加日志 ----------
 
-  void _flush() {
-    _flushFile();
-    _flushPrefs();
+  /// 日志行数超过这个值就 compact（至少 500，且不低于卡片数的 3 倍）
+  int get _compactThreshold => math.max(500, _states.length * 3);
+
+  Map<String, dynamic> _doc() => {
+        'card_states': _states.map((k, v) => MapEntry(k, v.toJson())),
+        'card_kv': _kv,
+      };
+
+  /// 追加一行变更；失败就退回整份快照，绝不丢数据
+  void _append(String cardId, {CardState? st, Map<String, dynamic>? kv}) {
+    final j = _journal;
+    if (j == null) {
+      _writeSnap();
+      return;
+    }
+    try {
+      final rec = <String, dynamic>{'id': cardId};
+      if (st != null) rec['st'] = st.toJson();
+      if (kv != null) rec['kv'] = kv;
+      j.writeAsStringSync(
+        '${json.encode(rec)}\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+      _journalLines++;
+      if (_journalLines > _compactThreshold) _compact();
+    } catch (_) {
+      _writeSnap();
+    }
   }
 
-  void _flushFile() {
-    DataDir.writeJsonSync(_fileName, toDoc());
+  void _replayJournal(File j) {
+    try {
+      for (final line in j.readAsLinesSync()) {
+        final t = line.trim();
+        if (t.isEmpty) continue;
+        _journalLines++;
+        try {
+          final m = json.decode(t);
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          if (id == null || id.isEmpty) continue;
+          final st = m['st'];
+          if (st is Map) {
+            _states[id] = CardState.fromJson(Map<String, dynamic>.from(st));
+          }
+          final kv = m['kv'];
+          if (kv is Map) _kv[id] = Map<String, dynamic>.from(kv);
+        } catch (_) {
+          // 单行坏了就跳过，不影响其它行
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// 把当前状态写成快照，并清空日志
+  void _compact() {
+    _writeSnap();
+    try {
+      final j = _journal;
+      if (j != null && j.existsSync()) j.writeAsStringSync('', flush: true);
+    } catch (_) {}
+    _journalLines = 0;
+  }
+
+  void _writeSnap() {
+    DataDir.writeJsonSync(_snapFile, _doc());
+  }
+
+  // ---------- prefs 兜底 ----------
+
+  void _loadPrefs() {
+    final rawStates = _prefs?.getString(_kStates);
+    if (rawStates != null) {
+      try {
+        final m = json.decode(rawStates) as Map<String, dynamic>;
+        m.forEach((k, v) {
+          _states[k] = CardState.fromJson(Map<String, dynamic>.from(v as Map));
+        });
+      } catch (_) {}
+    }
+    final rawKv = _prefs?.getString(_kKv);
+    if (rawKv != null) {
+      try {
+        final m = json.decode(rawKv) as Map<String, dynamic>;
+        m.forEach((k, v) {
+          _kv[k] = Map<String, dynamic>.from(v as Map);
+        });
+      } catch (_) {}
+    }
+  }
+
+  void _applyDoc(Map<String, dynamic> doc) {
+    _states.clear();
+    _kv.clear();
+    final states = doc['card_states'];
+    if (states is Map) {
+      states.forEach((k, v) {
+        if (v is Map) {
+          _states[k.toString()] =
+              CardState.fromJson(Map<String, dynamic>.from(v));
+        }
+      });
+    }
+    final kv = doc['card_kv'];
+    if (kv is Map) {
+      kv.forEach((k, v) {
+        if (v is Map) _kv[k.toString()] = Map<String, dynamic>.from(v);
+      });
+    }
   }
 
   void _flushPrefs() {

@@ -50,10 +50,11 @@ class HomeScreenState extends State<HomeScreen> {
       .where((b) => kindOfBook(b, widget.templates) == k)
       .toList();
 
+  // 下面三个计数全部走 allCardIds —— 只读 index.json 里的 id，**不载入任何卡片**
   int _due(List<Book> books) {
     var n = 0;
     for (final b in books) {
-      n += widget.store.reviewDueCount(b.allCards.map((c) => c.id).toList());
+      n += widget.store.reviewDueCount(b.allCardIds);
     }
     return n;
   }
@@ -61,7 +62,9 @@ class HomeScreenState extends State<HomeScreen> {
   int _fresh(List<Book> books) {
     var n = 0;
     for (final b in books) {
-      n += b.allCards.where((c) => !widget.store.isLearned(c.id)).length;
+      for (final id in b.allCardIds) {
+        if (!widget.store.isLearned(id)) n++;
+      }
     }
     return n;
   }
@@ -69,13 +72,23 @@ class HomeScreenState extends State<HomeScreen> {
   int _learned(List<Book> books) {
     var n = 0;
     for (final b in books) {
-      n += widget.store.countLearned(b.allCards.map((c) => c.id).toList());
+      n += widget.store.countLearned(b.allCardIds);
     }
     return n;
   }
 
-  List<FlashCard> _poolOf(List<Book> books) =>
-      books.expand((b) => b.allCards).toList();
+  /// 干扰项池：只从**已经载入的**单元里取，避免为了出题把整本书读进来
+  List<FlashCard> _poolFromUnits(List<StudyUnit> units) {
+    final out = <FlashCard>[];
+    final seen = <String>{};
+    for (final u in units) {
+      final src = u.passageCards ?? u.cards;
+      for (final c in src) {
+        if (seen.add(c.id)) out.add(c);
+      }
+    }
+    return out;
+  }
 
   /// 打开一组编排好的单元
   void _openUnits(
@@ -101,7 +114,7 @@ class HomeScreenState extends State<HomeScreen> {
           units: units,
           template: tpl,
           fieldsOrder: books.first.fieldsOrder,
-          distractorPool: _poolOf(books),
+          distractorPool: _poolFromUnits(units),
           store: widget.store,
           settings: widget.settings,
           isCard: isCard,

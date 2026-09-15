@@ -13,7 +13,10 @@
 ///   新学段（书 → 章）
 ///     每章 → [语篇通读] + [语篇选词(挖全章目标词)] + [本章未学词]
 ///
-/// 即「AB语篇 + AB词 + CD语篇 + CD词 + … + 新学语篇 + 新学词」。
+/// ## 懒加载（v0.7.0）
+/// 判断「这一章有没有今天到期 / 有没有新词」只用 [Chapter.ids]（来自
+/// index.json），**不读章节文件**。只有真有到期/新词的那几章，才会把
+/// ch_xxxx.json 读进来。所以 6500 词的书，开背时也只载入当天要用的那几章。
 library;
 
 import '../models/book.dart';
@@ -26,23 +29,30 @@ const int kGroupSize = 20;
 
 /// 一个分组 = 一章（或一本没有章节的书）
 class _Group {
+  final Chapter? chapter;
   final Passage? passage;
-  final List<FlashCard> cards;
-
-  /// 展示用名字：章名，或（无章节时）书名
+  final List<FlashCard> inlineCards;
   final String title;
 
-  const _Group(this.passage, this.cards, this.title);
+  const _Group(this.chapter, this.passage, this.inlineCards, this.title);
+
+  /// **不触发载入**的卡片 id
+  List<String> get ids =>
+      chapter != null ? chapter!.ids : [for (final c in inlineCards) c.id];
+
+  /// 真正要卡片时才读盘
+  List<FlashCard> get cards =>
+      chapter != null ? chapter!.cards : inlineCards;
 }
 
 class StudyPlanner {
   static List<_Group> _groups(Book b) {
     if (b.hasChapters) {
-      return b.chapters
-          .map((c) => _Group(c.passage, c.cards, c.title))
-          .toList();
+      return [
+        for (final c in b.chapters) _Group(c, c.passage, const [], c.title),
+      ];
     }
-    return [_Group(b.passage, b.looseCards, b.title)];
+    return [_Group(null, b.passage, b.looseCards, b.title)];
   }
 
   static String _lemmaOf(FlashCard c) =>
@@ -64,12 +74,15 @@ class StudyPlanner {
     final out = <StudyUnit>[];
     for (final b in books) {
       for (final g in _groups(b)) {
-        final cards = g.cards;
-        if (cards.isEmpty) continue;
-
-        final ids = cards.map((c) => c.id).toList();
+        // ① 先只用 id 问「这章有到期的吗」—— 不读章节文件
+        final ids = g.ids;
+        if (ids.isEmpty) continue;
         final dueIds = store.reviewDue(ids).toSet();
         if (dueIds.isEmpty) continue;
+
+        // ② 真有到期的，才把这一章读进来
+        final cards = g.cards;
+        if (cards.isEmpty) continue;
 
         final due = cards.where((c) => dueIds.contains(c.id)).toList()
           ..sort((a, b2) {
@@ -106,8 +119,14 @@ class StudyPlanner {
     final out = <StudyUnit>[];
     for (final b in books) {
       for (final g in _groups(b)) {
-        final fresh = g.cards.where((c) => !store.isLearned(c.id)).toList();
+        // 同样先只用 id 判断，没新词就不读盘
+        final freshIds =
+            g.ids.where((id) => !store.isLearned(id)).toSet();
+        if (freshIds.isEmpty) continue;
+
+        final fresh = g.cards.where((c) => freshIds.contains(c.id)).toList();
         if (fresh.isEmpty) continue;
+
         out.add(StudyUnit(
           passage: g.passage,
           cards: fresh,

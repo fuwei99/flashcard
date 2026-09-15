@@ -399,7 +399,7 @@ class LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _bookTile(Book book) {
-    final ids = book.allCards.map((c) => c.id).toList();
+    final ids = book.allCardIds;
     final learned = widget.store.countLearned(ids);
     final total = ids.length;
     final progress = total == 0 ? 0.0 : learned / total;
