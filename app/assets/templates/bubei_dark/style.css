@@ -318,11 +318,24 @@ html, body {
 /* ---------- 词义长页（无限下滑，对标图 2） ---------- */
 .fc-meaning-card {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
   gap: 10px;
   padding: 8px 0 16px;
   border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
   margin-bottom: 20px;
+}
+/* 单个义项：词性 + 释义（+ 多音词的音标）。
+   一词多义 / 一词多性就是多行 .fc-sense。 */
+.fc-sense {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.fc-sense-phonetic {
+  font-size: 13px;
+  color: var(--txt-dim);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  flex-shrink: 0;
 }
 .fc-pos {
   font-size: 16px;
@@ -751,4 +764,86 @@ html, body {
   font-weight: 400;
   color: #FF7A7A;
   opacity: 0.95;
+}
+
+
+/* ------------------------------------------------------------
+   扩展块正文（blocks 里的 list / pairs / table / image）。
+   对应 script.js 的 BLOCK_BODY —— 沿用已有 type 的话，
+   这里一行都不用改；加新 type 才需要补一段样式。
+   ------------------------------------------------------------ */
+.fc-block-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--txt-sub);
+}
+
+/* list：近义词 / 反义词 / 易混词 */
+.fc-block-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.fc-block-list li {
+  margin-bottom: 6px;
+}
+.fc-block-list li:last-child {
+  margin-bottom: 0;
+}
+.fc-block-list .fc-block-cn {
+  color: var(--txt-sub);
+  margin-left: 8px;
+}
+
+/* pairs：常用短语 / 词形对照 */
+.fc-block-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fc-block-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.fc-block-pair:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.fc-pair-l {
+  font-weight: 600;
+  color: var(--txt-main);
+}
+.fc-pair-r {
+  color: var(--txt-sub);
+}
+
+/* table：词形变化 */
+.fc-block-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.fc-block-table th,
+.fc-block-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.fc-block-table th {
+  color: var(--txt-dim);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+.fc-block-table td {
+  color: var(--txt-sub);
+}
+
+/* image：词根图 / 示意图 */
+.fc-block-img {
+  max-width: 100%;
+  border-radius: 10px;
+  display: block;
 }

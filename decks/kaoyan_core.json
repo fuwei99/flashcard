@@ -8,12 +8,10 @@
     "syllable",
     "phonetic_us",
     "phonetic_uk",
-    "pos",
-    "meaning",
+    "senses",
     "sentence_en",
     "sentence_cn",
-    "phrases",
-    "root",
+    "blocks",
     "exam_tag"
   ],
   "chapters": [
@@ -23,265 +21,395 @@
       "cards": [
         {
           "exam_tag": "考研高频词 · 真题出现 18 次",
-          "meaning": "密集的，加强的；(农业)集约的",
           "phonetic_uk": "/ɪnˈtensɪv/",
           "phonetic_us": "/ɪnˈtensɪv/",
-          "phrases": [
-            {
-              "cn": "精读",
-              "en": "intensive reading"
-            },
-            {
-              "cn": "重症监护 (ICU)",
-              "en": "intensive care"
-            },
-            {
-              "cn": "劳动密集型的",
-              "en": "labor-intensive"
-            },
-            {
-              "cn": "高耗能的",
-              "en": "energy-intensive"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>in-</b> (进入，深入) + <b>tens</b> (拉紧) + <b>-ive</b> (形容词后缀) → 朝里极度拉紧的 → 密集的、强化的",
           "sentence_cn": "这门课程要求在短时间内进行高强度学习。",
           "sentence_en": "The course requires <u>intensive</u> study over a short period.",
           "syllable": "in·ten·sive",
           "word": "intensive",
-          "meaning_plain": "密集的，加强的；集约的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "密集的，加强的；(农业)集约的"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "精读",
+                  "en": "intensive reading"
+                },
+                {
+                  "cn": "重症监护 (ICU)",
+                  "en": "intensive care"
+                },
+                {
+                  "cn": "劳动密集型的",
+                  "en": "labor-intensive"
+                },
+                {
+                  "cn": "高耗能的",
+                  "en": "energy-intensive"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>in-</b> (进入，深入) + <b>tens</b> (拉紧) + <b>-ive</b> (形容词后缀) → 朝里极度拉紧的 → 密集的、强化的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 重点辨析",
-          "meaning": "微妙的；难以捉摸的；细致精妙的；敏锐的",
           "phonetic_uk": "/ˈsʌtl/",
           "phonetic_us": "/ˈsʌtl/",
-          "phrases": [
-            {
-              "cn": "细微差异",
-              "en": "subtle difference"
-            },
-            {
-              "cn": "敏锐的心思",
-              "en": "subtle mind"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>sub-</b> (在下面) + <b>tle/tela</b> (织网，精细纤维) → 在深层编织得很细密 → 微妙的、精细的",
           "sentence_cn": "这两个概念之间有着微妙的差异。",
           "sentence_en": "There is a <u>subtle</u> difference between the two concepts.",
           "syllable": "sub·tle",
           "word": "subtle",
-          "meaning_plain": "微妙的；难以捉摸的；细致精妙的；敏锐的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "微妙的；难以捉摸的；细致精妙的；敏锐的"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "细微差异",
+                  "en": "subtle difference"
+                },
+                {
+                  "cn": "敏锐的心思",
+                  "en": "subtle mind"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>sub-</b> (在下面) + <b>tle/tela</b> (织网，精细纤维) → 在深层编织得很细密 → 微妙的、精细的"
+            }
+          ]
         },
         {
           "exam_tag": "社会类阅读高频词",
-          "meaning": "恶化，变坏；退化",
           "phonetic_uk": "/dɪˈtɪəriəreɪt/",
           "phonetic_us": "/dɪˈtɪriəreɪt/",
-          "phrases": [
-            {
-              "cn": "迅速恶化",
-              "en": "deteriorate rapidly"
-            },
-            {
-              "cn": "经济恶化",
-              "en": "economic deterioration"
-            }
-          ],
-          "pos": "vi.",
-          "root": "<b>deterior</b> (拉丁语：更坏的) + <b>-ate</b> (动词后缀) → 变得更坏 → 恶化",
           "sentence_cn": "在压力之下，她的健康状况开始迅速恶化。",
           "sentence_en": "Her health began to <u>deteriorate</u> rapidly under the pressure.",
           "syllable": "de·te·ri·o·rate",
           "word": "deteriorate",
-          "meaning_plain": "恶化，变坏；退化"
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "恶化，变坏；退化"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "迅速恶化",
+                  "en": "deteriorate rapidly"
+                },
+                {
+                  "cn": "经济恶化",
+                  "en": "economic deterioration"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>deterior</b> (拉丁语：更坏的) + <b>-ate</b> (动词后缀) → 变得更坏 → 恶化"
+            }
+          ]
         },
         {
           "exam_tag": "法律经济类高频词",
-          "meaning": "遵从，服从；答应，同意 (comply with)",
           "phonetic_uk": "/kəmˈplaɪ/",
           "phonetic_us": "/kəmˈplaɪ/",
-          "phrases": [
-            {
-              "cn": "遵守，服从",
-              "en": "comply with"
-            },
-            {
-              "cn": "拒绝服从",
-              "en": "refuse to comply"
-            }
-          ],
-          "pos": "vi.",
-          "root": "<b>com-</b> (共同，完全) + <b>ply/ple</b> (填满，满足) → 完全满足要求 → 遵从",
           "sentence_cn": "所有公司都必须遵守新的环保法规。",
           "sentence_en": "All companies must <u>comply</u> with the new environmental regulations.",
           "syllable": "com·ply",
           "word": "comply",
-          "meaning_plain": "遵从，服从；答应，同意"
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "遵从，服从；答应，同意 (comply with)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "遵守，服从",
+                  "en": "comply with"
+                },
+                {
+                  "cn": "拒绝服从",
+                  "en": "refuse to comply"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>com-</b> (共同，完全) + <b>ply/ple</b> (填满，满足) → 完全满足要求 → 遵从"
+            }
+          ]
         },
         {
           "exam_tag": "政治经济类必考词",
-          "meaning": "强加，施加；征收(税等)；把…强加于 (impose on)",
           "phonetic_uk": "/ɪmˈpəʊz/",
           "phonetic_us": "/ɪmˈpoʊz/",
-          "phrases": [
-            {
-              "cn": "把…强加于",
-              "en": "impose on/upon"
-            },
-            {
-              "cn": "征税",
-              "en": "impose a tax"
-            },
-            {
-              "cn": "施加限制",
-              "en": "impose restrictions"
-            }
-          ],
-          "pos": "vt.",
-          "root": "<b>im-</b> (在…上) + <b>pose</b> (放置) → 放在别人身上 → 强加、征收",
           "sentence_cn": "政府决定对进口实施更严格的控制。",
           "sentence_en": "The government decided to <u>impose</u> stricter controls on imports.",
           "syllable": "im·pose",
           "word": "impose",
-          "meaning_plain": "强加，施加；征收；把…强加于"
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "强加，施加；征收(税等)；把…强加于 (impose on)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "把…强加于",
+                  "en": "impose on/upon"
+                },
+                {
+                  "cn": "征税",
+                  "en": "impose a tax"
+                },
+                {
+                  "cn": "施加限制",
+                  "en": "impose restrictions"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>im-</b> (在…上) + <b>pose</b> (放置) → 放在别人身上 → 强加、征收"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 熟词生义",
-          "meaning": "盛行，流行；获胜，占优势 (prevail over/against)",
           "phonetic_uk": "/prɪˈveɪl/",
           "phonetic_us": "/prɪˈveɪl/",
-          "phrases": [
-            {
-              "cn": "战胜，压倒",
-              "en": "prevail over/against"
-            },
-            {
-              "cn": "说服，劝服",
-              "en": "prevail upon"
-            },
-            {
-              "cn": "主流观点",
-              "en": "the prevailing view"
-            }
-          ],
-          "pos": "vi.",
-          "root": "<b>pre-</b> (在前) + <b>vail/val</b> (强壮，价值) → 力量在前 → 占优势、盛行",
           "sentence_cn": "常识最终战胜了恐慌。",
           "sentence_en": "Common sense finally <u>prevailed</u> over panic.",
           "syllable": "pre·vail",
           "word": "prevail",
-          "meaning_plain": "盛行，流行；获胜，占优势"
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "盛行，流行；获胜，占优势 (prevail over/against)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "战胜，压倒",
+                  "en": "prevail over/against"
+                },
+                {
+                  "cn": "说服，劝服",
+                  "en": "prevail upon"
+                },
+                {
+                  "cn": "主流观点",
+                  "en": "the prevailing view"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>pre-</b> (在前) + <b>vail/val</b> (强壮，价值) → 力量在前 → 占优势、盛行"
+            }
+          ]
         },
         {
           "exam_tag": "阅读态度题高频词",
-          "meaning": "激怒，挑动；引起，激起(反应/争论)",
           "phonetic_uk": "/prəˈvəʊk/",
           "phonetic_us": "/prəˈvoʊk/",
-          "phrases": [
-            {
-              "cn": "激怒某人做某事",
-              "en": "provoke sb into doing"
-            },
-            {
-              "cn": "激起反应",
-              "en": "provoke a reaction"
-            },
-            {
-              "cn": "煽动性言论",
-              "en": "provocative remarks"
-            }
-          ],
-          "pos": "vt.",
-          "root": "<b>pro-</b> (向前) + <b>voke/voc</b> (呼喊，声音) → 冲着你喊 → 激怒、挑衅",
           "sentence_cn": "该提案在学者中引发了激烈的争论。",
           "sentence_en": "The proposal <u>provoked</u> a fierce debate among scholars.",
           "syllable": "pro·voke",
           "word": "provoke",
-          "meaning_plain": "激怒，挑动；引起，激起"
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "激怒，挑动；引起，激起(反应/争论)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "激怒某人做某事",
+                  "en": "provoke sb into doing"
+                },
+                {
+                  "cn": "激起反应",
+                  "en": "provoke a reaction"
+                },
+                {
+                  "cn": "煽动性言论",
+                  "en": "provocative remarks"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>pro-</b> (向前) + <b>voke/voc</b> (呼喊，声音) → 冲着你喊 → 激怒、挑衅"
+            }
+          ]
         },
         {
           "exam_tag": "商业与政治类高频词",
-          "meaning": "赞同，支持；为(商品)代言；在(票据)背面签名",
           "phonetic_uk": "/ɪnˈdɔːs/",
           "phonetic_us": "/ɪnˈdɔːrs/",
-          "phrases": [
-            {
-              "cn": "支持一项提案",
-              "en": "endorse a proposal"
-            },
-            {
-              "cn": "支持某候选人",
-              "en": "endorse a candidate"
-            },
-            {
-              "cn": "名人代言",
-              "en": "celebrity endorsement"
-            }
-          ],
-          "pos": "vt.",
-          "root": "<b>en-</b> (使，在…上) + <b>dorse/dorsum</b> (背部) → 在背后签字认可 → 赞同、背书",
           "sentence_cn": "几位著名科学家公开支持了这一新理论。",
           "sentence_en": "Several major scientists publicly <u>endorsed</u> the new theory.",
           "syllable": "en·dorse",
           "word": "endorse",
-          "meaning_plain": "赞同，支持；为代言；在背面签名"
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "赞同，支持；为(商品)代言；在(票据)背面签名"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "支持一项提案",
+                  "en": "endorse a proposal"
+                },
+                {
+                  "cn": "支持某候选人",
+                  "en": "endorse a candidate"
+                },
+                {
+                  "cn": "名人代言",
+                  "en": "celebrity endorsement"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>en-</b> (使，在…上) + <b>dorse/dorsum</b> (背部) → 在背后签字认可 → 赞同、背书"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 写作可用",
-          "meaning": "可行的，行得通的；可能的",
           "phonetic_uk": "/ˈfiːzəbl/",
           "phonetic_us": "/ˈfiːzəbl/",
-          "phrases": [
-            {
-              "cn": "可行的计划",
-              "en": "feasible plan"
-            },
-            {
-              "cn": "技术上可行的",
-              "en": "technically feasible"
-            },
-            {
-              "cn": "可行性研究",
-              "en": "feasibility study"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>feas/fac</b> (做，制作) + <b>-ible</b> (可…的) → 可以做的 → 可行的",
           "sentence_cn": "在一周内完成这个项目是不可行的。",
           "sentence_en": "It is not <u>feasible</u> to finish the project within a week.",
           "syllable": "fea·si·ble",
           "word": "feasible",
-          "meaning_plain": "可行的，行得通的；可能的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "可行的，行得通的；可能的"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "可行的计划",
+                  "en": "feasible plan"
+                },
+                {
+                  "cn": "技术上可行的",
+                  "en": "technically feasible"
+                },
+                {
+                  "cn": "可行性研究",
+                  "en": "feasibility study"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>feas/fac</b> (做，制作) + <b>-ible</b> (可…的) → 可以做的 → 可行的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 哲学社科类",
-          "meaning": "固有的，内在的，与生俱来的 (inherent in)",
           "phonetic_uk": "/ɪnˈhɪərənt/",
           "phonetic_us": "/ɪnˈhɪrənt/",
-          "phrases": [
-            {
-              "cn": "固有于…之中",
-              "en": "inherent in"
-            },
-            {
-              "cn": "内在品质",
-              "en": "inherent quality"
-            },
-            {
-              "cn": "内在矛盾",
-              "en": "inherent contradiction"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>in-</b> (在内) + <b>her/hes</b> (粘附，继承) + <b>-ent</b> → 内在粘附着的 → 固有的",
           "sentence_cn": "任何投资都存在固有的风险。",
           "sentence_en": "There are <u>inherent</u> risks in any investment.",
           "syllable": "in·her·ent",
           "word": "inherent",
-          "meaning_plain": "固有的，内在的，与生俱来的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "固有的，内在的，与生俱来的 (inherent in)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "固有于…之中",
+                  "en": "inherent in"
+                },
+                {
+                  "cn": "内在品质",
+                  "en": "inherent quality"
+                },
+                {
+                  "cn": "内在矛盾",
+                  "en": "inherent contradiction"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>in-</b> (在内) + <b>her/hes</b> (粘附，继承) + <b>-ent</b> → 内在粘附着的 → 固有的"
+            }
+          ]
         }
       ],
       "passage": {
@@ -296,257 +424,391 @@
       "cards": [
         {
           "exam_tag": "熟词生义 · 翻译阅读必杀词",
-          "meaning": "adj. 模糊的；晦涩难懂的；无名的　vt. 使模糊；遮蔽",
           "phonetic_uk": "/əbˈskjʊə/",
           "phonetic_us": "/əbˈskjʊr/",
-          "phrases": [
-            {
-              "cn": "鲜为人知的起源",
-              "en": "obscure origin"
-            },
-            {
-              "cn": "掩盖真相",
-              "en": "obscure the truth"
-            }
-          ],
-          "pos": "adj. / vt.",
-          "root": "<b>ob-</b> (覆盖，阻碍) + <b>scure</b> (遮蔽，同 shade) → 被彻底遮挡的 → 费解的、鲜为人知的",
           "sentence_cn": "合同的细节对大多数员工来说仍然晦涩不清。",
           "sentence_en": "The details of the contract remained <u>obscure</u> to most employees.",
           "syllable": "ob·scure",
           "word": "obscure",
-          "meaning_plain": "adj. 模糊的；晦涩难懂的；无名的 vt. 使模糊；遮蔽"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "模糊的；晦涩难懂的；无名的"
+            },
+            {
+              "pos": "vt.",
+              "cn": "使模糊；遮蔽"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "鲜为人知的起源",
+                  "en": "obscure origin"
+                },
+                {
+                  "cn": "掩盖真相",
+                  "en": "obscure the truth"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>ob-</b> (覆盖，阻碍) + <b>scure</b> (遮蔽，同 shade) → 被彻底遮挡的 → 费解的、鲜为人知的"
+            }
+          ]
         },
         {
           "exam_tag": "阅读态度题高频词",
-          "meaning": "模棱两可的，含糊不清的；不明确的",
           "phonetic_uk": "/æmˈbɪɡjuəs/",
           "phonetic_us": "/æmˈbɪɡjuəs/",
-          "phrases": [
-            {
-              "cn": "暧昧的态度",
-              "en": "ambiguous attitude"
-            },
-            {
-              "cn": "模棱两可的措辞",
-              "en": "ambiguous wording"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>ambi-</b> (双，两边) + <b>ag/ig</b> (驱动，行走) + <b>-uous</b> → 两边都能走通的 → 模棱两可的",
           "sentence_cn": "他对我的提问的回答有些模棱两可。",
           "sentence_en": "His reply to my question was somewhat <u>ambiguous</u>.",
           "syllable": "am·big·u·ous",
           "word": "ambiguous",
-          "meaning_plain": "模棱两可的，含糊不清的；不明确的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "模棱两可的，含糊不清的；不明确的"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "暧昧的态度",
+                  "en": "ambiguous attitude"
+                },
+                {
+                  "cn": "模棱两可的措辞",
+                  "en": "ambiguous wording"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>ambi-</b> (双，两边) + <b>ag/ig</b> (驱动，行走) + <b>-uous</b> → 两边都能走通的 → 模棱两可的"
+            }
+          ]
         },
         {
           "exam_tag": "阅读高频词 · 注意褒贬",
-          "meaning": "臭名昭著的，声名狼藉的 (贬义)",
           "phonetic_uk": "/nəʊˈtɔːriəs/",
           "phonetic_us": "/noʊˈtɔːriəs/",
-          "phrases": [
-            {
-              "cn": "因…而臭名昭著",
-              "en": "be notorious for"
-            },
-            {
-              "cn": "臭名昭著的罪犯",
-              "en": "a notorious criminal"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>not</b> (知道，标记) + <b>-orious</b> (形容词后缀) → 被大家标记知道的(坏事) → 臭名昭著的",
           "sentence_cn": "这座城市因交通拥堵和空气污染而声名狼藉。",
           "sentence_en": "The city is <u>notorious</u> for its heavy traffic and air pollution.",
           "syllable": "no·to·ri·ous",
           "word": "notorious",
-          "meaning_plain": "臭名昭著的，声名狼藉的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "臭名昭著的，声名狼藉的 (贬义)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "因…而臭名昭著",
+                  "en": "be notorious for"
+                },
+                {
+                  "cn": "臭名昭著的罪犯",
+                  "en": "a notorious criminal"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>not</b> (知道，标记) + <b>-orious</b> (形容词后缀) → 被大家标记知道的(坏事) → 臭名昭著的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 阅读推断题",
-          "meaning": "似乎合理的，貌似可信的 (未必真实)",
           "phonetic_uk": "/ˈplɔːzəbl/",
           "phonetic_us": "/ˈplɔːzəbl/",
-          "phrases": [
-            {
-              "cn": "貌似合理的借口",
-              "en": "plausible excuse"
-            },
-            {
-              "cn": "可推诿的辩解",
-              "en": "plausible deniability"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>plaus/plaud</b> (拍手，鼓掌) + <b>-ible</b> → 值得鼓掌的 → 貌似可信的",
           "sentence_cn": "他的解释听起来似乎合理，但实际上是假的。",
           "sentence_en": "His explanation sounded <u>plausible</u> but was actually false.",
           "syllable": "plau·si·ble",
           "word": "plausible",
-          "meaning_plain": "似乎合理的，貌似可信的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "似乎合理的，貌似可信的 (未必真实)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "貌似合理的借口",
+                  "en": "plausible excuse"
+                },
+                {
+                  "cn": "可推诿的辩解",
+                  "en": "plausible deniability"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>plaus/plaud</b> (拍手，鼓掌) + <b>-ible</b> → 值得鼓掌的 → 貌似可信的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 完形常考",
-          "meaning": "抑制，克制；约束，管制 (restrain from)",
           "phonetic_uk": "/rɪˈstreɪn/",
           "phonetic_us": "/rɪˈstreɪn/",
-          "phrases": [
-            {
-              "cn": "克制自己",
-              "en": "restrain oneself"
-            },
-            {
-              "cn": "克制不做某事",
-              "en": "restrain from doing"
-            },
-            {
-              "cn": "贸易限制",
-              "en": "restraint on trade"
-            }
-          ],
-          "pos": "vt.",
-          "root": "<b>re-</b> (回，向后) + <b>strain/strict</b> (拉紧，束缚) → 往回拉紧 → 抑制、约束",
           "sentence_cn": "听到这个消息时，她几乎抑制不住自己的眼泪。",
           "sentence_en": "She could hardly <u>restrain</u> her tears when hearing the news.",
           "syllable": "re·strain",
           "word": "restrain",
-          "meaning_plain": "抑制，克制；约束，管制"
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "抑制，克制；约束，管制 (restrain from)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "克制自己",
+                  "en": "restrain oneself"
+                },
+                {
+                  "cn": "克制不做某事",
+                  "en": "restrain from doing"
+                },
+                {
+                  "cn": "贸易限制",
+                  "en": "restraint on trade"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>re-</b> (回，向后) + <b>strain/strict</b> (拉紧，束缚) → 往回拉紧 → 抑制、约束"
+            }
+          ]
         },
         {
           "exam_tag": "医学社会类高频词",
-          "meaning": "易受影响的；易患病的；敏感的 (susceptible to)",
           "phonetic_uk": "/səˈseptəbl/",
           "phonetic_us": "/səˈseptəbl/",
-          "phrases": [
-            {
-              "cn": "易受…影响；易患…",
-              "en": "be susceptible to"
-            },
-            {
-              "cn": "易受奉承",
-              "en": "susceptible to flattery"
-            },
-            {
-              "cn": "易感菌株",
-              "en": "susceptible strain"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>sus-</b> (在下) + <b>cept</b> (拿，取) + <b>-ible</b> → 能被从下面拿住的 → 易受影响的",
           "sentence_cn": "幼儿尤其容易感染这种病毒。",
           "sentence_en": "Young children are especially <u>susceptible</u> to this virus.",
           "syllable": "sus·cep·ti·ble",
           "word": "susceptible",
-          "meaning_plain": "易受影响的；易患病的；敏感的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "易受影响的；易患病的；敏感的 (susceptible to)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "易受…影响；易患…",
+                  "en": "be susceptible to"
+                },
+                {
+                  "cn": "易受奉承",
+                  "en": "susceptible to flattery"
+                },
+                {
+                  "cn": "易感菌株",
+                  "en": "susceptible strain"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>sus-</b> (在下) + <b>cept</b> (拿，取) + <b>-ible</b> → 能被从下面拿住的 → 易受影响的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 写作可用",
-          "meaning": "试探性的，暂时的；不确定的，犹豫的",
           "phonetic_uk": "/ˈtentətɪv/",
           "phonetic_us": "/ˈtentətɪv/",
-          "phrases": [
-            {
-              "cn": "初步协议",
-              "en": "tentative agreement"
-            },
-            {
-              "cn": "暂定结论",
-              "en": "tentative conclusion"
-            },
-            {
-              "cn": "试探性计划",
-              "en": "tentative plan"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>tent/tend</b> (尝试，拉伸) + <b>-ative</b> → 尝试性的 → 试探的、暂时的",
           "sentence_cn": "我们就这个问题达成了初步协议。",
           "sentence_en": "We have reached a <u>tentative</u> agreement on the issue.",
           "syllable": "ten·ta·tive",
           "word": "tentative",
-          "meaning_plain": "试探性的，暂时的；不确定的，犹豫的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "试探性的，暂时的；不确定的，犹豫的"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "初步协议",
+                  "en": "tentative agreement"
+                },
+                {
+                  "cn": "暂定结论",
+                  "en": "tentative conclusion"
+                },
+                {
+                  "cn": "试探性计划",
+                  "en": "tentative plan"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>tent/tend</b> (尝试，拉伸) + <b>-ative</b> → 尝试性的 → 试探的、暂时的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 人物描述",
-          "meaning": "多才多艺的；多功能的，用途广泛的",
           "phonetic_uk": "/ˈvɜːsətaɪl/",
           "phonetic_us": "/ˈvɜːrsətl/",
-          "phrases": [
-            {
-              "cn": "多方面的才能",
-              "en": "versatile talent"
-            },
-            {
-              "cn": "多用途工具",
-              "en": "versatile tool"
-            },
-            {
-              "cn": "全能型球员",
-              "en": "versatile player"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>vers/vert</b> (转，转向) + <b>-atile</b> → 能向多方向转的 → 多才多艺的、多功能的",
           "sentence_cn": "他是一位多才多艺的演员，喜剧和悲剧都能演。",
           "sentence_en": "He is a <u>versatile</u> actor who can play both comedy and tragedy.",
           "syllable": "ver·sa·tile",
           "word": "versatile",
-          "meaning_plain": "多才多艺的；多功能的，用途广泛的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "多才多艺的；多功能的，用途广泛的"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "多方面的才能",
+                  "en": "versatile talent"
+                },
+                {
+                  "cn": "多用途工具",
+                  "en": "versatile tool"
+                },
+                {
+                  "cn": "全能型球员",
+                  "en": "versatile player"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>vers/vert</b> (转，转向) + <b>-atile</b> → 能向多方向转的 → 多才多艺的、多功能的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 社会类阅读",
-          "meaning": "易受伤害的；脆弱的；易受攻击的 (vulnerable to)",
           "phonetic_uk": "/ˈvʌlnərəbl/",
           "phonetic_us": "/ˈvʌlnərəbl/",
-          "phrases": [
-            {
-              "cn": "易受…伤害",
-              "en": "be vulnerable to"
-            },
-            {
-              "cn": "弱势群体",
-              "en": "vulnerable groups"
-            },
-            {
-              "cn": "易受攻击的地位",
-              "en": "vulnerable position"
-            }
-          ],
-          "pos": "adj.",
-          "root": "<b>vulner</b> (拉丁语：伤口) + <b>-able</b> (可…的) → 可被弄伤的 → 易受伤害的",
           "sentence_cn": "老年人更容易感染流感。",
           "sentence_en": "Elderly people are more <u>vulnerable</u> to the flu.",
           "syllable": "vul·ner·a·ble",
           "word": "vulnerable",
-          "meaning_plain": "易受伤害的；脆弱的；易受攻击的"
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "易受伤害的；脆弱的；易受攻击的 (vulnerable to)"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "易受…伤害",
+                  "en": "be vulnerable to"
+                },
+                {
+                  "cn": "弱势群体",
+                  "en": "vulnerable groups"
+                },
+                {
+                  "cn": "易受攻击的地位",
+                  "en": "vulnerable position"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>vulner</b> (拉丁语：伤口) + <b>-able</b> (可…的) → 可被弄伤的 → 易受伤害的"
+            }
+          ]
         },
         {
           "exam_tag": "考研高频词 · 科技类阅读",
-          "meaning": "经受住，承受；抵挡，反抗",
           "phonetic_uk": "/wɪðˈstænd/",
           "phonetic_us": "/wɪðˈstænd/",
-          "phrases": [
-            {
-              "cn": "承受压力",
-              "en": "withstand pressure"
-            },
-            {
-              "cn": "经得起时间考验",
-              "en": "withstand the test of time"
-            },
-            {
-              "cn": "抵挡攻击",
-              "en": "withstand attack"
-            }
-          ],
-          "pos": "vt.",
-          "root": "<b>with-</b> (对抗，向后) + <b>stand</b> (站立) → 站住对抗 → 经受住、抵挡",
           "sentence_cn": "这座桥被设计成能够承受强烈地震。",
           "sentence_en": "The bridge was designed to <u>withstand</u> powerful earthquakes.",
           "syllable": "with·stand",
           "word": "withstand",
-          "meaning_plain": "经受住，承受；抵挡，反抗"
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "经受住，承受；抵挡，反抗"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "pairs",
+              "title": "常用短语",
+              "items": [
+                {
+                  "cn": "承受压力",
+                  "en": "withstand pressure"
+                },
+                {
+                  "cn": "经得起时间考验",
+                  "en": "withstand the test of time"
+                },
+                {
+                  "cn": "抵挡攻击",
+                  "en": "withstand attack"
+                }
+              ]
+            },
+            {
+              "type": "html",
+              "title": "词根词源",
+              "html": "<b>with-</b> (对抗，向后) + <b>stand</b> (站立) → 站住对抗 → 经受住、抵挡"
+            }
+          ]
         }
       ],
       "passage": {
@@ -555,5 +817,6 @@
         "cn": "她的动机依然[晦涩]，回答也[模棱两可]。[声名狼藉]的公司给出了[貌似合理]的借口，却无法[约束]批评者。年轻员工尤其[易受]这类言论影响；他们做了一份[试探性]的计划，试图[顶住]压力。她[多才多艺]，却又感到[脆弱]。"
       }
     }
-  ]
+  ],
+  "schema": 2
 }

@@ -154,8 +154,11 @@ class WebViewBridge {
         segs.add({
           'w': s.surface,
           'lemma': s.lemma,
-          'pos': (c?.fields['pos'] ?? '').toString(),
-          'meaning': (c?.fields['meaning'] ?? '').toString(),
+          // 多词性用 / 连（adj./vt.），释义取全部义项
+          'pos': c == null
+              ? ''
+              : {for (final e in c.senses) if (e.pos.isNotEmpty) e.pos}.join('/'),
+          'meaning': c?.meaningFull ?? '',
           // 纯中文释义：语篇选词的「当前空」提示用它，避免短语泄题
           'plain': c?.meaningPlain ?? '',
           'blank': blankLemmas == null || blankLemmas.contains(lemma),

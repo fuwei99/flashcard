@@ -46,11 +46,8 @@
       </div>
     </div>
 
-    <!-- 核心释义 -->
-    <div class="fc-meaning-card">
-      <span class="fc-pos"></span>
-      <span class="fc-mean-text"></span>
-    </div>
+    <!-- 核心释义：义项列表（一词多义 / 一词多性逐条列出），由 script.js 渲染 -->
+    <div class="fc-meaning-card fc-senses"></div>
 
     <!-- 真题例句卡片 -->
     <div class="fc-card-block fc-sentence-block" style="display:none;">
@@ -64,21 +61,18 @@
       <div class="fc-cn-sentence"></div>
     </div>
 
-    <!-- 常用词组搭配 -->
-    <div class="fc-card-block fc-phrases-block" style="display:none;">
-      <div class="fc-block-header">
-        <span class="fc-block-title">常用短语</span>
-      </div>
-      <div class="fc-phrase-list"></div>
-    </div>
+    <!-- 扩展块：内容全部来自 json 的 `blocks`，模板**不认识具体业务字段**，
+         只按 block 的 type 渲染。以后加「近义词 / 反义词 / 词形变化 / 易混词」
+         只需要往 json 里加一个 block —— 不用改这里，更不用重编 APK。 -->
+    <div class="fc-blocks"></div>
 
-    <!-- 词根词源 -->
-    <div class="fc-card-block fc-root-block" style="display:none;">
-      <div class="fc-block-header">
-        <span class="fc-block-title">词根词源</span>
+    <!-- 块模板：新增 type 时只动 script.js 里的 BLOCK_BODY -->
+    <template id="fc-block-tpl">
+      <div class="fc-card-block">
+        <div class="fc-block-header"><span class="fc-block-title"></span></div>
+        <div class="fc-block-body"></div>
       </div>
-      <div class="fc-root-content"></div>
-    </div>
+    </template>
 
     <div class="fc-scroll-pad"></div>
   </section>

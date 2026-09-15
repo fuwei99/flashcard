@@ -1,1 +1,42 @@
-{"book_id":"mixup_demo","cards":[{"phonetic_us":"/ɪnˈtɜːrprət/","root":"inter-（在…之间）+ pret（解释、说明）→ 在两者之间做解释 → 解释；口译","senses":[{"cn":"打断，打扰","pos":"vi. vt."},{"cn":"解释，说明；把…理解为","pos":"vt."},{"cn":"干涉，介入；妨碍，干扰；弄坏","pos":"vi."},{"cn":"面试；采访；面谈","pos":"n."}],"sentence_cn":"你怎么理解这首诗？","sentence_en":"How do you interpret this poem?","word":"interpret"}],"fields_order":["word","phonetic_us","senses","sentence_en","sentence_cn","root"],"subtitle":"复刻截图 interpret","template":"mixup_dark","title":"形近词辨析 · 测试本"}
+{
+  "book_id": "mixup_demo",
+  "cards": [
+    {
+      "phonetic_us": "/ɪnˈtɜːrprət/",
+      "root": "inter-（在…之间）+ pret（解释、说明）→ 在两者之间做解释 → 解释；口译",
+      "senses": [
+        {
+          "cn": "打断，打扰",
+          "pos": "vi. vt."
+        },
+        {
+          "cn": "解释，说明；把…理解为",
+          "pos": "vt."
+        },
+        {
+          "cn": "干涉，介入；妨碍，干扰；弄坏",
+          "pos": "vi."
+        },
+        {
+          "cn": "面试；采访；面谈",
+          "pos": "n."
+        }
+      ],
+      "sentence_cn": "你怎么理解这首诗？",
+      "sentence_en": "How do you interpret this poem?",
+      "word": "interpret"
+    }
+  ],
+  "fields_order": [
+    "word",
+    "phonetic_us",
+    "senses",
+    "sentence_en",
+    "sentence_cn",
+    "root"
+  ],
+  "subtitle": "复刻截图 interpret",
+  "template": "mixup_dark",
+  "title": "形近词辨析 · 测试本",
+  "schema": 2
+}

@@ -67,61 +67,237 @@
     if (say) FC.tts(say, lang || "en-US");
   }
 
-  // ---------- 渲染词义页的各个区块 ----------
-  function renderBackFace() {
-    // 词义
-    var posEl = root.querySelector(".fc-back .fc-pos");
-    var meanEl = root.querySelector(".fc-back .fc-mean-text");
-    if (posEl) posEl.textContent = fields.pos || "";
-    if (meanEl) meanEl.textContent = fields.meaning || "";
+  // ---------- 词义页：义项列表 ----------
+  // 一词多义 / 一词多性在这里逐条渲染。
+  // 老数据（只有 pos + meaning 两个字符串）被折成一条，不改 json 也能看。
+  function sensesOf() {
+    var raw = fields.senses;
+    var out = [];
+    if (Array.isArray(raw)) {
+      raw.forEach(function (s) {
+        if (s && typeof s === "object") {
+          var cn = String(s.cn || s.meaning || "").trim();
+          if (!cn) return;
+          out.push({
+            pos: String(s.pos || "").trim(),
+            cn: cn,
+            phonetic: String(s.phonetic_us || s.phonetic || "").trim()
+          });
+        } else if (typeof s === "string" && s.trim()) {
+          out.push({ pos: "", cn: s.trim(), phonetic: "" });
+        }
+      });
+    }
+    if (!out.length) {
+      var cn0 = String(fields.meaning || "").trim();
+      if (cn0) {
+        out.push({ pos: String(fields.pos || "").trim(), cn: cn0, phonetic: "" });
+      }
+    }
+    return out;
+  }
 
-    // 真题例句
+  function renderSenses() {
+    var box = root.querySelector(".fc-back .fc-senses");
+    if (!box) return;
+    box.innerHTML = "";
+    var list = sensesOf();
+    list.forEach(function (s) {
+      var row = document.createElement("div");
+      row.className = "fc-sense";
+      if (s.pos) {
+        var p = document.createElement("span");
+        p.className = "fc-pos";
+        p.textContent = s.pos;
+        row.appendChild(p);
+      }
+      var t = document.createElement("span");
+      t.className = "fc-mean-text";
+      t.textContent = s.cn;
+      row.appendChild(t);
+      // 多音词：义项自带音标就顺带显示
+      if (s.phonetic) {
+        var ph = document.createElement("span");
+        ph.className = "fc-sense-phonetic";
+        ph.textContent = "/" + s.phonetic.replace(/^\/|\/$/g, "") + "/";
+        row.appendChild(ph);
+      }
+      box.appendChild(row);
+    });
+    box.style.display = list.length ? "" : "none";
+  }
+
+  // ---------- 词义页：真题例句（固定字段，cloze 也读它） ----------
+  function renderSentence() {
     var sentBlock = root.querySelector(".fc-sentence-block");
     var enEl = root.querySelector(".fc-en-sentence");
     var cnEl = root.querySelector(".fc-cn-sentence");
-    if (fields.sentence_en && fields.sentence_en.trim()) {
+    if (String(fields.sentence_en || "").trim()) {
       if (enEl) enEl.innerHTML = fields.sentence_en;
       if (cnEl) cnEl.textContent = fields.sentence_cn || "";
       if (sentBlock) sentBlock.style.display = "block";
     } else {
       if (sentBlock) sentBlock.style.display = "none";
     }
+  }
 
-    // 常用短语
-    var phraseBlock = root.querySelector(".fc-phrases-block");
-    var phraseList = root.querySelector(".fc-phrase-list");
-    var phrases = fields.phrases || [];
-    if (Array.isArray(phrases) && phrases.length > 0) {
-      if (phraseList) {
-        phraseList.innerHTML = "";
-        phrases.forEach(function (p) {
-          var item = document.createElement("div");
-          item.className = "fc-phrase-item";
-          var en = document.createElement("span");
-          en.className = "fc-phrase-en";
-          en.textContent = p.en || "";
-          var cn = document.createElement("span");
-          cn.className = "fc-phrase-cn";
-          cn.textContent = p.cn || "";
-          item.appendChild(en);
-          item.appendChild(cn);
-          phraseList.appendChild(item);
-        });
+  // ---------- 词义页：扩展块 ----------
+  // 模板**不认识任何业务字段**，只按 block 的 type 渲染。
+  // 以后要加「近义词 / 反义词 / 词形变化 / 易混词」，
+  // 只在 json 里加一个 block 就行 —— 不用动这里，更不用重编 APK。
+  var BLOCK_BODY = {
+    // 富文本（词根词源、辨析说明）
+    html: function (b) { return String(b.html || b.text || ""); },
+    // 纯段落（转义）
+    text: function (b) { return escHtml(b.text || b.html || ""); },
+    // 单列列表：["thorough", "concentrated"]
+    list: function (b) {
+      var items = b.items || [];
+      if (!items.length) return "";
+      var s = '<ul class="fc-block-list">';
+      items.forEach(function (it) {
+        var o = blockItem(it);
+        s += "<li>" + escHtml(o.left) +
+             (o.right ? '<span class="fc-block-cn">' + escHtml(o.right) + "</span>" : "") +
+             "</li>";
+      });
+      return s + "</ul>";
+    },
+    // 左右两列：[{en, cn}] 或 [{k, v}]
+    pairs: function (b) {
+      var items = b.items || [];
+      if (!items.length) return "";
+      var s = '<div class="fc-block-pairs">';
+      items.forEach(function (it) {
+        var o = blockItem(it);
+        s += '<div class="fc-block-pair">' +
+             '<span class="fc-pair-l">' + escHtml(o.left) + "</span>" +
+             '<span class="fc-pair-r">' + escHtml(o.right) + "</span></div>";
+      });
+      return s + "</div>";
+    },
+    // 表格：{cols:["原形","过去式"], rows:[["go","went"]]}
+    table: function (b) {
+      var cols = b.cols || [], rows = b.rows || [];
+      if (!cols.length && !rows.length) return "";
+      var s = '<table class="fc-block-table">';
+      if (cols.length) {
+        s += "<thead><tr>";
+        cols.forEach(function (c) { s += "<th>" + escHtml(c) + "</th>"; });
+        s += "</tr></thead>";
       }
-      if (phraseBlock) phraseBlock.style.display = "block";
-    } else {
-      if (phraseBlock) phraseBlock.style.display = "none";
+      s += "<tbody>";
+      rows.forEach(function (r) {
+        s += "<tr>";
+        (r || []).forEach(function (c) { s += "<td>" + escHtml(c) + "</td>"; });
+        s += "</tr>";
+      });
+      return s + "</tbody></table>";
+    },
+    // 图片：{src, alt}
+    image: function (b) {
+      if (!b.src) return "";
+      return '<img class="fc-block-img" src="' + escHtml(b.src) +
+             '" alt="' + escHtml(b.alt || "") + '">';
     }
+  };
 
-    // 词根词源
-    var rootBlock = root.querySelector(".fc-root-block");
-    var rootEl = root.querySelector(".fc-root-content");
-    if (fields.root && fields.root.trim()) {
-      if (rootEl) rootEl.innerHTML = fields.root;
-      if (rootBlock) rootBlock.style.display = "block";
-    } else {
-      if (rootBlock) rootBlock.style.display = "none";
+  // 注意：这里用 "&" + "amp;" 拼出来，
+  // 不直接写实体字面量 —— 避免脚本/补丁工具把 & 实体解码掉。
+  var AMP = "&" + "amp;", LT = "&" + "lt;", GT = "&" + "gt;", QUOT = "&" + "quot;";
+
+  function escHtml(s) {
+    return String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, AMP)
+      .replace(/</g, LT)
+      .replace(/>/g, GT)
+      .replace(/"/g, QUOT);
+  }
+
+  /// 把 block 的 items 元素归一成 {left, right}
+  function blockItem(it) {
+    if (it === undefined || it === null) return { left: "", right: "" };
+    if (typeof it !== "object") return { left: String(it), right: "" };
+    if (it.en !== undefined || it.cn !== undefined) {
+      return { left: String(it.en || ""), right: String(it.cn || "") };
     }
+    if (it.k !== undefined || it.v !== undefined) {
+      return { left: String(it.k || ""), right: String(it.v || "") };
+    }
+    if (it.left !== undefined || it.right !== undefined) {
+      return { left: String(it.left || ""), right: String(it.right || "") };
+    }
+    var ks = Object.keys(it);
+    if (ks.length === 1) return { left: ks[0], right: String(it[ks[0]] || "") };
+    return { left: "", right: "" };
+  }
+
+  /// 未知 type 不崩：按内容退化渲染（html → 列表 → 表格 → 纯文本）
+  function blockBody(b) {
+    var fn = BLOCK_BODY[String(b.type || "").toLowerCase()];
+    if (fn) return fn(b);
+    if (b.html) return String(b.html);
+    if (b.text) return escHtml(b.text);
+    if (Array.isArray(b.items) && b.items.length) return BLOCK_BODY.list(b);
+    if (Array.isArray(b.rows) && b.rows.length) return BLOCK_BODY.table(b);
+    return "";
+  }
+
+  /// 归一化 blocks：
+  ///   新格式直接用 fields.blocks；
+  ///   老格式（phrases / root 平铺在字段上）现场折成 block ——
+  ///   用户手里的老书不改 json 也能正常渲染。
+  function blocksOf(f) {
+    var out = [];
+    if (Array.isArray(f.blocks)) {
+      f.blocks.forEach(function (b) {
+        if (b && typeof b === "object") out.push(b);
+      });
+    }
+    if (out.length) return out;
+    if (Array.isArray(f.phrases) && f.phrases.length) {
+      out.push({ type: "pairs", title: "常用短语", items: f.phrases });
+    }
+    if (f.root && String(f.root).trim()) {
+      out.push({ type: "html", title: "词根词源", html: f.root });
+    }
+    return out;
+  }
+
+  function renderBlocks() {
+    var host = root.querySelector(".fc-back .fc-blocks");
+    if (!host) return;
+    host.innerHTML = "";
+    var tpl = document.getElementById("fc-block-tpl");
+    blocksOf(fields).forEach(function (b) {
+      var body = blockBody(b);
+      if (!body) return;
+      var block = (tpl && tpl.content && tpl.content.firstElementChild)
+        ? tpl.content.firstElementChild.cloneNode(true)
+        : null;
+      if (!block) {
+        block = document.createElement("div");
+        block.className = "fc-card-block";
+        block.innerHTML =
+          '<div class="fc-block-header"><span class="fc-block-title"></span></div>' +
+          '<div class="fc-block-body"></div>';
+      }
+      var title = String(b.title || "").trim();
+      var titleEl = block.querySelector(".fc-block-title");
+      if (titleEl) titleEl.textContent = title;
+      var headerEl = block.querySelector(".fc-block-header");
+      if (headerEl) headerEl.style.display = title ? "" : "none";
+      var bodyEl = block.querySelector(".fc-block-body");
+      if (bodyEl) bodyEl.innerHTML = body;
+      host.appendChild(block);
+    });
+  }
+
+  // ---------- 渲染词义页的各个区块 ----------
+  function renderBackFace() {
+    renderSenses();
+    renderSentence();
+    renderBlocks();
   }
 
   // ---------- choice 考法：渲染四大选项卡片（对标图 1） ----------
