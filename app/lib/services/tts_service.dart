@@ -123,21 +123,25 @@ class TtsService {
     }
   }
 
-  /// 单词：收全字节落盘，之后秒播
+  /// 单词：收全字节落盘，之后秒播（受 ttsWordCacheEnabled 控制）
   Future<bool> _speakWordCached(String word, String lang, int gen) async {
     try {
       final file = await _cacheFile(word, lang);
       if (file == null) return false;
 
-      if (!await file.exists()) {
+      final useCache = settings.ttsWordCacheEnabled;
+      final hit = useCache && await file.exists();
+      if (hit) {
+        await TtsLog.write('cache', 'hit word="$word"');
+      } else {
         final bytes = await _synthesize(word);
         if (bytes == null || bytes.isEmpty) return false;
         await file.parent.create(recursive: true);
         await file.writeAsBytes(bytes, flush: true);
-        await TtsLog.write('cache',
-            'saved ${file.path} (${bytes.length}B) word="$word"');
-      } else {
-        await TtsLog.write('cache', 'hit word="$word"');
+        await TtsLog.write(
+            'cache',
+            '${useCache ? "saved" : "refresh"} ${file.path} '
+                '(${bytes.length}B) word="$word"');
       }
 
       if (gen != _gen) return true; // 已被新朗读打断
@@ -194,7 +198,9 @@ class TtsService {
   Future<Uint8List?> _synthesize(String word) async {
     try {
       final resp = await _postStream(word, 'en-US');
-      final bytes = await resp.toBytes().timeout(const Duration(seconds: 30));
+      // 注意：http 的 StreamedResponse 没有 toBytes()，扩展在 Stream 上
+      final bytes =
+          await resp.stream.toBytes().timeout(const Duration(seconds: 30));
       if (bytes.isEmpty) return null;
       return bytes;
     } catch (e, st) {
@@ -284,12 +290,17 @@ class _TtsStreamSource extends StreamAudioSource {
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
     final resp = await owner._postStream(text, lang);
+    // just_audio 0.9.x 的 StreamAudioResponse 字段（实测 v0.9.46 源码）：
+    //   rangeRequestsSupported / sourceLength / contentLength / offset
+    //   / contentType / stream —— 根本没有 isLive 字段！
+    // 我们的流是一次性 POST 响应，不能重放、不支持 Range 请求。
     return StreamAudioResponse(
+      rangeRequestsSupported: false,
+      sourceLength: null, // 总长未知
+      contentLength: null, // 本次返回长度未知
+      offset: 0,
       contentType: resp.headers['content-type'] ?? 'audio/mpeg',
-      // 不知道总长 → 非 seekable，按实时流处理，边收边放
-      contentLength: null,
       stream: resp.stream,
-      isLive: true,
     );
   }
 }
