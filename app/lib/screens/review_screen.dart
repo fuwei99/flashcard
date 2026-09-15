@@ -17,6 +17,7 @@ import '../services/card_store.dart';
 import '../services/scheduler.dart';
 import '../services/study_plan.dart';
 import '../services/study_settings.dart';
+import '../services/tts_log.dart';
 import '../services/tts_service.dart';
 import '../services/webview_bridge.dart';
 
@@ -72,6 +73,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
   int _pausedAt = 0;
   bool _pausing = false;
 
+  /// 正在处理一条 answer —— 防止两次点击并发推进状态（会一次跳两页）
+  bool _handling = false;
+
+  /// mount 世代号：只有最后一次 mount 算数，过期的那次只记日志
+  int _mountGen = 0;
+
   @override
   void initState() {
     super.initState();
@@ -91,59 +98,83 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Future<void> _onMsg(BridgeMessage m) async {
     if (m.type != 'answer') return;
+    // 卡顿根因之一：answer 从 broadcast stream 进来，天然可并发。
+    // 两条并发 answer 会各推进一次状态 -> 「点一下没反应、再点跳两页」。
+    // 这里串行化：忙就丢，宁可漏一次也不要跳页。
+    if (_handling) {
+      await TtsLog.write('switch',
+          'DROP answer（上一条还在处理）phase=${_session.phase.name} '
+          'done=${_session.doneInRound}/${_session.roundTotal}');
+      return;
+    }
     final step = _session.current;
     if (step == null) return;
 
-    // fromKey 对未知评分会 throw，且 _onMsg 是 async 没有捕获 —— 兜底成 good，
-    // 避免一条脏消息把整个会话打断（例如 data-rating="next" 被误回传）。
-    Rating rating;
+    _handling = true;
+    final t0 = DateTime.now();
     try {
-      rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
-    } catch (_) {
-      rating = Rating.good;
-    }
+      // fromKey 对未知评分会 throw，且 _onMsg 是 async 没有捕获 —— 兜底成 good，
+      // 避免一条脏消息把整个会话打断（例如 data-rating="next" 被误回传）。
+      Rating rating;
+      try {
+        rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
+      } catch (_) {
+        rating = Rating.good;
+      }
 
-    switch (_session.phase) {
-      case SessionPhase.passage:
-        _session.submitPassage();
-        break;
-      case SessionPhase.passageCloze:
-        _session.submitPassageCloze(rating != Rating.again);
-        break;
-      case SessionPhase.learn:
-        _session.submitLearn(rating);
-        break;
-      case SessionPhase.choice:
-      case SessionPhase.cloze:
-        _session.submitRetest(step.mode, rating != Rating.again);
-        break;
-      case SessionPhase.done:
-        break;
-    }
+      final beforeCard = step.card?.id ?? '-';
+      final beforePhase = _session.phase.name;
 
-    // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
-    final s = widget.settings;
-    final wasPassed = widget.isCard ? s.cardPassed : s.wordPassed;
-    for (final cid in _session.graduated) {
-      if (_written.contains(cid)) continue;
-      _write(cid, _session.ratingFor(cid));
-      await s.markDone(card: widget.isCard);
-    }
-    // 完成每日背诵量 → 过关 😁
-    final nowPassed = widget.isCard ? s.cardPassed : s.wordPassed;
-    if (!wasPassed && nowPassed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(widget.isCard ? '🎉 今日卡牌背诵量已达成，过关！' : '🎉 今日单词背诵量已达成，过关！'),
-        backgroundColor: const Color(0xFF00C08B),
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
+      switch (_session.phase) {
+        case SessionPhase.passage:
+          _session.submitPassage();
+          break;
+        case SessionPhase.passageCloze:
+          _session.submitPassageCloze(rating != Rating.again);
+          break;
+        case SessionPhase.learn:
+          _session.submitLearn(rating);
+          break;
+        case SessionPhase.choice:
+        case SessionPhase.cloze:
+          _session.submitRetest(step.mode, rating != Rating.again);
+          break;
+        case SessionPhase.done:
+          break;
+      }
 
-    if (!mounted) return;
-    setState(() {});
-    if (_session.finished) return;
-    _load();
-    await _maybePause();
+      await TtsLog.write('switch',
+          'answer $beforePhase/${step.mode.key} rating=${rating.key} card=$beforeCard'
+          ' → ${_session.phase.name} done=${_session.doneInRound}/${_session.roundTotal}');
+
+      // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
+      final s = widget.settings;
+      final wasPassed = widget.isCard ? s.cardPassed : s.wordPassed;
+      for (final cid in _session.graduated) {
+        if (_written.contains(cid)) continue;
+        _write(cid, _session.ratingFor(cid));
+        await s.markDone(card: widget.isCard);
+      }
+      // 完成每日背诵量 → 过关 😁
+      final nowPassed = widget.isCard ? s.cardPassed : s.wordPassed;
+      if (!wasPassed && nowPassed && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(widget.isCard ? '🎉 今日卡牌背诵量已达成，过关！' : '🎉 今日单词背诵量已达成，过关！'),
+          backgroundColor: const Color(0xFF00C08B),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+
+      if (!mounted) return;
+      setState(() {});
+      if (_session.finished) return;
+      await _load();
+      final ms = DateTime.now().difference(t0).inMilliseconds;
+      await TtsLog.write('switch', 'answer 处理完 ${ms}ms');
+      await _maybePause();
+    } finally {
+      _handling = false;
+    }
   }
 
   /// 连续背诵时，每背完一组（20 个）停一下，让用户歇口气再继续。
@@ -183,11 +214,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
     widget.store.putState(cardId, review(st, r));
   }
 
-  void _load() {
+  Future<void> _load() async {
     final step = _session.current;
     final ctrl = _controller;
     if (step == null || ctrl == null || !_ready) return;
 
+    final gen = ++_mountGen;
     final unit = _session.currentUnit;
     final isPassage = _session.phase == SessionPhase.passage ||
         _session.phase == SessionPhase.passageCloze;
@@ -197,8 +229,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
       'round': step.round,
       'review': (unit?.isReview ?? false) ? 1 : 0,
     };
+    final idx = isPassage ? 0 : _session.doneInRound;
+    final total = isPassage ? 1 : _session.roundTotal;
 
-    _bridge.mountCard(
+    final t0 = DateTime.now();
+    await TtsLog.write('switch',
+        'mount#$gen ← ${_session.phase.name} card=${step.card?.id ?? "passage"} '
+        '$idx/$total unit=${_session.unitIndex + 1}/${_session.unitCount}');
+
+    await _bridge.mountCard(
       ctrl,
       fieldsOrder: widget.fieldsOrder,
       template: widget.template,
@@ -206,11 +245,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
       passage: isPassage ? unit?.passage : null,
       passageCards: unit?.passageLookup ?? const [],
       blankLemmas: isPassage ? unit?.blankLemmas : null,
-      index: isPassage ? 0 : _session.doneInRound,
-      total: isPassage ? 1 : _session.roundTotal,
+      index: idx,
+      total: total,
       session: session,
       choices: _choicesFor(step),
     );
+
+    final ms = DateTime.now().difference(t0).inMilliseconds;
+    if (gen != _mountGen) {
+      await TtsLog.write(
+          'switch', 'mount#$gen 已过期（当前 #$_mountGen）→ 画面可能是旧的');
+      return;
+    }
+    await TtsLog.write('switch', 'mount#$gen 完成 ${ms}ms');
   }
 
   /// 生成干扰项

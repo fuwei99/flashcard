@@ -89,6 +89,7 @@ class TtsService {
     if (t.isEmpty) return;
     final myGen = ++_gen;
     await _stopAll();
+    await TtsLog.write('speak', 'gen=$myGen lang=$lang "${_abbr(t)}"');
     await _speakOne(t, lang, myGen);
   }
 
@@ -96,6 +97,7 @@ class TtsService {
   Future<void> speakSeq(List items) async {
     final myGen = ++_gen;
     await _stopAll();
+    await TtsLog.write('speak', 'seq gen=$myGen ${items.length}条');
     for (final it in items) {
       if (myGen != _gen) return;
       if (it is! Map) continue;
@@ -246,6 +248,7 @@ class TtsService {
   Future<void> stop() async {
     _gen++;
     await _stopAll();
+    await TtsLog.write('speak', 'stop → gen=$_gen');
   }
 
   Future<void> dispose() async {
