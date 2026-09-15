@@ -491,6 +491,105 @@ html, body {
   display: none;
 }
 
+/* ---------- 顶栏动作按钮组：☆收藏 / 熟 / abc / ⋯ ---------- */
+.fc-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.fc-top-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--txt-dim);
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color .15s, background .15s;
+}
+.fc-top-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+  display: block;
+}
+.fc-top-btn span {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+.fc-top-abc span {
+  font-size: 12.5px;
+  letter-spacing: .3px;
+}
+.fc-top-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* 已标熟：按钮点亮 */
+.fc-top-known.is-on {
+  color: #00C08B;
+  background: rgba(0, 192, 139, 0.14);
+}
+
+/* ---------- 拼写测验（顶栏 abc 进入） ---------- */
+.fc-root[data-mode="spell"] .fc-spell {
+  display: flex;
+  flex-direction: column;
+}
+.fc-spell-cn {
+  color: var(--txt, #F0F4F5);
+  font-size: 17px;
+  line-height: 1.65;
+  margin: 4px 0 20px;
+  text-align: center;
+}
+.fc-spell-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  color: var(--txt, #F0F4F5);
+  font-size: 17px;
+  letter-spacing: .5px;
+  padding: 13px 14px;
+  outline: none;
+  text-align: center;
+}
+.fc-spell-input::placeholder {
+  color: var(--txt-dim);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.fc-spell-input:focus {
+  border-color: #00C08B;
+}
+.fc-spell-input:disabled {
+  opacity: .7;
+}
+.fc-spell-result {
+  min-height: 22px;
+  margin-top: 14px;
+  font-size: 13.5px;
+  text-align: center;
+  line-height: 1.5;
+}
+.fc-spell-result.is-right {
+  color: #00C08B;
+}
+.fc-spell-result.is-wrong {
+  color: #FF6B6B;
+}
+.fc-root[data-mode="spell"] .fc-actions-spell {
+  display: flex;
+}
+
 .fc-actions .fc-btn {
   flex: 1;
 }

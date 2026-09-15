@@ -42,6 +42,7 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
   late final WebViewBridge _bridge;
   WebViewController? _controller;
   bool _loading = true;
+  bool _known = false;
 
   @override
   void initState() {
@@ -49,6 +50,13 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
     _bridge = WebViewBridge(
         store: widget.store, tts: TtsService(settings: widget.settings));
     _bridge.initTts();
+    _known = widget.store.isKnown(widget.card.id);
+  }
+
+  /// 标熟开关：永久出队（可撤销）。存 KV，不动 FSRS 调度数据。
+  void _toggleKnown() {
+    setState(() => _known = !_known);
+    widget.store.setKnown(widget.card.id, _known);
   }
 
   /// 骨架页加载完 -> 挂卡 -> 切到词义页 + 打只读标记
@@ -114,6 +122,23 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
                 color: Color(0xFFF0F4F5),
                 fontWeight: FontWeight.w700,
                 fontSize: 18)),
+        actions: [
+          TextButton.icon(
+            onPressed: _toggleKnown,
+            icon: Icon(
+              _known ? Icons.check_circle : Icons.check_circle_outline,
+              size: 18,
+              color:
+                  _known ? const Color(0xFF00C08B) : const Color(0xFF8C9DA2),
+            ),
+            label: Text('标熟',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: _known
+                        ? const Color(0xFF00C08B)
+                        : const Color(0xFF8C9DA2))),
+          ),
+        ],
       ),
       body: Stack(
         children: [

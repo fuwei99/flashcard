@@ -9,6 +9,20 @@
       </span>
     </div>
     <div class="fc-top-right">
+      <div class="fc-top-actions">
+        <button class="fc-top-btn" type="button" data-top="fav" title="收藏">
+          <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+        </button>
+        <button class="fc-top-btn fc-top-known" type="button" data-top="known" title="标熟（永久出队）">
+          <span>熟</span>
+        </button>
+        <button class="fc-top-btn fc-top-abc" type="button" data-top="spell" title="拼写测验">
+          <span>abc</span>
+        </button>
+        <button class="fc-top-btn" type="button" data-top="more" title="更多">
+          <svg viewBox="0 0 24 24"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </button>
+      </div>
       <span class="fc-counter">0 / 0</span>
     </div>
   </header>
@@ -119,6 +133,19 @@
     <div class="fc-options" data-for="cloze"></div>
   </section>
 
+  <!-- ============ spell · 拼写测验（顶栏 abc 进入） ============ -->
+  <section class="fc-face fc-spell">
+    <div class="fc-hero">
+      <div class="fc-block-title" style="margin-bottom:12px;">拼写测验</div>
+      <div class="fc-spell-cn"></div>
+      <input class="fc-spell-input" type="text" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false"
+             placeholder="拼出对应的英文单词">
+      <div class="fc-spell-result"></div>
+    </div>
+    <div class="fc-spacer"></div>
+  </section>
+
   <!-- ============ passage · 语篇通读（辅助记忆） ============ -->
   <section class="fc-face fc-passage">
     <div class="fc-passage-head">
@@ -170,6 +197,16 @@
   <!-- ============ passage 底部：进入单词背诵 ============ -->
   <footer class="fc-actions fc-actions-passage">
     <button class="fc-btn-primary" data-action="start-drill">进入单词背诵</button>
+  </footer>
+
+  <!-- ============ spell · 底部操作条 ============ -->
+  <footer class="fc-actions fc-actions-spell">
+    <button class="fc-btn fc-btn-again" data-action="spell-exit">
+      <span class="fc-ico">←</span><span>返回</span>
+    </button>
+    <button class="fc-btn fc-btn-good" data-action="spell-check">
+      <span class="fc-ico">✓</span><span>检查</span>
+    </button>
   </footer>
 
   <!-- ============ choice / cloze / 语篇选词 底部操作条（选完亮起「继续」） ============ -->

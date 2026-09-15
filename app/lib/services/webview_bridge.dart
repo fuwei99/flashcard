@@ -110,6 +110,9 @@ class WebViewBridge {
       'fields': fields,
       'state':
           card == null ? <String, dynamic>{} : store.stateOf(card.id).toJson(),
+      // 卡牌私有 KV（标熟 / 收藏…）—— 模板顶栏读它渲染按钮状态。
+      // 不传这个，模板就不知道这张卡是不是已经标过熟，按钮永远是灰的。
+      'kv': card == null ? <String, dynamic>{} : store.kvOf(card.id),
       'index': index,
       'total': total,
       'session': session,

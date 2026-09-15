@@ -172,9 +172,11 @@ class StudyPlanner {
     final out = <StudyUnit>[];
     for (final b in books) {
       for (final g in _groups(b)) {
-        // 同样先只用 id 判断，没新词就不读盘
-        final freshIds =
-            g.ids.where((id) => !store.isLearned(id)).toSet();
+        // 同样先只用 id 判断，没新词就不读盘。
+        // 学过的、以及手动标熟的，都不再进新学队列。
+        final freshIds = g.ids
+            .where((id) => !store.isLearned(id) && !store.isKnown(id))
+            .toSet();
         if (freshIds.isEmpty) continue;
 
         final fresh = g.cards.where((c) => freshIds.contains(c.id)).toList();

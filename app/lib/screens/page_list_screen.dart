@@ -84,8 +84,10 @@ class PageListBody extends StatelessWidget {
 
   void _startReview(BuildContext context, bool shuffle) {
     if (template == null) return;
-    // 只背没学过的卡，已背过的不重复
-    final list = cards.where((c) => !store.isLearned(c.id)).toList();
+    // 只背没学过的卡；已背过的、以及手动标熟的不重复
+    final list = cards
+        .where((c) => !store.isLearned(c.id) && !store.isKnown(c.id))
+        .toList();
     if (list.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('本章新词已背完，去顶部「开始复习」巩固'),
@@ -296,7 +298,22 @@ class PageListBody extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            if (learned)
+            // 三种状态：标熟 > 已学 > 未学
+            if (store.isKnown(card.id))
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x1F00C08B),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: const Text('熟',
+                    style: TextStyle(
+                        color: Color(0xFF00C08B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              )
+            else if (learned)
               const Icon(Icons.check_circle,
                   color: Color(0xFF00C08B), size: 18)
             else

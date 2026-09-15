@@ -59,6 +59,10 @@
   var bank = [];              // 语篇选词：词库
   var activeBlank = -1;       // 语篇选词：光标所在空格
   var wrongToMeaning = false; // 答错后：先看错误项释义，点「继续」才进词义页
+  var known = false;          // 当前卡是否已标熟（永久出队，可撤销）
+  var spellPrevMode = "read"; // 进拼写前是什么 mode，返回时还原
+  var spellPrevState = "front";
+  var spellChecked = false;   // 本次拼写是否已经检查过
 
   // ---------- TTS 路由（改这里就能换：词 / 句 / 文章各走各的）----------
   var TTS_WORD     = { plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true };   // 单词：豆包·温柔桃子，落盘
@@ -858,6 +862,95 @@
     playMeaningAudio();
   }
 
+  // ---------- 顶栏：标熟（永久出队 / 可撤销） ----------
+  function updateKnownBtn() {
+    var b = root.querySelector('[data-top="known"]');
+    if (b) b.classList.toggle("is-on", !!known);
+  }
+
+  function toggleKnown() {
+    known = !known;
+    updateKnownBtn();
+    // 落盘走宿主：bridge 收到 setState 就写进这张卡的私有 KV
+    if (FC.setState) FC.setState("known", known);
+  }
+
+  // ---------- 拼写测验 ----------
+  /// 中文提示：义项拼起来，剥掉括号里的短语（别把答案写脸上）
+  function spellCnText() {
+    var parts = [];
+    sensesOf().forEach(function (s) {
+      var t = String(s.cn || "").replace(/[（(][^（()）]*[)）]/g, "").trim();
+      if (t) parts.push((s.pos ? s.pos + " " : "") + t);
+    });
+    return parts.join("；");
+  }
+
+  function renderSpell() {
+    var cn = root.querySelector(".fc-spell-cn");
+    if (cn) cn.textContent = spellCnText();
+  }
+
+  function resetSpell() {
+    spellChecked = false;
+    var inp = root.querySelector(".fc-spell-input");
+    if (inp) { inp.value = ""; inp.disabled = false; }
+    var res = root.querySelector(".fc-spell-result");
+    if (res) { res.textContent = ""; res.className = "fc-spell-result"; }
+    var lbl = root.querySelector('[data-action="spell-check"] span:last-child');
+    if (lbl) lbl.textContent = "检查";
+    var exitBtn = root.querySelector('[data-action="spell-exit"]');
+    if (exitBtn) exitBtn.removeAttribute("disabled");
+  }
+
+  function enterSpell() {
+    spellPrevMode = mode;
+    spellPrevState = root.getAttribute("data-state") || "front";
+    root.setAttribute("data-mode", "spell");
+    root.setAttribute("data-state", "front");
+    renderSpell();
+    resetSpell();
+    var inp = root.querySelector(".fc-spell-input");
+    if (inp) setTimeout(function () { inp.focus(); }, 60);
+  }
+
+  function exitSpell() {
+    root.setAttribute("data-mode", spellPrevMode || mode);
+    root.setAttribute("data-state", spellPrevState || "front");
+    resetSpell();
+  }
+
+  function spellCheck() {
+    var inp = root.querySelector(".fc-spell-input");
+    if (!inp) return;
+    var val = String(inp.value || "").trim().toLowerCase();
+    if (!val) return; // 空输入不判错，免得白挨一刀
+    var ans = String(fields.word || "").trim().toLowerCase();
+    var ok = (val === ans);
+    spellChecked = true;
+    inp.disabled = true;
+    var res = root.querySelector(".fc-spell-result");
+    if (res) {
+      res.className = "fc-spell-result " + (ok ? "is-right" : "is-wrong");
+      res.textContent = ok ? "✓ 拼对了" : ("✕ 正确拼写：" + (fields.word || ""));
+    }
+    // 答完念一遍正确发音：拼写本来就该连着音记
+    speak(fields.word || "", "en-US", TTS_WORD);
+    var lbl = root.querySelector('[data-action="spell-check"] span:last-child');
+    if (lbl) lbl.textContent = "返回";
+  }
+
+  // 输入框回车 = 检查（移动端键盘的「前往」也走这条）
+  var spellInputEl = root.querySelector(".fc-spell-input");
+  if (spellInputEl) {
+    spellInputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.code === "Enter") {
+        e.preventDefault();
+        if (!spellChecked) spellCheck();
+      }
+    });
+  }
+
   // ---------- mount：增量刷新全部卡片数据 ----------
   function mount() {
     card = FC.getCard() || {};
@@ -926,6 +1019,12 @@
     // 6. 词义页所有模式都渲染 —— choice / cloze 答错要切到 back 看完整词义，
     //    此时 .fc-back 的词性 / 释义 / 例句 / 短语 / 词根必须已经填好。
     renderBackFace();
+
+    // 6b. 顶栏状态：标熟按钮点亮 + 拼写面板复位
+    //     切卡必须重读 —— 上一张标过熟，这一张没标，按钮不能还亮着。
+    known = !!(card.kv && card.kv.known);
+    updateKnownBtn();
+    resetSpell();
     if (mode === "passage") {
       renderPassageRead();
     } else if (mode === "passage_cloze") {
@@ -958,6 +1057,21 @@
   root.addEventListener("click", function (e) {
     if (clickLock) {
       e.preventDefault();
+      return;
+    }
+
+    // 0. 顶栏按钮组：☆收藏 / 熟 / abc / ⋯
+    //    收藏 和 ⋯ 目前是占位，**故意不响应**（按需求）；
+    //    标熟 和 拼写 是真功能。
+    var topBtn = e.target.closest("[data-top]");
+    if (topBtn) {
+      e.stopPropagation();
+      var which = topBtn.getAttribute("data-top");
+      if (which === "known") {
+        toggleKnown();
+      } else if (which === "spell") {
+        enterSpell();
+      }
       return;
     }
 
@@ -1032,6 +1146,19 @@
       return;
     }
 
+    // 拼写：第一次点「检查」，检查完按钮变「返回」，再点就走人
+    if (act === "spell-check") {
+      if (actionTarget.hasAttribute("disabled")) return;
+      if (spellChecked) { exitSpell(); } else { spellCheck(); }
+      return;
+    }
+
+    // 拼写：直接返回原状态
+    if (act === "spell-exit") {
+      exitSpell();
+      return;
+    }
+
     // choice / cloze 点击「继续」
     if (act === "submit") {
       if (pendingAnswer === null) return;
@@ -1051,6 +1178,8 @@
 
   // ---------- 键盘空格快捷键 ----------
   document.addEventListener("keydown", function (e) {
+    // 拼写模式下键盘归输入框，别被空格 / 回车快捷键抢走
+    if (root.getAttribute("data-mode") === "spell") return;
     if (e.code === "Space" || e.code === "Enter") {
       e.preventDefault();
       if (mode === "read") {

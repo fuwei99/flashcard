@@ -109,6 +109,7 @@ class CardStore {
     final due = <String>[];
     final fresh = <String>[];
     for (final id in allIds) {
+      if (isKnown(id)) continue; // 标熟 = 永久出队
       final st = _states[id];
       if (st == null || st.isNew) {
         fresh.add(id);
@@ -124,8 +125,9 @@ class CardStore {
           !s.isNew && s.due != null && !s.due!.isAfter(DateTime.now()))
       .length;
 
-  /// 已学过的卡片数（state != new）
-  int countLearned(List<String> ids) => ids.where(isLearned).length;
+  /// 已处理过的卡片数（学过 或 标熟）—— 章节进度条用它
+  int countLearned(List<String> ids) =>
+      ids.where((id) => isLearned(id) || isKnown(id)).length;
 
   /// 某张卡是否学过
   bool isLearned(String id) {
@@ -133,12 +135,20 @@ class CardStore {
     return s != null && !s.isNew;
   }
 
+  /// 标熟：永久出队（可撤销）。落在卡牌私有 KV 里，key = 'known'。
+  /// 跟 FSRS 的 state 分开存 —— 标熟是「人为判定」，不该污染调度数据；
+  /// 撤销时把 key 抹掉，调度历史原样保留。
+  bool isKnown(String id) => _kv[id]?['known'] == true;
+
+  void setKnown(String id, bool v) => putKv(id, 'known', v);
+
   /// 到期复习队列（已学 + 到期，不含新卡）
   List<String> reviewDue(List<String> allIds) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final due = <String>[];
     for (final id in allIds) {
+      if (isKnown(id)) continue; // 标熟 = 永久出队
       final st = _states[id];
       if (st != null &&
           !st.isNew &&
