@@ -17,12 +17,16 @@ class MainScaffold extends StatefulWidget {
   final CardStore store;
   final StudySettings settings;
 
+  /// 重新读公共目录里的模板（改完 CSS 点一下即可生效）
+  final Future<void> Function()? onReloadTemplates;
+
   const MainScaffold({
     super.key,
     required this.repo,
     required this.templates,
     required this.store,
     required this.settings,
+    this.onReloadTemplates,
   });
 
   @override
@@ -90,6 +94,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             key: _meKey,
             store: widget.store,
             settings: widget.settings,
+            onReloadTemplates: widget.onReloadTemplates,
           ),
         ],
       ),

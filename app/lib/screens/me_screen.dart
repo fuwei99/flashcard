@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../services/card_store.dart';
+import '../services/data_dir.dart';
 import '../services/study_settings.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -12,7 +13,15 @@ class MeScreen extends StatefulWidget {
   final CardStore store;
   final StudySettings settings;
 
-  const MeScreen({super.key, required this.store, required this.settings});
+  /// 重新读公共目录里的模板（改完 CSS 点一下即可生效）
+  final Future<void> Function()? onReloadTemplates;
+
+  const MeScreen({
+    super.key,
+    required this.store,
+    required this.settings,
+    this.onReloadTemplates,
+  });
 
   @override
   State<MeScreen> createState() => MeScreenState();
@@ -117,6 +126,50 @@ class MeScreenState extends State<MeScreen> {
                 ),
               );
               refresh();
+            },
+          ),
+          const SizedBox(height: 20),
+          _sectionLabel('模板'),
+          const SizedBox(height: 10),
+          _entry(
+            icon: Icons.dashboard_customize_outlined,
+            label: '重载模板',
+            value: '改完 CSS 点这里',
+            onTap: () async {
+              await widget.onReloadTemplates?.call();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('模板已重新读取'),
+                backgroundColor: Color(0xFF1B2629),
+                behavior: SnackBarBehavior.floating,
+              ));
+            },
+          ),
+          const SizedBox(height: 10),
+          _entry(
+            icon: Icons.folder_open,
+            label: '模板目录',
+            value: '公共目录',
+            onTap: () {
+              showDialog<void>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: const Color(0xFF1B2629),
+                  title: const Text('模板目录',
+                      style: TextStyle(color: Colors.white, fontSize: 16)),
+                  content: SelectableText(
+                      '${DataDir.publicPath}/templates',
+                      style: const TextStyle(
+                          color: Color(0xFFB7C4C8), fontSize: 12)),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('好',
+                          style: TextStyle(color: Color(0xFF00C08B))),
+                    ),
+                  ],
+                ),
+              );
             },
           ),
           const SizedBox(height: 20),

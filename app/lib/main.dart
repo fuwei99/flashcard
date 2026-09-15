@@ -67,6 +67,8 @@ class _BootstrapState extends State<_Bootstrap> {
       await _settings.init();
       await ReminderService.init();
       await _applyReminder();
+      // 首次运行：把内置模板铺到公共目录，之后改 CSS/HTML/JS 直接改文件
+      await _repo.seedPublicTemplates();
       final templates = await _repo.loadAllTemplates();
       if (!mounted) return;
       setState(() => _templates = templates);
@@ -88,6 +90,13 @@ class _BootstrapState extends State<_Bootstrap> {
         await ReminderService.cancel();
       }
     } catch (_) {}
+  }
+
+  /// 重新读模板：改完 CSS/HTML/JS 不用重装，点一下即可生效
+  Future<void> _reloadTemplates() async {
+    final templates = await _repo.loadAllTemplates();
+    if (!mounted) return;
+    setState(() => _templates = templates);
   }
 
   Future<void> _askPermission() async {
@@ -124,6 +133,7 @@ class _BootstrapState extends State<_Bootstrap> {
       templates: _templates!,
       store: _store,
       settings: _settings,
+      onReloadTemplates: _reloadTemplates,
     );
   }
 }
