@@ -105,6 +105,8 @@ class PageListBody extends StatelessWidget {
               passage: passage,
               cards: list,
               passageCards: cards,
+              // 只挖「本章还没背过的词」；背过的只在语篇里划线展示
+              blankLemmas: StudyPlanner.blankLemmasFor(list, passage),
               readFirst: true,
             ),
           ],

@@ -76,6 +76,14 @@ class StudyPlanner {
         .toSet();
   }
 
+  /// 一批卡里「出现在语篇中的」lemma —— 语篇填空只挖这些空。
+  ///
+  /// 关键：传进来的 [cards] 决定挖哪些空。已经背过的词不要传进来，
+  /// 这样它们在语篇里只作划线词展示（blank=false），不挖空、不进词库；
+  /// 语篇通读页本来就不看 blank，照样整篇划线。
+  static Set<String> blankLemmasFor(List<FlashCard> cards, Passage? p) =>
+      cards.map(_lemmaOf).toSet().intersection(_passageLemmas(p));
+
   /// 复习段：书 → 章，一章一个单元，语篇只挖该章今天到期的词。
   ///
   /// [limit] = 今日复习上限（null/<=0 = 不限）。**全局**排序后截断：
@@ -172,10 +180,15 @@ class StudyPlanner {
         final fresh = g.cards.where((c) => freshIds.contains(c.id)).toList();
         if (fresh.isEmpty) continue;
 
+        // 语篇只挖「本章还没背过的词」：背过的只划线展示、不挖空。
+        // 否则背到一半退出去再进来，已经背过的词又得重填一遍。
+        final hasPassage = g.passage != null && g.passage!.hasContent;
+        final blanks = blankLemmasFor(fresh, g.passage);
+
         out.add(StudyUnit(
-          passage: g.passage,
+          passage: hasPassage ? g.passage : null,
           cards: fresh,
-          blankLemmas: null,
+          blankLemmas: hasPassage ? blanks : null,
           readFirst: true,
           isReview: false,
           passageCards: g.cards,
@@ -206,6 +219,7 @@ class StudyPlanner {
     Passage? passage,
     required List<FlashCard> cards,
     List<FlashCard>? passageCards,
+    Set<String>? blankLemmas,
     bool readFirst = false,
     bool isReview = false,
     String title = '',
@@ -213,6 +227,7 @@ class StudyPlanner {
     return StudyUnit(
       passage: passage,
       cards: cards,
+      blankLemmas: blankLemmas,
       readFirst: readFirst,
       isReview: isReview,
       passageCards: passageCards,
