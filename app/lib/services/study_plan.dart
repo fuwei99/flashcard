@@ -1,17 +1,19 @@
 /// 学习计划编排
 /// ================================================================
-/// 入口是「一次开始，把今天所有到期词走完」，但会话内部**严格按
-/// 书 → 章 的顺序、一个牌组一个牌组地推进**，每一章用它**自己的语篇**，
-/// 所以「今天到期的词」一定落在它所属的那一篇里，语篇与词的对应关系不会乱：
+/// 复习是**连续**的：从今天的第一个到期词一路背到最后一个，中间只按
+/// 每 20 个词停一下（暂停点在 UI 层，不在计划层）。
 ///
-///   复习段（按 书 → 章 顺序）
-///     第 1 章有语篇 -> 语篇选词（只挖这 20 个到期词）+ 这 20 个到期词
-///     第 1 章没语篇 -> 直接 20 个到期词
-///     第 2 章 …（依次）
-///   新学段（按 书 → 章 顺序）
-///     每章 -> 语篇通读 + 语篇选词（挖全章目标词）+ 本章未学词
+/// 但「语篇 ↔ 词」的对应不能乱，所以计划仍然**严格按 书 → 章 顺序**
+/// 一个牌组一个牌组地排，每一章挂它**自己的**语篇：
 ///
-/// 顺序即「AB语篇 + AB词 + CD语篇 + CD词 + … + 新学语篇 + 新学词」。
+///   复习段（书 → 章）
+///     第 1 章（有语篇）→ [语篇选词(只挖该章今天到期的词)] + [该章全部到期词]
+///     第 2 章（没语篇）→ [该章全部到期词]
+///     第 3 章 …（依次，一路连续背下去）
+///   新学段（书 → 章）
+///     每章 → [语篇通读] + [语篇选词(挖全章目标词)] + [本章未学词]
+///
+/// 即「AB语篇 + AB词 + CD语篇 + CD词 + … + 新学语篇 + 新学词」。
 library;
 
 import '../models/book.dart';
@@ -19,10 +21,10 @@ import '../models/deck.dart';
 import '../models/study_session.dart';
 import 'card_store.dart';
 
-/// 复习批大小：20 词一批
-const int kReviewBatch = 20;
+/// 一组 = 背多少个词停一下（只影响 UI 暂停节奏，不影响编排）
+const int kGroupSize = 20;
 
-/// 一个分组 = 一章（或一本无章节的书）
+/// 一个分组 = 一章（或一本没有章节的书）
 class _Group {
   final Passage? passage;
   final List<FlashCard> cards;
@@ -43,19 +45,6 @@ class StudyPlanner {
     return [_Group(b.passage, b.looseCards, b.title)];
   }
 
-  static List<List<T>> _chunk<T>(List<T> src, int size) {
-    final out = <List<T>>[];
-    if (size <= 0) {
-      out.add(src);
-      return out;
-    }
-    for (var i = 0; i < src.length; i += size) {
-      final end = (i + size) > src.length ? src.length : (i + size);
-      out.add(src.sublist(i, end));
-    }
-    return out;
-  }
-
   static String _lemmaOf(FlashCard c) =>
       (c.fields['word'] ?? c.word).toString().trim().toLowerCase();
 
@@ -69,13 +58,15 @@ class StudyPlanner {
         .toSet();
   }
 
-  /// 复习段：按 书 → 章，一章一章来，语篇只挖这批要复习的词
+  /// 复习段：书 → 章，一章一个单元，语篇只挖该章今天到期的词。
+  /// 一章的到期词**不拆批**，全在这个单元里连续背。
   static List<StudyUnit> reviewUnits(List<Book> books, CardStore store) {
     final out = <StudyUnit>[];
     for (final b in books) {
       for (final g in _groups(b)) {
         final cards = g.cards;
         if (cards.isEmpty) continue;
+
         final ids = cards.map((c) => c.id).toList();
         final dueIds = store.reviewDue(ids).toSet();
         if (dueIds.isEmpty) continue;
@@ -90,31 +81,27 @@ class StudyPlanner {
             return da.compareTo(db);
           });
 
-        final chunks = _chunk(due, kReviewBatch);
-        for (var i = 0; i < chunks.length; i++) {
-          final first = i == 0;
-          final lemmas = chunks[i].map(_lemmaOf).toSet();
-          // 语篇里只挖「这批要复习、且语篇里确实出现」的词
-          final blanks = first
-              ? lemmas.intersection(_passageLemmas(g.passage))
-              : const <String>{};
-          final withPassage = first && blanks.isNotEmpty;
-          out.add(StudyUnit(
-            passage: withPassage ? g.passage : null,
-            cards: chunks[i],
-            blankLemmas: withPassage ? blanks : null,
-            readFirst: false,
-            isReview: true,
-            passageCards: cards,
-            title: g.title,
-          ));
-        }
+        // 语篇只挖「该章今天到期、且语篇里确实出现」的词
+        final blanks =
+            due.map(_lemmaOf).toSet().intersection(_passageLemmas(g.passage));
+        // 一个都没命中就不挂语篇，避免出现 0 空格的空页面
+        final withPassage = blanks.isNotEmpty;
+
+        out.add(StudyUnit(
+          passage: withPassage ? g.passage : null,
+          cards: due,
+          blankLemmas: withPassage ? blanks : null,
+          readFirst: false,
+          isReview: true,
+          passageCards: cards,
+          title: g.title,
+        ));
       }
     }
     return out;
   }
 
-  /// 新学段：按 书 → 章，语篇通读 + 全挖 + 学新词
+  /// 新学段：书 → 章，语篇通读 + 全挖 + 学本章新词
   static List<StudyUnit> newUnits(List<Book> books, CardStore store) {
     final out = <StudyUnit>[];
     for (final b in books) {

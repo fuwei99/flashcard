@@ -15,6 +15,7 @@ import '../models/deck.dart';
 import '../models/study_session.dart';
 import '../services/card_store.dart';
 import '../services/scheduler.dart';
+import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import '../services/webview_bridge.dart';
 
@@ -65,6 +66,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   /// 已写入 FSRS 的卡，避免重复落盘
   final Set<String> _written = {};
+
+  /// 每背完一组（kGroupSize 个）暂停一下
+  int _pausedAt = 0;
+  bool _pausing = false;
 
   @override
   void initState() {
@@ -134,7 +139,38 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
     if (!mounted) return;
     setState(() {});
-    if (!_session.finished) _load();
+    if (_session.finished) return;
+    _load();
+    await _maybePause();
+  }
+
+  /// 连续背诵时，每背完一组（20 个）停一下，让用户歇口气再继续。
+  /// 只在会话没结束时触发，且每组只弹一次。
+  Future<void> _maybePause() async {
+    if (_pausing || _session.finished || !mounted) return;
+    final n = _session.graduated.length;
+    if (n - _pausedAt < kGroupSize) return;
+    _pausedAt = n;
+    _pausing = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2629),
+        title: Text('已背完 $n 个 🎉',
+            style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: const Text('这一组完成，歇一下继续？',
+            style: TextStyle(color: Color(0xFFB7C4C8), fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('继续背',
+                style: TextStyle(color: Color(0xFF00C08B))),
+          ),
+        ],
+      ),
+    );
+    _pausing = false;
   }
 
   /// 毕业落盘：这一刻才算「已背」

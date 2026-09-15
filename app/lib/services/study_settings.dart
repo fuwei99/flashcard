@@ -8,12 +8,19 @@
 ///   6. 背诵提醒：reminderEnabled / reminderHour / reminderMinute
 ///
 /// 打卡口径：当天只要背了 ≥1 张就算「打卡」，连续天数按自然日累加。
+///
+/// 落盘：<公共目录>/Flashcard/settings.json（Agent 可直接改，重启生效），
+/// 公共目录不可用时退回 SharedPreferences。
 library;
 
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data_dir.dart';
+
 class StudySettings {
+  static const _fileName = 'settings.json';
+
   static const _kWordLimit = 'fc_word_daily_limit';
   static const _kCardLimit = 'fc_card_daily_limit';
   static const _kTodayDate = 'fc_today_date';
@@ -83,9 +90,23 @@ class StudySettings {
 
   SharedPreferences? _prefs;
 
+  /// 数据是否落在公共文件（Agent 可读）
+  bool get fileBacked => DataDir.available;
+
   Future<void> init() async {
+    await DataDir.root(); // 先解析公共目录
     _prefs = await SharedPreferences.getInstance();
 
+    // 1) 公共文件优先 —— Agent 改过的以它为准
+    final doc = DataDir.readJsonSync(_fileName);
+    if (doc != null) {
+      _applyJson(doc);
+      _rolloverIfNewDay();
+      _persist();
+      return;
+    }
+
+    // 2) 退回 prefs（老版本数据）
     // 旧版只有一个 limit / done，首次升级时两边都继承旧值
     final legacyLimit = _prefs!.getInt(_kLegacyLimit);
     wordDailyLimit = _prefs!.getInt(_kWordLimit) ?? legacyLimit ?? 20;
@@ -115,6 +136,89 @@ class StudySettings {
     reminderMinute = _prefs!.getInt(_kRemindMin) ?? 50;
 
     _rolloverIfNewDay();
+
+    // 3) 首次：把老数据搬到公共文件
+    _persist();
+  }
+
+  // ---------- 序列化 ----------
+
+  Map<String, dynamic> toJson() => {
+        'word_daily_limit': wordDailyLimit,
+        'card_daily_limit': cardDailyLimit,
+        'today_date': todayDate,
+        'today_word_done': todayWordDone,
+        'today_card_done': todayCardDone,
+        'mode_choice': modeChoice,
+        'mode_sentence_cloze': modeSentenceCloze,
+        'mode_passage_cloze': modePassageCloze,
+        'streak_days': streakDays,
+        'best_streak': bestStreak,
+        'last_study_date': lastStudyDate,
+        'total_study_days': totalStudyDays,
+        'total_word_done': totalWordDone,
+        'total_card_done': totalCardDone,
+        'hist_word': histWord,
+        'hist_card': histCard,
+        'reminder_enabled': reminderEnabled,
+        'reminder_hour': reminderHour,
+        'reminder_minute': reminderMinute,
+      };
+
+  void _applyJson(Map<String, dynamic> m) {
+    int i(String k, int d) => m[k] is num ? (m[k] as num).toInt() : d;
+    bool b(String k, bool d) => m[k] is bool ? m[k] as bool : d;
+    String s(String k, String d) => m[k] is String ? m[k] as String : d;
+    Map<String, int> h(String k) {
+      final v = m[k];
+      if (v is! Map) return <String, int>{};
+      return v.map((kk, vv) =>
+          MapEntry(kk.toString(), vv is num ? vv.toInt() : 0));
+    }
+
+    wordDailyLimit = i('word_daily_limit', wordDailyLimit).clamp(1, 999);
+    cardDailyLimit = i('card_daily_limit', cardDailyLimit).clamp(1, 999);
+    todayDate = s('today_date', todayDate);
+    todayWordDone = i('today_word_done', todayWordDone);
+    todayCardDone = i('today_card_done', todayCardDone);
+    modeChoice = b('mode_choice', modeChoice);
+    modeSentenceCloze = b('mode_sentence_cloze', modeSentenceCloze);
+    modePassageCloze = b('mode_passage_cloze', modePassageCloze);
+    streakDays = i('streak_days', streakDays);
+    bestStreak = i('best_streak', bestStreak);
+    lastStudyDate = s('last_study_date', lastStudyDate);
+    totalStudyDays = i('total_study_days', totalStudyDays);
+    totalWordDone = i('total_word_done', totalWordDone);
+    totalCardDone = i('total_card_done', totalCardDone);
+    histWord = h('hist_word');
+    histCard = h('hist_card');
+    reminderEnabled = b('reminder_enabled', reminderEnabled);
+    reminderHour = i('reminder_hour', reminderHour).clamp(0, 23);
+    reminderMinute = i('reminder_minute', reminderMinute).clamp(0, 59);
+  }
+
+  /// 落盘：公共文件 + prefs 备份
+  void _persist() {
+    DataDir.writeJsonSync(_fileName, toJson());
+    _prefs?.setInt(_kWordLimit, wordDailyLimit);
+    _prefs?.setInt(_kCardLimit, cardDailyLimit);
+    _prefs?.setString(_kTodayDate, todayDate);
+    _prefs?.setInt(_kTodayWordDone, todayWordDone);
+    _prefs?.setInt(_kTodayCardDone, todayCardDone);
+    _prefs?.setBool(_kModeChoice, modeChoice);
+    _prefs?.setBool(_kModeSentenceCloze, modeSentenceCloze);
+    _prefs?.setBool(_kModePassageCloze, modePassageCloze);
+    _prefs?.setInt(_kStreak, streakDays);
+    _prefs?.setInt(_kBestStreak, bestStreak);
+    _prefs?.setString(_kLastStudyDate, lastStudyDate);
+    _prefs?.setInt(_kTotalDays, totalStudyDays);
+    _prefs?.setInt(_kTotalWord, totalWordDone);
+    _prefs?.setInt(_kTotalCard, totalCardDone);
+    _prefs?.setString(_kHistWord, json.encode(histWord));
+    _prefs?.setString(_kHistCard, json.encode(histCard));
+    _prefs?.setBool(_kRemindOn, reminderEnabled);
+    _prefs?.setInt(_kRemindHour, reminderHour);
+    _prefs?.setInt(_kRemindMin, reminderMinute);
   }
 
   static Map<String, int> _decodeHist(String? raw) {
@@ -134,9 +238,7 @@ class StudySettings {
       todayDate = d;
       todayWordDone = 0;
       todayCardDone = 0;
-      _prefs?.setString(_kTodayDate, d);
-      _prefs?.setInt(_kTodayWordDone, 0);
-      _prefs?.setInt(_kTodayCardDone, 0);
+      _persist();
     }
   }
 
@@ -146,28 +248,28 @@ class StudySettings {
   // ---------- 每日量 ----------
   Future<void> setWordDailyLimit(int n) async {
     wordDailyLimit = n.clamp(1, 999);
-    await _prefs?.setInt(_kWordLimit, wordDailyLimit);
+    _persist();
   }
 
   Future<void> setCardDailyLimit(int n) async {
     cardDailyLimit = n.clamp(1, 999);
-    await _prefs?.setInt(_kCardLimit, cardDailyLimit);
+    _persist();
   }
 
   // ---------- 三种卡片类型开关 ----------
   Future<void> setModeChoice(bool v) async {
     modeChoice = v;
-    await _prefs?.setBool(_kModeChoice, v);
+    _persist();
   }
 
   Future<void> setModeSentenceCloze(bool v) async {
     modeSentenceCloze = v;
-    await _prefs?.setBool(_kModeSentenceCloze, v);
+    _persist();
   }
 
   Future<void> setModePassageCloze(bool v) async {
     modePassageCloze = v;
-    await _prefs?.setBool(_kModePassageCloze, v);
+    _persist();
   }
 
   /// 至少保留一种考法，否则「忘记/模糊」的卡无处可考
@@ -175,18 +277,10 @@ class StudySettings {
 
   // ---------- 提醒 ----------
   Future<void> setReminder({bool? enabled, int? hour, int? minute}) async {
-    if (enabled != null) {
-      reminderEnabled = enabled;
-      await _prefs?.setBool(_kRemindOn, enabled);
-    }
-    if (hour != null) {
-      reminderHour = hour.clamp(0, 23);
-      await _prefs?.setInt(_kRemindHour, reminderHour);
-    }
-    if (minute != null) {
-      reminderMinute = minute.clamp(0, 59);
-      await _prefs?.setInt(_kRemindMin, reminderMinute);
-    }
+    if (enabled != null) reminderEnabled = enabled;
+    if (hour != null) reminderHour = hour.clamp(0, 23);
+    if (minute != null) reminderMinute = minute.clamp(0, 59);
+    _persist();
   }
 
   String get reminderTimeLabel =>
@@ -202,9 +296,7 @@ class StudySettings {
     histWord[d] = (histWord[d] ?? 0) + 1;
     _trimHistory();
     _touchStudyDay();
-    await _prefs?.setInt(_kTodayWordDone, todayWordDone);
-    await _prefs?.setInt(_kTotalWord, totalWordDone);
-    await _prefs?.setString(_kHistWord, json.encode(histWord));
+    _persist();
   }
 
   /// 背完一张卡牌，记一笔
@@ -216,9 +308,7 @@ class StudySettings {
     histCard[d] = (histCard[d] ?? 0) + 1;
     _trimHistory();
     _touchStudyDay();
-    await _prefs?.setInt(_kTodayCardDone, todayCardDone);
-    await _prefs?.setInt(_kTotalCard, totalCardDone);
-    await _prefs?.setString(_kHistCard, json.encode(histCard));
+    _persist();
   }
 
   /// 通用记一笔：card=false 记单词（默认），card=true 记卡牌
@@ -235,10 +325,6 @@ class StudySettings {
     lastStudyDate = today;
     totalStudyDays++;
     if (streakDays > bestStreak) bestStreak = streakDays;
-    _prefs?.setInt(_kStreak, streakDays);
-    _prefs?.setInt(_kBestStreak, bestStreak);
-    _prefs?.setString(_kLastStudyDate, lastStudyDate);
-    _prefs?.setInt(_kTotalDays, totalStudyDays);
   }
 
   void _trimHistory() {
@@ -259,8 +345,7 @@ class StudySettings {
   Future<void> resetToday() async {
     todayWordDone = 0;
     todayCardDone = 0;
-    await _prefs?.setInt(_kTodayWordDone, 0);
-    await _prefs?.setInt(_kTodayCardDone, 0);
+    _persist();
   }
 
   /// 清零全部统计（打卡 / 累计 / 历史），设置里「重置学习统计」用
@@ -273,14 +358,7 @@ class StudySettings {
     totalCardDone = 0;
     histWord = {};
     histCard = {};
-    await _prefs?.setInt(_kStreak, 0);
-    await _prefs?.setInt(_kBestStreak, 0);
-    await _prefs?.setString(_kLastStudyDate, '');
-    await _prefs?.setInt(_kTotalDays, 0);
-    await _prefs?.setInt(_kTotalWord, 0);
-    await _prefs?.setInt(_kTotalCard, 0);
-    await _prefs?.setString(_kHistWord, '{}');
-    await _prefs?.setString(_kHistCard, '{}');
+    _persist();
   }
 
   // ---------- 单词进度 ----------

@@ -1,8 +1,10 @@
 /// 书本 / 模板 仓库层
 /// ================================================================
-/// 书本来源有两处：
+/// 书本来源有三处：
 ///   1. 内置 asset（assets/decks/*.json，只读）
-///   2. 用户导入（<appdoc>/books/*.json，可增删）
+///   2. 公共目录 <Documents>/Flashcard/books/*.json（Agent 可直接放书）
+///   3. app 私有目录 <appdoc>/books/*.json（老数据，兼容读）
+/// 按 bookId 去重。
 library;
 
 import 'dart:convert';
@@ -13,6 +15,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
+import 'data_dir.dart';
 
 class DeckRepository {
   static const _assetBooks = <String>[
@@ -52,22 +55,35 @@ class DeckRepository {
     );
   }
 
+  /// 用户导入 / 手动放入的书所在目录（公共目录优先）
+  Future<List<Directory>> _booksDirs() async {
+    final dirs = <Directory>[];
+    final pub = await DataDir.sub('books', create: false);
+    if (pub != null) dirs.add(pub);
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      dirs.add(Directory('${base.path}/books'));
+    } catch (_) {}
+    return dirs;
+  }
+
   /// 用户导入的书
   Future<List<Book>> loadImportedBooks() async {
     final out = <Book>[];
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final booksDir = Directory('${dir.path}/books');
-      if (!await booksDir.exists()) return out;
-      await for (final e in booksDir.list()) {
-        if (e is File && e.path.endsWith('.json')) {
+    final seen = <String>{};
+    for (final dir in await _booksDirs()) {
+      try {
+        if (!await dir.exists()) continue;
+        await for (final e in dir.list()) {
+          if (e is! File || !e.path.endsWith('.json')) continue;
           try {
             final raw = await e.readAsString();
-            out.add(Book.fromJson(json.decode(raw) as Map<String, dynamic>));
+            final b = Book.fromJson(json.decode(raw) as Map<String, dynamic>);
+            if (seen.add(b.bookId)) out.add(b);
           } catch (_) {}
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
     return out;
   }
 

@@ -197,7 +197,7 @@ class LibraryScreenState extends State<LibraryScreen> {
                   const Icon(Icons.ios_share, color: Color(0xFF00C08B)),
               title: const Text('导出',
                   style: TextStyle(color: Color(0xFFF0F4F5))),
-              subtitle: const Text('导出到 Documents/flashcard',
+              subtitle: const Text('导出到 Documents/Flashcard/export',
                   style:
                       TextStyle(color: Color(0xFF54666C), fontSize: 12)),
               onTap: () {

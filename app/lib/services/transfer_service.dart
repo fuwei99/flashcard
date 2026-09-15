@@ -1,6 +1,6 @@
 /// 导入 / 导出
 /// ================================================================
-/// 导出：书 + 可选进度 → Documents/flashcard/<book_id>.json
+/// 导出：书 + 可选进度 → Documents/Flashcard/export/<book_id>.json
 /// 导入：选文件 → 解析 → 交给 UI 弹窗确认（是否带进度）→ 落盘
 ///
 /// 打包格式（.json）：
@@ -10,6 +10,8 @@
 ///   "book": { ...书本 json... },
 ///   "progress": { "card_states": {...}, "card_kv": {...} }   // 可选
 /// }
+///
+/// 公共目录不可写时，全部退回 app 私有目录，功能不受影响。
 library;
 
 import 'dart:convert';
@@ -20,6 +22,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import 'card_store.dart';
+import 'data_dir.dart';
 
 class ExportResult {
   final bool ok;
@@ -48,8 +51,23 @@ class ImportPreview {
 class TransferService {
   static const _fmt = 'flashcard.v1';
 
-  /// 公开目录：/storage/emulated/0/Documents/flashcard
-  static const _publicDir = '/storage/emulated/0/Documents/flashcard';
+  // ---------------------------------------------------------------
+  // 目录：优先公共目录，不可用则退回 app 私有目录
+  // ---------------------------------------------------------------
+  static Future<Directory> _publicOrPrivate(String name) async {
+    final pub = await DataDir.sub(name);
+    if (pub != null) return pub;
+    final base = await getApplicationDocumentsDirectory();
+    final dir = Directory('${base.path}/$name');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// 导出目录
+  static Future<Directory> exportDir() => _publicOrPrivate('export');
+
+  /// 导入的书存放目录
+  static Future<Directory> booksDir() => _publicOrPrivate('books');
 
   // ---------------------------------------------------------------
   // 导出
@@ -60,10 +78,7 @@ class TransferService {
     bool withProgress = true,
   }) async {
     try {
-      final dir = Directory(_publicDir);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
+      final dir = await exportDir();
 
       final payload = <String, dynamic>{
         'format': _fmt,
@@ -127,19 +142,18 @@ class TransferService {
     );
   }
 
-  /// 把导入的书落盘到 app 私有目录 <docs>/books/<book_id>.json
+  /// 把导入的书落盘到 <公共目录>/Flashcard/books/<book_id>.json
+  /// —— Agent 可以直接在这里塞一本书进去
   static Future<void> saveImportedBook(Book book) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final booksDir = Directory('${dir.path}/books');
-    if (!await booksDir.exists()) await booksDir.create(recursive: true);
+    final booksDir = await _publicOrPrivate('books');
     final file = File('${booksDir.path}/${book.bookId}.json');
     await file.writeAsString(json.encode(book.toJson()));
   }
 
   /// 删除一本导入的书
   static Future<void> deleteImportedBook(String bookId) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/books/$bookId.json');
+    final booksDir = await _publicOrPrivate('books');
+    final file = File('${booksDir.path}/$bookId.json');
     if (await file.exists()) await file.delete();
   }
 }

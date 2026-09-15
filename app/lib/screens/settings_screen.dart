@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../services/data_dir.dart';
 import '../services/reminder_service.dart';
 import '../services/study_settings.dart';
 
@@ -90,6 +91,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _sectionLabel('今日'),
           const SizedBox(height: 10),
           _todayCard(),
+          const SizedBox(height: 24),
+          _sectionLabel('数据目录'),
+          const SizedBox(height: 10),
+          _dataCard(),
         ],
       ),
     );
@@ -350,6 +355,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('重置今日进度'),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 数据目录：所有数据都在公共文件夹，方便外部工具 / Agent 直接改
+  Widget _dataCard() {
+    final ok = widget.settings.fileBacked;
+    final color = ok ? const Color(0xFF00C08B) : const Color(0xFFFF9F43);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0x0BFFFFFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(ok ? Icons.folder_open : Icons.folder_off,
+                  size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                    ok ? '已写入公共文件夹' : '未拿到存储权限，暂存在 app 私有目录',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const SelectableText(DataDir.publicPath,
+              style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 12)),
+          const SizedBox(height: 10),
+          const Text(
+              'progress.json  每张卡的复习进度\n'
+              'settings.json  设置 / 打卡 / 统计 / 提醒\n'
+              'books/         导入的书（可直接放 json 进去）\n'
+              'export/        手动导出的书',
+              style: TextStyle(
+                  color: Color(0xFF54666C), fontSize: 12, height: 1.7)),
         ],
       ),
     );
