@@ -180,7 +180,7 @@ class WebViewBridge {
     // 时序埋点：把 JS 发过来的每条消息按到达顺序记下，
     // 排查「点击没反应 / TTS 串页」时能看清 answer 和 tts 的先后。
     if (type == 'answer' || type == 'tts' || type == 'ttsSeq' || type == 'ttsStop') {
-      await TtsLog.write('bridge',
+      await SwitchLog.write('bridge',
           '$type ${type == 'answer' ? (data['rating'] ?? '') : (data['text'] ?? (data['items'] is List ? '${(data['items'] as List).length}条' : ''))}');
     }
 

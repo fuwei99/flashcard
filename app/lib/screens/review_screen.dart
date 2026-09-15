@@ -102,7 +102,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // 两条并发 answer 会各推进一次状态 -> 「点一下没反应、再点跳两页」。
     // 这里串行化：忙就丢，宁可漏一次也不要跳页。
     if (_handling) {
-      await TtsLog.write('switch',
+      await SwitchLog.write('switch',
           'DROP answer（上一条还在处理）phase=${_session.phase.name} '
           'done=${_session.doneInRound}/${_session.roundTotal}');
       return;
@@ -143,7 +143,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           break;
       }
 
-      await TtsLog.write('switch',
+      await SwitchLog.write('switch',
           'answer $beforePhase/${step.mode.key} rating=${rating.key} card=$beforeCard'
           ' → ${_session.phase.name} done=${_session.doneInRound}/${_session.roundTotal}');
 
@@ -170,7 +170,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       if (_session.finished) return;
       await _load();
       final ms = DateTime.now().difference(t0).inMilliseconds;
-      await TtsLog.write('switch', 'answer 处理完 ${ms}ms');
+      await SwitchLog.write('switch', 'answer 处理完 ${ms}ms');
       await _maybePause();
     } finally {
       _handling = false;
@@ -233,7 +233,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final total = isPassage ? 1 : _session.roundTotal;
 
     final t0 = DateTime.now();
-    await TtsLog.write('switch',
+    await SwitchLog.write('switch',
         'mount#$gen ← ${_session.phase.name} card=${step.card?.id ?? "passage"} '
         '$idx/$total unit=${_session.unitIndex + 1}/${_session.unitCount}');
 
@@ -253,11 +253,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
     final ms = DateTime.now().difference(t0).inMilliseconds;
     if (gen != _mountGen) {
-      await TtsLog.write(
+      await SwitchLog.write(
           'switch', 'mount#$gen 已过期（当前 #$_mountGen）→ 画面可能是旧的');
       return;
     }
-    await TtsLog.write('switch', 'mount#$gen 完成 ${ms}ms');
+    await SwitchLog.write('switch', 'mount#$gen 完成 ${ms}ms');
   }
 
   /// 生成干扰项

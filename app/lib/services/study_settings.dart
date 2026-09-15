@@ -306,8 +306,9 @@ class StudySettings {
     _prefs?.setInt(_kRemindHour, reminderHour);
     _prefs?.setInt(_kRemindMin, reminderMinute);
     _prefs?.setBool(_kTtsLog, ttsLogEnabled);
-    // 日志开关同步给静态 logger
+    // 日志开关同步给静态 logger（TTS / 切卡共用这一个开关）
     TtsLog.enabled = ttsLogEnabled;
+    SwitchLog.enabled = ttsLogEnabled;
 
     _prefs?.setBool(_kTtsOpenAiEnabled, ttsOpenAiEnabled);
     _prefs?.setString(_kTtsOpenAiBaseUrl, ttsOpenAiBaseUrl);
@@ -391,6 +392,7 @@ class StudySettings {
   Future<void> setTtsLogEnabled(bool v) async {
     ttsLogEnabled = v;
     TtsLog.enabled = v;
+    SwitchLog.enabled = v;
     _persist();
   }
 
