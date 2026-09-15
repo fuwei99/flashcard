@@ -79,3 +79,54 @@ let PluginJS = {
 - **OpenAI 兼容服务**：复制 `tts/openai` 改 `id`/`name`/默认 `base_url` 即可。
 - **JS 脚本**：新建目录放 `manifest.json` + `plugin.js`，`engine` 写 `js`。
   也可以 App 里「插件管理 → 安装（选 .js）」，会自动生成一份带 `cookie/voice/rate` 的清单。
+
+## 6. 模板怎么调 TTS（2026-09-15 起）
+
+模板 `script.js` 通过注入的 `window.Flashcard` 调用，**第二参从 lang 升级为 lang 或 options 对象**，老写法完全兼容：
+
+```js
+FC.tts("word");                         // 老写法，用当前选中插件
+FC.tts("word", "en-US");                // 老写法，显式 lang
+
+// 新写法：逐条指定
+FC.tts("word", {
+  plugin: "doubao",      // 用哪个 TTS 插件；"system" = 系统 TTS；缺省 = 当前选中
+  voice:  "zh_female_wenroutaozi_v2_mars_bigtts",
+  rate:   1.2,           // 语速倍率，1.0 正常
+  pitch:  0.9,           // 音调倍率，1.0 正常
+  cache:  true,          // 落盘开关，见下
+  extra:  { style: "chat" }  // 附件参数，原样并进插件 getAudioV2 的 request
+});
+
+// 顺序朗读：每条各用各的插件/音色
+FC.ttsSeq([
+  { text: "word",     plugin: "doubao",       voice: "A" },
+  { text: "sentence", plugin: "openai-tts",   voice: "alloy", rate: 0.9 }
+]);
+```
+
+### 落盘（cache）
+
+| 写法 | 行为 |
+|---|---|
+| 不传 | **默认不落盘**；只有单词跟随全局设置 `ttsWordCacheEnabled`，长句一律流式 |
+| `cache: true` | 强制落盘（单词、长句都落） |
+| `cache: "name"` | 强制落盘，文件名主干用 `name` |
+| `cache: {name:"x"}` | 同上，对象写法 |
+| `cache: false` | 强制不落盘 |
+
+### 缓存文件名
+
+```
+单词：  intensive-zh_female_xxx-3f9c1a2b7d40.aac
+长句：  The quick brown fo-zh_female_xxx-9b2e11aa33cc.aac
+        The quick brown fo-zh_female_xxx-9b2e11aa33cc.txt   ← 旁挂，存全文 + 参数
+```
+
+- 主干：自定义 `cache.name` > 文本本身；长文本只取前 20 字。
+- 尾巴：`sha1(plugin|text|lang|voice|rate|pitch|extra)` 前 12 位。
+- **判定复用只看 hash，不看文件名**：参数任意一项变了 hash 就变，生成新文件；完全一致才命中。
+
+### 系统 TTS
+
+`plugin: "system"` 直接走 `flutter_tts`，不吃缓存。省略 `plugin` 且没有可用插件时也会自动兜底到它。

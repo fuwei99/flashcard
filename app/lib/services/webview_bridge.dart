@@ -19,6 +19,7 @@ import '../models/book.dart';
 import '../models/deck.dart';
 import 'card_store.dart';
 import 'template_engine.dart';
+import 'tts_engine.dart';
 import 'tts_log.dart';
 import 'tts_service.dart';
 
@@ -189,7 +190,8 @@ class WebViewBridge {
         final text = _plainText((data['text'] ?? '').toString());
         final lang = (data['lang'] ?? 'en-US').toString();
         if (text.isNotEmpty) {
-          await tts.speak(text, lang);
+          // 模板可带 plugin/voice/rate/pitch/extra 覆盖当前插件配置
+          await tts.speak(text, lang, options: TtsOptions.parse(data));
         }
         break;
 

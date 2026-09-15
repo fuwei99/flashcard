@@ -69,21 +69,25 @@ class JsTtsHost {
   }
 
   /// 合成一段文本，返回音频字节流
+  ///
+  /// [extra] 会被并进发给插件的 request 顶层，插件支持就吃、不支持就忽略。
   Stream<List<int>> synthesize({
     required String text,
     required String voice,
     double rate = 1.0,
     double pitch = 1.0,
+    Map<String, String> extra = const {},
   }) {
     final id = 's${_seq++}';
     final s = _Session();
     _sessions[id] = s;
     // TTS Server 的 rate/pitch 是 0~100（50 = 正常）
-    final req = {
+    final req = <String, dynamic>{
       'text': text,
       'voice': voice,
       'rate': (rate * 50).round(),
       'pitch': (pitch * 50).round(),
+      ...extra,
     };
     try {
       _rt.evaluate("__startTts('$id', ${jsonEncode(req)});");

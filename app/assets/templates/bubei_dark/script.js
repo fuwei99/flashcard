@@ -15,11 +15,13 @@
     FC = window.Flashcard = {
       getCard: function () { return window.__FLASHCARD_CARD__ || {}; },
       answer: function (r) { console.log("[mock] answer:", r); },
-      tts: function (t, l) {
+      tts: function (t, o) {
         if (!("speechSynthesis" in window)) return;
+        var lang = (o && typeof o === "object") ? (o.lang || "en-US") : (o || "en-US");
+        var rate = (o && typeof o === "object" && o.rate) ? (0.95 * o.rate) : 0.95;
         speechSynthesis.cancel();
         var u = new SpeechSynthesisUtterance(t);
-        u.lang = l || "en-US"; u.rate = 0.95; speechSynthesis.speak(u);
+        u.lang = lang; u.rate = rate; speechSynthesis.speak(u);
       },
       getState: function () {}, setState: function () {},
       undo: function () {}, next: function () {}, prev: function () {},
@@ -58,13 +60,20 @@
   var activeBlank = -1;       // 语篇选词：光标所在空格
   var wrongToMeaning = false; // 答错后：先看错误项释义，点「继续」才进词义页
 
+  // ---------- TTS 路由（改这里就能换：词 / 句 / 文章各走各的）----------
+  var TTS_WORD     = { plugin: "doubao", cache: true };   // 单词：豆包，落盘
+  var TTS_SENTENCE = { plugin: "doubao", cache: false };  // 例句：豆包，不落盘
+  var TTS_PASSAGE  = { plugin: "system", cache: false };  // 文章：系统 TTS，不落盘
+
   // ---------- 朗读纯文本 ----------
-  function speak(text, lang) {
+  function speak(text, lang, opts) {
     var say = String(text || "")
       .replace(/<[^>]*>/g, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (say) FC.tts(say, lang || "en-US");
+    if (!say) return;
+    var o = Object.assign({ lang: lang || "en-US" }, opts || {});
+    FC.tts(say, o);
   }
 
   // ---------- 词义页：义项列表 ----------
@@ -461,7 +470,7 @@
 
     // 答完都读一遍正确选项。
     // cloze 进卡时故意不读（答案就是这个单词，读了直接泄题）；这里已经答完，可以读了。
-    speak(fields.word || "", "en-US");
+    speak(fields.word || "", "en-US", TTS_WORD);
 
     if (isRight) {
       // 答对 -> 停在原题看绿色反馈，点「继续」进下一题
@@ -657,7 +666,7 @@
     var w = el.getAttribute("data-word") || el.textContent || "";
     var pos = el.getAttribute("data-pos") || "";
     var mean = el.getAttribute("data-meaning") || "";
-    speak(w, "en-US");
+    speak(w, "en-US", TTS_WORD);
     var tip = root.querySelector(".fc-passage .fc-passage-tip");
     if (!tip) return;
     tip.innerHTML = "";
@@ -796,7 +805,7 @@
         tile.el.classList.add("is-used");
         tile.el.setAttribute("disabled", "disabled");
       }
-      speak(blank.answer, "en-US");
+      speak(blank.answer, "en-US", TTS_WORD);
       setActiveBlank(firstEmptyBlank());
       updateClozeContinue();
     } else {
@@ -830,12 +839,12 @@
     if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
     var seq = [];
     var w = String(fields.word || "").trim();
-    if (w) seq.push({ text: w, lang: "en-US" });
+    if (w) seq.push(Object.assign({ text: w, lang: "en-US" }, TTS_WORD));
     var sent = String(fields.sentence_en || "")
       .replace(/<[^>]*>/g, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (sent) seq.push({ text: sent, lang: "en-US" });
+    if (sent) seq.push(Object.assign({ text: sent, lang: "en-US" }, TTS_SENTENCE));
     if (seq.length && FC.ttsSeq) FC.ttsSeq(seq);
   }
 
@@ -934,13 +943,13 @@
     if (curWord && mode !== "cloze") {
       autoTtsTimer = setTimeout(function () {
         autoTtsTimer = null;
-        speak(curWord, "en-US");
+        speak(curWord, "en-US", TTS_WORD);
       }, 70);
     } else if (mode === "passage") {
       // 语篇通读：进页自动朗读全文（保持旧版「进卡即读」的听感）
       autoTtsTimer = setTimeout(function () {
         autoTtsTimer = null;
-        speak(passageText(), "en-US");
+        speak(passageText(), "en-US", TTS_PASSAGE);
       }, 260);
     }
   }
@@ -956,7 +965,7 @@
     var ttsWordTarget = e.target.closest('[data-role="tts-word"], .fc-word, .fc-tts');
     if (ttsWordTarget) {
       e.stopPropagation();
-      speak(fields.word || "", "en-US");
+      speak(fields.word || "", "en-US", TTS_WORD);
       return;
     }
 
@@ -964,7 +973,7 @@
     var ttsSentTarget = e.target.closest('[data-role="tts-sentence"]');
     if (ttsSentTarget) {
       e.stopPropagation();
-      speak(fields.sentence_en || "", "en-US");
+      speak(fields.sentence_en || "", "en-US", TTS_SENTENCE);
       return;
     }
 
@@ -972,7 +981,7 @@
     var ttsPassage = e.target.closest('[data-role="tts-passage"]');
     if (ttsPassage) {
       e.stopPropagation();
-      speak(passageText(), "en-US");
+      speak(passageText(), "en-US", TTS_PASSAGE);
       return;
     }
 
@@ -988,7 +997,7 @@
     var sayTarget = e.target.closest("[data-say]");
     if (sayTarget) {
       e.stopPropagation();
-      speak(sayTarget.getAttribute("data-say") || "", "en-US");
+      speak(sayTarget.getAttribute("data-say") || "", "en-US", TTS_WORD);
       return;
     }
 

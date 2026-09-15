@@ -88,7 +88,14 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
   window.Flashcard = {
     getCard: function () { return window.__FLASHCARD_CARD__; },
     answer:  function (r) { post({type:"answer", rating:r}); },
-    tts:     function (t, l) { post({type:"tts", text:t, lang:l||"en-US"}); },
+    tts:     function (t, o) {
+      // 第二参：字符串/缺省 = 老写法（lang）；对象 = 指定插件/音色/语速/音调
+      if (o == null || typeof o === "string") {
+        post({type:"tts", text:t, lang:o||"en-US"});
+      } else {
+        post(Object.assign({type:"tts", text:t}, o));
+      }
+    },
     ttsSeq:  function (list) { post({type:"ttsSeq", items:list||[]}); },
     ttsStop: function () { post({type:"ttsStop"}); },
     getState:function (k) { return (window.__FLASHCARD_KV__||{})[k]; },
