@@ -464,13 +464,17 @@ html, body {
 .fc-root[data-mode="read"][data-state="front"] .fc-actions-front {
   display: flex;
 }
-.fc-root[data-mode="read"][data-state="back"] .fc-actions-back {
+/* 词义页底部：不论从哪个 mode 进来（read 自评 / choice·cloze 答错），
+   都显示「记错了 / 下一词」。以前写死 data-mode="read"，
+   导致 choice/cloze 答错跳词义页后底部只剩个死掉的「看词义」，切不动下一张。 */
+.fc-root[data-state="back"] .fc-actions-back {
   display: flex;
 }
-.fc-root[data-mode="choice"] .fc-actions-next {
+/* 「继续」条只在正面显示；进了词义页一律收起 */
+.fc-root[data-mode="choice"][data-state="front"] .fc-actions-next {
   display: flex;
 }
-.fc-root[data-mode="cloze"] .fc-actions-next {
+.fc-root[data-mode="cloze"][data-state="front"] .fc-actions-next {
   display: flex;
 }
 
@@ -581,6 +585,9 @@ html, body {
 .fc-root[data-mode="passage_cloze"] .fc-passage-cloze {
   display: flex;
   flex-direction: column;
+  /* 外层不再整体滚动 —— 正文区 / 词库区各自独立滚，互不干扰 */
+  overflow: hidden;
+  padding-bottom: 0;
 }
 .fc-root[data-mode="passage"] .fc-actions-passage {
   display: flex;
@@ -677,18 +684,18 @@ html, body {
 
 /* ---------- 语篇选词 ---------- */
 .fc-cloze-passage {
-  font-size: 18px;
-  line-height: 2.15;
+  font-size: 16px;
+  line-height: 1.95;
   color: var(--txt-main);
 }
 .fc-blank {
   display: inline-block;
-  min-width: 72px;
+  min-width: 56px;
   text-align: center;
   color: var(--txt-dim);
   border-bottom: 2px solid var(--line-strong);
-  margin: 0 3px;
-  padding: 0 4px;
+  margin: 0 2px;
+  padding: 0 2px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
@@ -750,6 +757,43 @@ html, body {
   border-color: var(--red);
   color: var(--red);
   animation: fcShake 0.3s;
+}
+
+/* ---------- 语篇选词：上下分区，各自滚动 ----------
+   以前整页一根滚动条：改一个空要滑到底选词，再滑回顶上读原文，
+   来回拉锯。现在拆成两块 ——
+     正文区（.fc-cloze-passage）吃满剩余高度，自己滚；
+     词库区（.fc-wordbank）钉在底部，最多占 30vh，自己滚。
+   选词、读文各滚各的，谁也顶不动谁。 */
+.fc-root[data-mode="passage_cloze"] .fc-passage-head {
+  flex: 0 0 auto;
+}
+.fc-root[data-mode="passage_cloze"] .fc-cloze-passage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+}
+.fc-root[data-mode="passage_cloze"] .fc-cloze-passage::-webkit-scrollbar {
+  display: none;
+}
+.fc-root[data-mode="passage_cloze"] .fc-blank-hint {
+  flex: 0 0 auto;
+  margin: 10px 0 8px;
+}
+.fc-root[data-mode="passage_cloze"] .fc-wordbank {
+  flex: 0 0 auto;
+  max-height: 30vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-top: 1px solid var(--line);
+  padding: 12px 2px 14px;
+}
+.fc-root[data-mode="passage_cloze"] .fc-wordbank::-webkit-scrollbar {
+  display: none;
 }
 
 /* ------------------------------------------------------------

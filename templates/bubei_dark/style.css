@@ -464,13 +464,17 @@ html, body {
 .fc-root[data-mode="read"][data-state="front"] .fc-actions-front {
   display: flex;
 }
-.fc-root[data-mode="read"][data-state="back"] .fc-actions-back {
+/* 词义页底部：不论从哪个 mode 进来（read 自评 / choice·cloze 答错），
+   都显示「记错了 / 下一词」。以前写死 data-mode="read"，
+   导致 choice/cloze 答错跳词义页后底部只剩个死掉的「看词义」，切不动下一张。 */
+.fc-root[data-state="back"] .fc-actions-back {
   display: flex;
 }
-.fc-root[data-mode="choice"] .fc-actions-next {
+/* 「继续」条只在正面显示；进了词义页一律收起 */
+.fc-root[data-mode="choice"][data-state="front"] .fc-actions-next {
   display: flex;
 }
-.fc-root[data-mode="cloze"] .fc-actions-next {
+.fc-root[data-mode="cloze"][data-state="front"] .fc-actions-next {
   display: flex;
 }
 
