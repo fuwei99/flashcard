@@ -17,6 +17,7 @@ import '../services/card_store.dart';
 import '../services/scheduler.dart';
 import '../services/study_plan.dart';
 import '../services/study_settings.dart';
+import '../services/tts_service.dart';
 import '../services/webview_bridge.dart';
 
 class ReviewScreen extends StatefulWidget {

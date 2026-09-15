@@ -12,6 +12,7 @@ import '../services/update_service.dart';
 import 'debug_log_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
+import 'tts_settings_screen.dart';
 
 class MeScreen extends StatefulWidget {
   final CardStore store;

@@ -13,14 +13,13 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
 import 'card_store.dart';
 import 'template_engine.dart';
-import 'tts_log.dart';
+import 'tts_service.dart';
 
 class BridgeMessage {
   final String type;
@@ -30,40 +29,16 @@ class BridgeMessage {
 
 class WebViewBridge {
   final CardStore store;
-  final FlutterTts tts;
+  final TtsService tts;
 
   final _messages = StreamController<BridgeMessage>.broadcast();
   Stream<BridgeMessage> get messages => _messages.stream;
 
   String? _currentCardId;
 
-  /// TTS 顺序朗读的「代」计数：每来一条新的朗读就 +1，
-  /// 正在跑的 ttsSeq 循环发现代号变了就立刻收手，避免和新卡片抢话。
-  int _ttsGen = 0;
+  WebViewBridge({required this.store, required this.tts});
 
-  WebViewBridge({required this.store, FlutterTts? tts})
-      : tts = tts ?? FlutterTts();
-
-  Future<void> initTts() async {
-    await TtsLog.write('init', 'initTts start');
-    try {
-      final r1 = await tts.setLanguage('en-US');
-      final r2 = await tts.setSpeechRate(0.48);
-      final r3 = await tts.setVolume(1.0);
-      final r4 = await tts.setPitch(1.0);
-      final r5 = await tts.awaitSpeakCompletion(true);
-      await TtsLog.write('init',
-          'setLanguage=$r1 rate=$r2 vol=$r3 pitch=$r4 awaitCompletion=$r5');
-      final avail = await tts.isLanguageAvailable('en-US');
-      await TtsLog.write('init', 'isLanguageAvailable(en-US)=$avail');
-      final def = await tts.getDefaultEngine;
-      await TtsLog.write('init', 'defaultEngine=$def');
-      final engines = await tts.getEngines;
-      await TtsLog.write('init', 'engines=$engines');
-    } catch (e, st) {
-      await TtsLog.write('init', 'ERROR: $e\n$st');
-    }
-  }
+  Future<void> initTts() => tts.init();
 
   /// 组装一张卡牌的完整 HTML 页面 —— SPA 骨架页，只在会话开始时 load 一次。
   ///
@@ -206,50 +181,19 @@ class WebViewBridge {
         final text = _plainText((data['text'] ?? '').toString());
         final lang = (data['lang'] ?? 'en-US').toString();
         if (text.isNotEmpty) {
-          _ttsGen++; // 打断可能正在进行的顺序朗读
-          try {
-            await tts.stop();
-            final lr = await tts.setLanguage(lang);
-            final sr = await tts.speak(text);
-            await TtsLog.write('speak',
-                'lang=$lang setLanguage->$lr speak->$sr text="${_abbr(text)}"');
-          } catch (e, st) {
-            await TtsLog.write('speak', 'ERROR: $e\n$st');
-          }
+          await tts.speak(text, lang);
         }
         break;
 
       case 'ttsStop':
-        _ttsGen++; // 打断可能正在进行的顺序朗读
-        try {
-          await tts.stop();
-          await TtsLog.write('stop', 'stop ok');
-        } catch (e) {
-          await TtsLog.write('stop', 'ERROR: $e');
-        }
+        await tts.stop();
         break;
 
       case 'ttsSeq':
         // 顺序朗读：念完一条再念下一条（进词义页 = 单词 -> 例句）
         final items = data['items'];
         if (items is List) {
-          final myGen = ++_ttsGen;
-          try {
-            await tts.stop();
-            for (final it in items) {
-              if (myGen != _ttsGen) break; // 被新朗读打断，立即收手
-              if (it is! Map) continue;
-              final text = _plainText((it['text'] ?? '').toString());
-              final lang = (it['lang'] ?? 'en-US').toString();
-              if (text.isEmpty) continue;
-              final lr = await tts.setLanguage(lang);
-              final sr = await tts.speak(text);
-              await TtsLog.write('seq',
-                  'lang=$lang setLanguage->$lr speak->$sr text="${_abbr(text)}"');
-            }
-          } catch (e, st) {
-            await TtsLog.write('seq', 'ERROR: $e\n$st');
-          }
+          await tts.speakSeq(items);
         }
         break;
 
@@ -275,11 +219,8 @@ class WebViewBridge {
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 
-  /// 日志里别塞整段语篇，掐个头
-  static String _abbr(String s) =>
-      s.length <= 48 ? s : '${s.substring(0, 48)}…';
-
   void dispose() {
+    tts.dispose();
     _messages.close();
   }
 }

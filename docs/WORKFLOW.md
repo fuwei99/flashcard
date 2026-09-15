@@ -253,23 +253,28 @@ AI 定时查岗 → 读快照 → 知道今天背了几个、正确率、连续�
 
 ---
 
-## 9. TTS 架构（待做）
+## 9. TTS 架构（v0.9 已实现）
 
 ```
 Flashcard.tts(text, lang)      ← 牌组只发这一句，不关心底下是谁
         │
-   WebViewBridge（已加剥 HTML 标签）
+   WebViewBridge（剥 HTML 标签）
         │
-   TtsService.speak(text, lang)
-        ├── SystemTtsEngine    → flutter_tts（默认：离线、免费、零延迟）
-        └── OpenAiTtsEngine    → POST /v1/audio/speech
-                                   model / voice / base_url / api_key 可配
-                                   → just_audio 播放
-                                   → 音频按 hash 缓存，别重复烧钱
+   TtsService.speak(text, lang)          ← lib/services/tts_service.dart
+        ├── 单个英文词 → cache/tts/ 命中 → just_audio 秒播（零延迟）
+        │                 未命中 → POST {base}/audio/speech → 收全字节落盘 → 播
+        └── 长句       → POST 响应字节流直接喂 StreamAudioSource
+                          → 边收边播，不攒完整包
+        └── 兜底       → flutter_tts（在线没配置 / 合成失败时）
 ```
 
-设置页：引擎开关 / OpenAI base_url / key / model / voice / 英美音色。
-`manifest.tts.auto_play`（写了但没人读）要接上：进卡自动朗读单词。
+- 在线引擎 = OpenAI 兼容接口：`POST {base_url}/audio/speech`，
+  `model / voice / base_url / api_key / speed / response_format` 全可配。
+- 缓存键：`word + lang + model + voice + speed` 取 sha1 → `cache/tts/<sha1>.<fmt>`，
+  换音色/模型/语速自动重建，不会串音。
+- 单词（纯字母、无空格、≤40 字符）走缓存；其余文本走流式，不缓存。
+- 设置页（我的 → TTS 引擎）：引擎开关 / base_url / key / model / voice / 语速 / 缓存开关 / 测试发音。
+- `manifest.tts.auto_play`（写了但没人读）要接上：进卡自动朗读单词。
 
 ### 已修：例句 TTS 念 HTML 标签
 

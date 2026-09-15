@@ -56,6 +56,16 @@ class StudySettings {
   // 调试日志
   static const _kTtsLog = 'fc_tts_log';
 
+  // TTS 引擎（在线 OpenAI 兼容）
+  static const _kTtsOpenAiEnabled = 'fc_tts_openai_enabled';
+  static const _kTtsOpenAiBaseUrl = 'fc_tts_openai_base_url';
+  static const _kTtsOpenAiApiKey = 'fc_tts_openai_api_key';
+  static const _kTtsOpenAiModel = 'fc_tts_openai_model';
+  static const _kTtsOpenAiVoice = 'fc_tts_openai_voice';
+  static const _kTtsOpenAiFormat = 'fc_tts_openai_format';
+  static const _kTtsOpenAiSpeed = 'fc_tts_openai_speed';
+  static const _kTtsWordCache = 'fc_tts_word_cache';
+
   // 每日复习上限
   static const _kReviewLimit = 'fc_review_limit';
 
@@ -102,6 +112,31 @@ class StudySettings {
   // ---------- 调试日志 ----------
   /// TTS 日志开关：写 <公共目录>/logs/tts/，默认开
   bool ttsLogEnabled = true;
+
+  // ---------- TTS 引擎（在线 OpenAI 兼容，默认关 = 走系统 TTS） ----------
+  /// 在线引擎总开关：单词走它（缓存秒播），长句走它（流式播放）
+  bool ttsOpenAiEnabled = false;
+
+  /// OpenAI 兼容接口地址，如 https://aihubmix.com/v1
+  String ttsOpenAiBaseUrl = '';
+
+  /// API Key
+  String ttsOpenAiApiKey = '';
+
+  /// 模型名
+  String ttsOpenAiModel = 'gpt-4o-mini-tts';
+
+  /// 音色
+  String ttsOpenAiVoice = 'alloy';
+
+  /// 音频格式（mp3 / wav / opus / aac / flac）
+  String ttsOpenAiFormat = 'mp3';
+
+  /// 语速 0.5~2.0
+  double ttsOpenAiSpeed = 1.0;
+
+  /// 单词音频缓存开关（默认开：读过的词存 cache/tts/，下次秒播）
+  bool ttsWordCacheEnabled = true;
 
   SharedPreferences? _prefs;
 
@@ -152,6 +187,15 @@ class StudySettings {
     reminderMinute = _prefs!.getInt(_kRemindMin) ?? 50;
     ttsLogEnabled = _prefs!.getBool(_kTtsLog) ?? true;
 
+    ttsOpenAiEnabled = _prefs!.getBool(_kTtsOpenAiEnabled) ?? false;
+    ttsOpenAiBaseUrl = _prefs!.getString(_kTtsOpenAiBaseUrl) ?? '';
+    ttsOpenAiApiKey = _prefs!.getString(_kTtsOpenAiApiKey) ?? '';
+    ttsOpenAiModel = _prefs!.getString(_kTtsOpenAiModel) ?? 'gpt-4o-mini-tts';
+    ttsOpenAiVoice = _prefs!.getString(_kTtsOpenAiVoice) ?? 'alloy';
+    ttsOpenAiFormat = _prefs!.getString(_kTtsOpenAiFormat) ?? 'mp3';
+    ttsOpenAiSpeed = _prefs!.getDouble(_kTtsOpenAiSpeed) ?? 1.0;
+    ttsWordCacheEnabled = _prefs!.getBool(_kTtsWordCache) ?? true;
+
     _rolloverIfNewDay();
 
     // 3) 首次：把老数据搬到公共文件
@@ -182,6 +226,14 @@ class StudySettings {
         'reminder_hour': reminderHour,
         'reminder_minute': reminderMinute,
         'tts_log_enabled': ttsLogEnabled,
+        'tts_openai_enabled': ttsOpenAiEnabled,
+        'tts_openai_base_url': ttsOpenAiBaseUrl,
+        'tts_openai_api_key': ttsOpenAiApiKey,
+        'tts_openai_model': ttsOpenAiModel,
+        'tts_openai_voice': ttsOpenAiVoice,
+        'tts_openai_format': ttsOpenAiFormat,
+        'tts_openai_speed': ttsOpenAiSpeed,
+        'tts_word_cache': ttsWordCacheEnabled,
       };
 
   void _applyJson(Map<String, dynamic> m) {
@@ -216,6 +268,18 @@ class StudySettings {
     reminderHour = i('reminder_hour', reminderHour).clamp(0, 23);
     reminderMinute = i('reminder_minute', reminderMinute).clamp(0, 59);
     ttsLogEnabled = b('tts_log_enabled', ttsLogEnabled);
+
+    ttsOpenAiEnabled = b('tts_openai_enabled', ttsOpenAiEnabled);
+    ttsOpenAiBaseUrl = s('tts_openai_base_url', ttsOpenAiBaseUrl);
+    ttsOpenAiApiKey = s('tts_openai_api_key', ttsOpenAiApiKey);
+    ttsOpenAiModel = s('tts_openai_model', ttsOpenAiModel);
+    ttsOpenAiVoice = s('tts_openai_voice', ttsOpenAiVoice);
+    ttsOpenAiFormat = s('tts_openai_format', ttsOpenAiFormat);
+    final spd = m['tts_openai_speed'];
+    ttsOpenAiSpeed = spd is num
+        ? spd.toDouble().clamp(0.5, 2.0).toDouble()
+        : ttsOpenAiSpeed;
+    ttsWordCacheEnabled = b('tts_word_cache', ttsWordCacheEnabled);
   }
 
   /// 落盘：公共文件 + prefs 备份
@@ -244,6 +308,15 @@ class StudySettings {
     _prefs?.setBool(_kTtsLog, ttsLogEnabled);
     // 日志开关同步给静态 logger
     TtsLog.enabled = ttsLogEnabled;
+
+    _prefs?.setBool(_kTtsOpenAiEnabled, ttsOpenAiEnabled);
+    _prefs?.setString(_kTtsOpenAiBaseUrl, ttsOpenAiBaseUrl);
+    _prefs?.setString(_kTtsOpenAiApiKey, ttsOpenAiApiKey);
+    _prefs?.setString(_kTtsOpenAiModel, ttsOpenAiModel);
+    _prefs?.setString(_kTtsOpenAiVoice, ttsOpenAiVoice);
+    _prefs?.setString(_kTtsOpenAiFormat, ttsOpenAiFormat);
+    _prefs?.setDouble(_kTtsOpenAiSpeed, ttsOpenAiSpeed);
+    _prefs?.setBool(_kTtsWordCache, ttsWordCacheEnabled);
   }
 
   static Map<String, int> _decodeHist(String? raw) {
@@ -318,6 +391,36 @@ class StudySettings {
   Future<void> setTtsLogEnabled(bool v) async {
     ttsLogEnabled = v;
     TtsLog.enabled = v;
+    _persist();
+  }
+
+  // ---------- TTS 引擎 ----------
+  Future<void> setTtsOpenAiEnabled(bool v) async {
+    ttsOpenAiEnabled = v;
+    _persist();
+  }
+
+  Future<void> setTtsWordCacheEnabled(bool v) async {
+    ttsWordCacheEnabled = v;
+    _persist();
+  }
+
+  Future<void> setTtsOpenAi({
+    bool? enabled,
+    String? baseUrl,
+    String? apiKey,
+    String? model,
+    String? voice,
+    String? format,
+    double? speed,
+  }) async {
+    if (enabled != null) ttsOpenAiEnabled = enabled;
+    if (baseUrl != null) ttsOpenAiBaseUrl = baseUrl;
+    if (apiKey != null) ttsOpenAiApiKey = apiKey;
+    if (model != null && model.trim().isNotEmpty) ttsOpenAiModel = model.trim();
+    if (voice != null && voice.trim().isNotEmpty) ttsOpenAiVoice = voice.trim();
+    if (format != null && format.trim().isNotEmpty) ttsOpenAiFormat = format.trim();
+    if (speed != null) ttsOpenAiSpeed = speed.clamp(0.5, 2.0).toDouble();
     _persist();
   }
 

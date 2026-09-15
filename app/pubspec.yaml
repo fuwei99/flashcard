@@ -25,6 +25,8 @@ dependencies:
   # JSON / 工具
   crypto: ^3.0.6
   archive: ^3.6.1
+  # HTTP（OpenAI 兼容 TTS）
+  http: ^1.2.0
   # 导入：选文件
   file_picker: ^8.1.4
   # 权限：全部文件访问（MANAGE_EXTERNAL_STORAGE）
