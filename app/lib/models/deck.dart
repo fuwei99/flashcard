@@ -65,6 +65,17 @@ class FlashCard {
     return [Sense(pos: (fields['pos'] ?? '').toString().trim(), cn: cn)];
   }
 
+  /// 词性标签：多词性用 / 连（adj./vt.）。
+  /// 选义选项的「词性前缀」用它 —— 老数据的 pos 已经在 senses 里兜底了，
+  /// 所以新 schema 删掉 pos 字段后这里不会再变空。
+  String get posLabel {
+    final set = <String>{};
+    for (final s in senses) {
+      if (s.pos.isNotEmpty) set.add(s.pos);
+    }
+    return set.join('/');
+  }
+
   /// 完整释义（词义页 / 语篇浮层用）：多义项用「；」连起来
   String get meaningFull => senses
       .map((s) => ((s.pos.isNotEmpty ? '${s.pos} ' : '') + s.cn).trim())

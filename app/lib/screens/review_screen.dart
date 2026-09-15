@@ -225,8 +225,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ? c.meaningPlain
         : (c.fields['word'] ?? c.word).toString().trim();
 
-    String posOf(FlashCard c) =>
-        isChoice ? (c.fields['pos'] ?? '').toString().trim() : '';
+    // 词性前缀：走 posLabel，多词性自动用 / 连（adj./vt.）
+    String posOf(FlashCard c) => isChoice ? c.posLabel : '';
 
     String wordOf(FlashCard c) => (c.fields['word'] ?? c.word).toString().trim();
 
