@@ -190,15 +190,29 @@ class TtsService {
     }
   }
 
-  /// 缓存文件路径（按 插件+词+lang 取 sha1；换插件/音色自动重建）
+  /// 缓存文件路径：<单词>-<speaker>-<sha1前12位>.<ext>
+  /// 文件名带单词，肉眼能认；后面那截 sha1 兜底，保证「同词不同音色 / 不同插件」
+  /// 不会互相覆盖。换音色/插件后旧文件不会被命中，会自动重建。
   Future<File?> _cacheFile(String word, String lang) async {
     final dir = await DataDir.sub('cache/tts');
     if (dir == null) return null;
     final m = PluginManager.I.active(PluginType.tts);
     final pid = m?.id ?? 'sys';
-    final key = '$pid|${word.toLowerCase()}|$lang';
-    final hash = sha1.convert(utf8.encode(key)).toString();
-    return File('${dir.path}/$hash.${_extOf(m)}');
+    final voice = m == null ? '' : PluginManager.I.varOf(m.id, 'voice');
+    final key = '$pid|${word.toLowerCase()}|$lang|$voice';
+    final hash = sha1.convert(utf8.encode(key)).toString().substring(0, 12);
+    final w = _fileSafe(word.toLowerCase(), 40);
+    final sp = _fileSafe(voice.isEmpty ? 'default' : voice, 24);
+    return File('${dir.path}/$w-$sp-$hash.${_extOf(m)}');
+  }
+
+  /// 文件名安全：只留 [A-Za-z0-9_-]，其余并成下划线，两端去下划线，截断到 max
+  static String _fileSafe(String s, int max) {
+    var t = s.trim().replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_');
+    t = t.replaceAll(RegExp(r'^_+|_+$'), '');
+    if (t.isEmpty) t = 'x';
+    if (t.length > max) t = t.substring(0, max);
+    return t;
   }
 
   String _extOf(PluginManifest? m) {
