@@ -68,7 +68,7 @@ class DeckRepository {
       final id = assetDir.split('/').last;
       final target = Directory('${root.path}/$id');
       // 目录已存在且非空 → 这是用户自己的模板，整个跳过：不覆盖、也不补缺文件
-      if (await target.exists() && await target.list().isNotEmpty) continue;
+      if (await target.exists() && !(await target.list().isEmpty)) continue;
       for (final name in _templateFiles) {
         try {
           final f = File('${target.path}/$name');
@@ -405,7 +405,7 @@ class DeckRepository {
     if (pub == null) return false;
     try {
       if (!await pub.exists()) return false;
-      return await pub.list().isNotEmpty;
+      return !(await pub.list().isEmpty);
     } catch (_) {
       return false;
     }
