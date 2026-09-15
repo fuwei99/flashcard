@@ -159,7 +159,11 @@ class HomeScreenState extends State<HomeScreen> {
                   style:
                       const TextStyle(color: Color(0xFF54666C), fontSize: 13)),
               const SizedBox(height: 20),
+              _streakCard(s),
+              const SizedBox(height: 16),
               _progressCard(s),
+              const SizedBox(height: 16),
+              _weekChart(s),
               const SizedBox(height: 16),
               _taskCard(
                 icon: Icons.menu_book,
@@ -203,6 +207,145 @@ class HomeScreenState extends State<HomeScreen> {
   String _todayLabel() {
     final d = DateTime.now();
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  /// 连续打卡卡
+  Widget _streakCard(StudySettings s) {
+    final streak = s.currentStreak;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0x0BFFFFFF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0x1FFF8A3D),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.local_fire_department,
+                color: Color(0xFFFF8A3D), size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text('$streak',
+                        style: const TextStyle(
+                            color: Color(0xFFF0F4F5),
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800)),
+                    const SizedBox(width: 5),
+                    const Text('天连续打卡',
+                        style:
+                            TextStyle(color: Color(0xFF8C9DA2), fontSize: 13)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('最长 ${s.bestStreak} 天 · 累计学习 ${s.totalStudyDays} 天',
+                    style:
+                        const TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+              ],
+            ),
+          ),
+          if (s.checkedInToday)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0x1F00C08B),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text('今日已打卡',
+                  style: TextStyle(
+                      color: Color(0xFF00C08B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 近 7 天柱状图
+  Widget _weekChart(StudySettings s) {
+    final days = s.recentDays(7);
+    var maxV = 1;
+    for (final d in days) {
+      final v = (d['word'] as int) + (d['card'] as int);
+      if (v > maxV) maxV = v;
+    }
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0x0BFFFFFF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('近 7 天',
+                  style: TextStyle(
+                      color: Color(0xFFF0F4F5),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+              Text('累计 ${s.totalWordDone + s.totalCardDone} 张',
+                  style:
+                      const TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 96,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: days.map((d) {
+                final total = (d['word'] as int) + (d['card'] as int);
+                final h = total == 0 ? 4.0 : (total / maxV) * 62.0;
+                return Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(total == 0 ? '' : '$total',
+                          style: const TextStyle(
+                              color: Color(0xFF8C9DA2), fontSize: 10)),
+                      const SizedBox(height: 3),
+                      Container(
+                        height: h,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: total == 0
+                              ? const Color(0x14FFFFFF)
+                              : const Color(0xFF00C08B),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(d['label'] as String,
+                          style: const TextStyle(
+                              color: Color(0xFF54666C), fontSize: 10)),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _progressCard(StudySettings s) {

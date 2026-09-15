@@ -1,7 +1,7 @@
 name: flashcard
 description: "flashcard - 卡牌即网页的极简背单词壳。原生只发牌，交互全在卡牌里。"
 publish_to: 'none'
-version: 0.3.1+5
+version: 0.4.0+6
 
 environment:
   sdk: ^3.5.0
@@ -29,6 +29,9 @@ dependencies:
   file_picker: ^8.1.4
   # 权限：全部文件访问（MANAGE_EXTERNAL_STORAGE）
   permission_handler: ^11.3.1
+  # 每日背诵提醒（本地通知）
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
 
 dev_dependencies:
   flutter_test:

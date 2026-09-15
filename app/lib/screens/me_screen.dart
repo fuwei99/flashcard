@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/card_store.dart';
 import '../services/study_settings.dart';
 import 'settings_screen.dart';
+import 'stats_screen.dart';
 
 class MeScreen extends StatefulWidget {
   final CardStore store;
@@ -49,21 +50,22 @@ class MeScreenState extends State<MeScreen> {
             child: Row(
               children: [
                 const Icon(Icons.local_fire_department,
-                    color: Color(0xFF00C08B), size: 26),
+                    color: Color(0xFFFF8A3D), size: 26),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('今日已背',
-                          style: TextStyle(
-                              color: Color(0xFF54666C), fontSize: 12)),
-                      const SizedBox(height: 3),
-                      Text('单词 ${s.todayWordDone}/${s.wordDailyLimit} · 卡牌 ${s.todayCardDone}/${s.cardDailyLimit}',
+                      Text('连续 ${s.currentStreak} 天打卡',
                           style: const TextStyle(
                               color: Color(0xFFF0F4F5),
                               fontSize: 18,
                               fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 3),
+                      Text(
+                          '今日 ${s.todayTotal} 张 · 最长 ${s.bestStreak} 天 · 累计 ${s.totalStudyDays} 天',
+                          style: const TextStyle(
+                              color: Color(0xFF54666C), fontSize: 12)),
                     ],
                   ),
                 ),
@@ -72,6 +74,36 @@ class MeScreenState extends State<MeScreen> {
           ),
           const SizedBox(height: 20),
           _sectionLabel('设置'),
+          const SizedBox(height: 10),
+          _entry(
+            icon: Icons.insights,
+            label: '学习统计',
+            value: '连续 ${s.currentStreak} 天',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatsScreen(settings: widget.settings),
+                ),
+              );
+              refresh();
+            },
+          ),
+          const SizedBox(height: 10),
+          _entry(
+            icon: Icons.notifications_none,
+            label: '背诵提醒',
+            value: s.reminderEnabled ? '每天 ${s.reminderTimeLabel}' : '未开启',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SettingsScreen(settings: widget.settings),
+                ),
+              );
+              refresh();
+            },
+          ),
           const SizedBox(height: 10),
           _entry(
             icon: Icons.tune,

@@ -98,16 +98,47 @@ jobs:
                   open(f, "w").write(s)
                   print("patched minSdk:", f)
 
+          # flutter_local_notifications 需要 core library desugaring（java.time 等）
+          for f in ("app/build.gradle", "app/build.gradle.kts"):
+              if not os.path.exists(f):
+                  continue
+              s = open(f).read()
+              if "coreLibraryDesugaring" in s:
+                  print("already desugared:", f)
+                  continue
+              kts = f.endswith(".kts")
+              flag = "isCoreLibraryDesugaringEnabled = true" if kts else "coreLibraryDesugaringEnabled true"
+              if "compileOptions {" in s:
+                  s = s.replace("compileOptions {", "compileOptions {\n        " + flag, 1)
+              else:
+                  s = s.replace("android {", "android {\n    compileOptions {\n        " + flag + "\n    }", 1)
+              # desugar_jdk_libs 2.x 需要 Java 11
+              s = s.replace("JavaVersion.VERSION_1_8", "JavaVersion.VERSION_11")
+              dep = ('\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")\n}\n'
+                     if kts else
+                     "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\n}\n")
+              s += dep
+              open(f, "w").write(s)
+              print("desugaring patched:", f)
+
           mf = "app/src/main/AndroidManifest.xml"
           if os.path.exists(mf):
               s = open(mf).read()
-              perms = (
-                  '    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n'
-                  '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n'
-                  '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>\n'
-              )
-              if "MANAGE_EXTERNAL_STORAGE" not in s:
-                  s = s.replace("<application", perms + "    <application", 1)
+              want = [
+                  'android.permission.MANAGE_EXTERNAL_STORAGE',
+                  'android.permission.READ_EXTERNAL_STORAGE',
+                  'android.permission.POST_NOTIFICATIONS',
+                  'android.permission.RECEIVE_BOOT_COMPLETED',
+              ]
+              add = ''
+              for p in want:
+                  if p not in s:
+                      add += '    <uses-permission android:name="%s"/>\n' % p
+              if 'android.permission.WRITE_EXTERNAL_STORAGE' not in s:
+                  add += ('    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" '
+                          'android:maxSdkVersion="28"/>\n')
+              if add:
+                  s = s.replace("<application", add + "    <application", 1)
                   open(mf, "w").write(s)
                   print("manifest patched")
           PY
@@ -242,5 +273,8 @@ jobs:
             flashcard ${{ github.ref_name }} · arm64-v8a release APK
 
             - 语篇（passage）：章首短文通读 + 语篇选词（多邻国式填词）
-            - 设置可开关：语义选项 / 短句选词 / 语篇选词
+            - 连续打卡：连续天数 / 最长纪录 / 今日已打卡
+            - 学习统计：累计已背 + 近 7 / 30 天柱状图
+            - 背诵提醒：系统通知，每天固定时间提醒（默认 22:50，可自设）
+            - 设置可开关：语义选项 / 短句选词 / 语篇选词；每日单词 / 卡牌背诵量
           files: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk

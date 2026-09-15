@@ -11,6 +11,7 @@ import 'models/deck.dart';
 import 'screens/main_scaffold.dart';
 import 'services/card_store.dart';
 import 'services/deck_repository.dart';
+import 'services/reminder_service.dart';
 import 'services/study_settings.dart';
 
 void main() {
@@ -64,6 +65,8 @@ class _BootstrapState extends State<_Bootstrap> {
     try {
       await _store.init();
       await _settings.init();
+      await ReminderService.init();
+      await _applyReminder();
       final templates = await _repo.loadAllTemplates();
       if (!mounted) return;
       setState(() => _templates = templates);
@@ -73,6 +76,18 @@ class _BootstrapState extends State<_Bootstrap> {
       if (!mounted) return;
       setState(() => _error = e);
     }
+  }
+
+  /// 启动时按设置恢复「每日提醒」排程
+  Future<void> _applyReminder() async {
+    try {
+      if (_settings.reminderEnabled) {
+        await ReminderService.scheduleDaily(
+            _settings.reminderHour, _settings.reminderMinute);
+      } else {
+        await ReminderService.cancel();
+      }
+    } catch (_) {}
   }
 
   Future<void> _askPermission() async {

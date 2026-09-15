@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../services/reminder_service.dart';
 import '../services/study_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -81,6 +82,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _sectionLabel('卡片类型'),
           const SizedBox(height: 10),
           _modeCard(),
+          const SizedBox(height: 24),
+          _sectionLabel('背诵提醒'),
+          const SizedBox(height: 10),
+          _remindCard(),
           const SizedBox(height: 24),
           _sectionLabel('今日'),
           const SizedBox(height: 10),
@@ -231,6 +236,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
               fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle,
           style: const TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+    );
+  }
+
+  Widget _remindCard() {
+    final s = widget.settings;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0x0BFFFFFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: Column(
+        children: [
+          SwitchListTile(
+            dense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            activeColor: const Color(0xFF00C08B),
+            activeTrackColor: const Color(0x3300C08B),
+            value: s.reminderEnabled,
+            onChanged: (v) async {
+              if (v) {
+                final ok = await ReminderService.requestPermission();
+                if (!ok && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('通知权限被拒绝，可去系统设置里手动打开'),
+                    backgroundColor: Color(0xFF1B2629),
+                    behavior: SnackBarBehavior.floating,
+                  ));
+                }
+                await ReminderService.scheduleDaily(
+                    s.reminderHour, s.reminderMinute);
+              } else {
+                await ReminderService.cancel();
+              }
+              await s.setReminder(enabled: v);
+              if (mounted) setState(() {});
+            },
+            title: const Text('每日提醒',
+                style: TextStyle(
+                    color: Color(0xFFF0F4F5),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600)),
+            subtitle: const Text('到点提醒你来背单词',
+                style: TextStyle(color: Color(0xFF54666C), fontSize: 12)),
+          ),
+          if (s.reminderEnabled) ...[
+            const Divider(height: 1, color: Color(0x0FFFFFFF)),
+            ListTile(
+              dense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              title: const Text('提醒时间',
+                  style: TextStyle(
+                      color: Color(0xFFF0F4F5),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+              trailing: Text(s.reminderTimeLabel,
+                  style: const TextStyle(
+                      color: Color(0xFF00C08B),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700)),
+              onTap: () async {
+                final t = await showTimePicker(
+                  context: context,
+                  initialTime: TimeOfDay(
+                      hour: s.reminderHour, minute: s.reminderMinute),
+                );
+                if (t == null) return;
+                await s.setReminder(hour: t.hour, minute: t.minute);
+                await ReminderService.scheduleDaily(t.hour, t.minute);
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 
