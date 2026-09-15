@@ -45,6 +45,9 @@ class TtsService {
   /// 最近一次用过的引擎：_stopAll 时负责取消它在途的合成
   TtsEngine? _lastEngine;
 
+  /// 最近一次流式播放的源：_stopAll 时释放，取消它对引擎流的订阅
+  _EngineStreamSource? _lastSource;
+
   TtsService({required this.settings});
 
   Future<void> init() async {
@@ -236,56 +239,29 @@ class TtsService {
     }
   }
 
-  /// 长句 / 不落盘的句子：先把整段音频收齐，写临时文件再播。
+  /// 长句：真·流式 —— 插件音频边收边播，不预收整段。
   ///
-  /// 早先直接拿 engine.synthesize() 的一次性流喂 StreamAudioSource，
-  /// just_audio 会二次订阅同一个流 → 必报 "Source error" → 兜底跑去系统 TTS
-  /// （例句一直念系统音就是这来的）。收齐再播最稳，音色仍是插件音色。
+  /// just_audio 会对同一个 StreamAudioSource 反复调用 request()（探测 / 播放 /
+  /// seek），每次都要求一条「全新」的流；直接返回引擎那条一次性流，第二次订阅
+  /// 必炸 "Source error"（例句兜底系统 TTS 就是这么来的）。
+  /// 这里隔一层可重放源：缓存已收字节，新订阅先补发缓存、再实时接后续增量。
   Future<bool> _speakStreamed(
       TtsEngine engine, String text, int gen, TtsOptions? opts) async {
     try {
-      final bytes = await _collect(engine, text);
-      if (bytes == null || bytes.isEmpty) return false;
-      if (gen != _gen) return true; // 已被新朗读打断
-      final dir = await DataDir.sub('cache/tts/tmp');
-      if (dir == null) return false;
-      await _pruneTmp(dir);
-      final f = File('${dir.path}/'
-          '${DateTime.now().microsecondsSinceEpoch}${_extDot(engine.contentType)}');
-      await f.writeAsBytes(bytes, flush: true);
-      if (gen != _gen) return true;
-      await _player.setFilePath(f.path);
-      if (gen != _gen) return true;
+      final source = _EngineStreamSource(
+          engine.synthesize(text, opts: opts), engine.contentType);
+      _lastSource = source;
+      await _player.setAudioSource(source);
+      if (gen != _gen) {
+        await _player.stop();
+        return true;
+      }
       await _player.play();
       return true;
     } catch (e, st) {
       await TtsLog.write('stream', 'ERROR: $e\n$st');
       return false;
     }
-  }
-
-  /// 清掉一小时前的临时音频，免得 cache/tts/tmp 越堆越多
-  static Future<void> _pruneTmp(Directory dir) async {
-    try {
-      final cut = DateTime.now().subtract(const Duration(hours: 1));
-      await for (final e in dir.list()) {
-        if (e is File) {
-          try {
-            if ((await e.stat()).modified.isBefore(cut)) await e.delete();
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
-  }
-
-  static String _extDot(String contentType) {
-    final c = contentType.toLowerCase();
-    if (c.contains('mpeg') || c.contains('mp3')) return '.mp3';
-    if (c.contains('wav')) return '.wav';
-    if (c.contains('aac')) return '.aac';
-    if (c.contains('opus')) return '.opus';
-    if (c.contains('flac')) return '.flac';
-    return '.bin';
   }
 
   /// 缓存文件路径：<单词>-<speaker>-<sha1前12位>.<ext>
@@ -355,6 +331,11 @@ class TtsService {
     try {
       await _sysTts.stop();
     } catch (_) {}
+    // 释放上一个流式源：取消它对引擎流的订阅，别让旧数据继续灌进来
+    try {
+      await _lastSource?.dispose();
+    } catch (_) {}
+    _lastSource = null;
     // 关键：打断插件的在途合成（豆包那条 websocket）。否则上一条的音频
     // 会写进下一条的会话 —— 语篇选词「读成上一个词」就是这么来的。
     try {
@@ -371,6 +352,10 @@ class TtsService {
 
   Future<void> dispose() async {
     _gen++;
+    try {
+      await _lastSource?.dispose();
+    } catch (_) {}
+    _lastSource = null;
     try {
       await _player.dispose();
     } catch (_) {}
@@ -389,23 +374,95 @@ class TtsService {
       s.length <= 48 ? s : '${s.substring(0, 48)}…';
 }
 
-/// 长句流式：把插件的音频字节流实时喂给 just_audio
+/// 长句流式：把插件的音频字节流边收边喂 just_audio，且可被多次订阅。
+///
+/// just_audio 会对同一个 source 反复调用 request()（探测 / 播放 / seek），
+/// 每次都要求一条新流。直接返回引擎那条一次性流，第二次订阅必炸
+/// "Source error"。这里做一层可重放中间态：
+///   · 已收到的字节全部进 _buffer
+///   · 每次 request() 新建一个 controller，先补发 _buffer 里 start 之后的，
+///     再把后续新到的字节实时转发给它
+///   · 引擎结束 / 出错时，关闭所有在途订阅
+/// 于是既是真流式（边收边播），又经得起任意次数重复订阅。
 class _EngineStreamSource extends StreamAudioSource {
-  final Stream<List<int>> _stream;
+  final Stream<List<int>> _source;
   final String _contentType;
-  _EngineStreamSource(this._stream, this._contentType);
+  final List<int> _buffer = <int>[];
+  final List<StreamController<List<int>>> _sinks = [];
+  StreamSubscription<List<int>>? _sub;
+  bool _done = false;
+  bool _started = false;
+  Object? _error;
+  StackTrace? _stack;
+
+  _EngineStreamSource(this._source, this._contentType);
+
+  void _ensureStarted() {
+    if (_started) return;
+    _started = true;
+    _sub = _source.listen(
+      (chunk) {
+        _buffer.addAll(chunk);
+        for (final c in _sinks) {
+          if (!c.isClosed) c.add(chunk);
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        _error = e;
+        _stack = st;
+        _done = true;
+        for (final c in _sinks) {
+          if (!c.isClosed) c.addError(e, st);
+        }
+        _closeSinks();
+      },
+      onDone: () {
+        _done = true;
+        _closeSinks();
+      },
+      cancelOnError: true,
+    );
+  }
+
+  void _closeSinks() {
+    for (final c in _sinks) {
+      if (!c.isClosed) c.close();
+    }
+    _sinks.clear();
+  }
 
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
+    _ensureStarted();
+    final from = (start == null || start < 0) ? 0 : start;
+    final ctrl = StreamController<List<int>>();
+    // 先把已收到的补上：新订阅者不会丢前面的音频
+    if (from < _buffer.length) {
+      ctrl.add(_buffer.sublist(from));
+    }
+    if (_done) {
+      if (_error != null) ctrl.addError(_error!, _stack);
+      await ctrl.close();
+    } else {
+      _sinks.add(ctrl);
+    }
     // just_audio 0.9.x 字段（实测 v0.9.46）：没有 isLive。
-    // 一次性字节流，不能重放、不支持 Range。
     return StreamAudioResponse(
       rangeRequestsSupported: false,
       sourceLength: null,
       contentLength: null,
       offset: 0,
       contentType: _contentType,
-      stream: _stream,
+      stream: ctrl.stream,
     );
+  }
+
+  /// 取消对引擎流的订阅并关闭所有在途订阅（新朗读 / 播放结束调用）
+  Future<void> dispose() async {
+    try {
+      await _sub?.cancel();
+    } catch (_) {}
+    _sub = null;
+    _closeSinks();
   }
 }
