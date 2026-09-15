@@ -847,3 +847,63 @@ html, body {
   border-radius: 10px;
   display: block;
 }
+
+/* ---------- 固定卡片：派生词 / 近义词 / 反义词 ----------
+   每条 = 词（可点发音） + 逐条「词性 + 释义」。
+   字段缺失时整张卡由 script.js 隐藏，这里不用管空态。 */
+.fc-rel-group + .fc-rel-group {
+  margin-top: 12px;
+}
+.fc-rel-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--txt-dim);
+  margin-bottom: 6px;
+}
+.fc-rel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.fc-rel-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.fc-rel-word {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--txt-main);
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.fc-rel-word:active {
+  opacity: 0.6;
+}
+.fc-rel-senses {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fc-rel-sense {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fc-rel-pos {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--txt-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.fc-rel-cn {
+  color: var(--txt-sub);
+}

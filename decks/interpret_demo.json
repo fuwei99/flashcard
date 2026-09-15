@@ -3,7 +3,6 @@
   "cards": [
     {
       "phonetic_us": "/ɪnˈtɜːrprət/",
-      "root": "inter-（在…之间）+ pret（解释、说明）→ 在两者之间做解释 → 解释；口译",
       "senses": [
         {
           "cn": "打断，打扰",
@@ -23,8 +22,15 @@
         }
       ],
       "sentence_cn": "你怎么理解这首诗？",
-      "sentence_en": "How do you interpret this poem?",
-      "word": "interpret"
+      "sentence_en": "How do you <u>interpret</u> this poem?",
+      "word": "interpret",
+      "blocks": [
+        {
+          "type": "html",
+          "title": "词根词源",
+          "html": "inter-（在…之间）+ pret（解释、说明）→ 在两者之间做解释 → 解释；口译"
+        }
+      ]
     }
   ],
   "fields_order": [
@@ -32,8 +38,7 @@
     "phonetic_us",
     "senses",
     "sentence_en",
-    "sentence_cn",
-    "root"
+    "sentence_cn"
   ],
   "subtitle": "复刻截图 interpret",
   "template": "mixup_dark",

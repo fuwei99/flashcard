@@ -11,7 +11,7 @@
       "senses": [
         {
           "pos": "adj.",
-          "cn": "密集的，加强的；(农业)集约的"
+          "cn": "密集的，加强的；集约的"
         }
       ],
       "blocks": [
@@ -203,7 +203,7 @@
       "senses": [
         {
           "pos": "vi.",
-          "cn": "遵从，服从；答应，同意 (comply with)"
+          "cn": "遵从，服从；答应，同意"
         }
       ],
       "blocks": [
@@ -226,6 +226,79 @@
           "title": "词根词源",
           "html": "<b>com-</b> (共同，完全) + <b>ply/ple</b> (填满，满足) → 完全满足要求 → 遵从"
         }
+      ],
+      "derivatives": [
+        {
+          "word": "compliance",
+          "senses": [
+            {
+              "pos": "n.",
+              "cn": "遵守，服从；合规"
+            }
+          ]
+        },
+        {
+          "word": "compliant",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "顺从的，服从的"
+            }
+          ]
+        },
+        {
+          "word": "noncompliance",
+          "senses": [
+            {
+              "pos": "n.",
+              "cn": "不遵守，违规"
+            }
+          ]
+        }
+      ],
+      "synonyms": [
+        {
+          "word": "obey",
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "服从，听从"
+            },
+            {
+              "pos": "vi.",
+              "cn": "服从"
+            }
+          ]
+        },
+        {
+          "word": "conform",
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "遵守，符合"
+            }
+          ]
+        }
+      ],
+      "antonyms": [
+        {
+          "word": "defy",
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "违抗，反抗"
+            }
+          ]
+        },
+        {
+          "word": "violate",
+          "senses": [
+            {
+              "pos": "vt.",
+              "cn": "违反，违背"
+            }
+          ]
+        }
       ]
     },
     {
@@ -239,7 +312,7 @@
       "senses": [
         {
           "pos": "vt.",
-          "cn": "强加，施加；征收(税等)；把…强加于 (impose on)"
+          "cn": "强加，施加；征收；把…强加于"
         }
       ],
       "blocks": [
@@ -258,6 +331,10 @@
             {
               "cn": "施加限制",
               "en": "impose restrictions"
+            },
+            {
+              "en": "impose on",
+              "cn": "把…强加于"
             }
           ]
         },
@@ -279,7 +356,7 @@
       "senses": [
         {
           "pos": "vi.",
-          "cn": "盛行，流行；获胜，占优势 (prevail over/against)"
+          "cn": "盛行，流行；获胜，占优势"
         }
       ],
       "blocks": [
@@ -306,6 +383,57 @@
           "title": "词根词源",
           "html": "<b>pre-</b> (在前) + <b>vail/val</b> (强壮，价值) → 力量在前 → 占优势、盛行"
         }
+      ],
+      "derivatives": [
+        {
+          "word": "prevalent",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "普遍的，流行的"
+            }
+          ]
+        },
+        {
+          "word": "prevalence",
+          "senses": [
+            {
+              "pos": "n.",
+              "cn": "普遍，盛行"
+            }
+          ]
+        }
+      ],
+      "synonyms": [
+        {
+          "word": "predominate",
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "占主导地位，占优势"
+            }
+          ]
+        },
+        {
+          "word": "triumph",
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "获胜，成功"
+            }
+          ]
+        }
+      ],
+      "antonyms": [
+        {
+          "word": "succumb",
+          "senses": [
+            {
+              "pos": "vi.",
+              "cn": "屈服，抵挡不住"
+            }
+          ]
+        }
       ]
     },
     {
@@ -319,7 +447,7 @@
       "senses": [
         {
           "pos": "vt.",
-          "cn": "激怒，挑动；引起，激起(反应/争论)"
+          "cn": "激怒，挑动；引起，激起"
         }
       ],
       "blocks": [
@@ -359,7 +487,7 @@
       "senses": [
         {
           "pos": "vt.",
-          "cn": "赞同，支持；为(商品)代言；在(票据)背面签名"
+          "cn": "赞同，支持；为代言；在背面签名"
         }
       ],
       "blocks": [
@@ -439,7 +567,7 @@
       "senses": [
         {
           "pos": "adj.",
-          "cn": "固有的，内在的，与生俱来的 (inherent in)"
+          "cn": "固有的，内在的，与生俱来的"
         }
       ],
       "blocks": [
@@ -479,7 +607,7 @@
       "senses": [
         {
           "pos": "adj.",
-          "cn": "臭名昭著的，声名狼藉的 (贬义)"
+          "cn": "臭名昭著的，声名狼藉的"
         }
       ],
       "blocks": [
@@ -515,7 +643,7 @@
       "senses": [
         {
           "pos": "adj.",
-          "cn": "似乎合理的，貌似可信的 (未必真实)"
+          "cn": "似乎合理的，貌似可信的"
         }
       ],
       "blocks": [
@@ -551,7 +679,7 @@
       "senses": [
         {
           "pos": "vt.",
-          "cn": "抑制，克制；约束，管制 (restrain from)"
+          "cn": "抑制，克制；约束，管制"
         }
       ],
       "blocks": [
@@ -570,6 +698,10 @@
             {
               "cn": "贸易限制",
               "en": "restraint on trade"
+            },
+            {
+              "en": "restrain from",
+              "cn": "阻止，抑制"
             }
           ]
         },
@@ -591,7 +723,7 @@
       "senses": [
         {
           "pos": "adj.",
-          "cn": "易受影响的；易患病的；敏感的 (susceptible to)"
+          "cn": "易受影响的；易患病的；敏感的"
         }
       ],
       "blocks": [
@@ -610,6 +742,10 @@
             {
               "cn": "易感菌株",
               "en": "susceptible strain"
+            },
+            {
+              "en": "susceptible to",
+              "cn": "易受…影响；对…敏感"
             }
           ]
         },
@@ -711,7 +847,7 @@
       "senses": [
         {
           "pos": "adj.",
-          "cn": "易受伤害的；脆弱的；易受攻击的 (vulnerable to)"
+          "cn": "易受伤害的；脆弱的；易受攻击的"
         }
       ],
       "blocks": [
@@ -730,6 +866,10 @@
             {
               "cn": "易受攻击的地位",
               "en": "vulnerable position"
+            },
+            {
+              "en": "vulnerable to",
+              "cn": "易受…伤害"
             }
           ]
         },
@@ -737,6 +877,57 @@
           "type": "html",
           "title": "词根词源",
           "html": "<b>vulner</b> (拉丁语：伤口) + <b>-able</b> (可…的) → 可被弄伤的 → 易受伤害的"
+        }
+      ],
+      "derivatives": [
+        {
+          "word": "vulnerability",
+          "senses": [
+            {
+              "pos": "n.",
+              "cn": "脆弱性；易受攻击之处"
+            }
+          ]
+        }
+      ],
+      "synonyms": [
+        {
+          "word": "susceptible",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "易受影响的，易感的"
+            }
+          ]
+        },
+        {
+          "word": "exposed",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "暴露的，无遮蔽的"
+            }
+          ]
+        }
+      ],
+      "antonyms": [
+        {
+          "word": "invulnerable",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "无懈可击的，不会受伤的"
+            }
+          ]
+        },
+        {
+          "word": "immune",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "免疫的；不受影响的"
+            }
+          ]
         }
       ]
     },
@@ -788,6 +979,9 @@
     "phonetic_us",
     "phonetic_uk",
     "senses",
+    "derivatives",
+    "synonyms",
+    "antonyms",
     "sentence_en",
     "sentence_cn",
     "blocks",

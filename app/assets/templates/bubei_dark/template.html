@@ -61,6 +61,19 @@
       <div class="fc-cn-sentence"></div>
     </div>
 
+    <!-- 派生词（**固定卡片**，不是 block）。每条 = 词 + 词性释义，
+         多词性就多条。没有就整张卡不显示。 -->
+    <div class="fc-card-block fc-deriv-block" style="display:none;">
+      <div class="fc-block-header"><span class="fc-block-title">派生词</span></div>
+      <div class="fc-block-body fc-deriv-body"></div>
+    </div>
+
+    <!-- 近义词 / 反义词（**固定卡片**，两者合一张）。谁有显示谁，都没有就不显示。 -->
+    <div class="fc-card-block fc-thes-block" style="display:none;">
+      <div class="fc-block-header"><span class="fc-block-title">近义词 / 反义词</span></div>
+      <div class="fc-block-body fc-thes-body"></div>
+    </div>
+
     <!-- 扩展块：内容全部来自 json 的 `blocks`，模板**不认识具体业务字段**，
          只按 block 的 type 渲染。以后加「近义词 / 反义词 / 词形变化 / 易混词」
          只需要往 json 里加一个 block —— 不用改这里，更不用重编 APK。 -->

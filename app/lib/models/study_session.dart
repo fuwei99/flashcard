@@ -256,10 +256,29 @@ class StudySession {
     }
   }
 
-  bool _allPassed(String id) {
-    if (retestModes.isEmpty) return true;
-    final passed = _passedModes[id] ?? const <String>{};
-    return retestModes.every((m) => passed.contains(m.key));
+  /// 这张卡**实际**要考的考法。
+  /// 缺字段就把对应考法摘掉 —— 否则这张卡会因为「永远过不了那一关」
+  /// 被永久卡在重测池里，出现空题干 / 无选项的死页面。
+  ///   cloze  —— 要有例句（没例句挖不出空）
+  ///   choice —— 要有词义（没词义出不了选项）
+  List<StudyMode> _modesFor(FlashCard c) {
+    return retestModes.where((m) {
+      switch (m) {
+        case StudyMode.cloze:
+          return c.hasSentence;
+        case StudyMode.choice:
+          return c.senses.isNotEmpty;
+        default:
+          return true;
+      }
+    }).toList();
+  }
+
+  bool _allPassed(FlashCard c) {
+    final modes = _modesFor(c);
+    if (modes.isEmpty) return true;
+    final passed = _passedModes[c.id] ?? const <String>{};
+    return modes.every((m) => passed.contains(m.key));
   }
 
   /// 学习轮：提交一次自评
@@ -268,7 +287,9 @@ class StudySession {
     final step = _queue.removeAt(0);
     final card = step.card;
     if (card == null) return;
-    if (r == Rating.good) {
+    // 没有任何可用考法（既没词义也没例句）→ 直接毕业，
+    // 别丢进重测池空转（否则 _startMode 找不到任何待考卡会死循环）。
+    if (r == Rating.good || _modesFor(card).isEmpty) {
       graduated.add(card.id);
     } else {
       _retestPool.add(card);
@@ -287,7 +308,7 @@ class StudySession {
     if (card == null) return;
     if (ok) {
       (_passedModes[card.id] ??= <String>{}).add(mode.key);
-      if (_allPassed(card.id)) {
+      if (_allPassed(card)) {
         _retestPool.remove(card);
         graduated.add(card.id);
       }
@@ -321,10 +342,21 @@ class StudySession {
   /// 从当前 _modeIdx 起，找第一个「还有没过卡」的启用考法，组一轮队列。
   /// 全部考法都走完：池空 -> 下一个单元；还有卡没过 -> round++ 重来。
   void _startMode() {
+    // 兜底：池里若只剩「没有任何可用考法」的卡，直接让它们毕业，
+    // 避免 while 循环空转（理论上 submitLearn 已挡，这里再保一道）。
+    final stuck =
+        _retestPool.where((c) => _modesFor(c).isEmpty).toList();
+    for (final c in stuck) {
+      _retestPool.remove(c);
+      graduated.add(c.id);
+    }
+
     while (_modeIdx < retestModes.length) {
       final m = retestModes[_modeIdx];
       final pending = _retestPool
           .where((c) => !graduated.contains(c.id))
+          // 这张卡压根考不了这个考法（缺例句 / 缺词义）→ 不算待考
+          .where((c) => _modesFor(c).contains(m))
           .where((c) =>
               !(_passedModes[c.id] ?? const <String>{}).contains(m.key))
           .toList();

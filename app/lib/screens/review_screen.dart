@@ -217,6 +217,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
   List<Map<String, String>> _choicesFor(StudyStep step) {
     final cur = step.card;
     if (cur == null) return const [];
+    // 缺字段的卡直接作废对应考法（会话编排里已过滤，这里再兜一道，
+    // 保证界面上永远不会出现「空题干 + 无选项」的死页面）：
+    //   没有例句 -> 挖不出空，填空作废
+    //   没有词义 -> 出不了选项，选义作废
+    if (step.mode == StudyMode.cloze && !cur.hasSentence) return const [];
+    if (step.mode == StudyMode.choice && cur.senses.isEmpty) return const [];
     final all = widget.distractorPool;
     final isChoice = step.mode == StudyMode.choice;
 

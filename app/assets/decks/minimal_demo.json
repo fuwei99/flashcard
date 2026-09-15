@@ -1,0 +1,154 @@
+{
+  "schema": 2,
+  "book_id": "minimal_demo",
+  "title": "最小卡演示 · 缺字段不崩",
+  "subtitle": "lucid 只有 word+senses；ephemeral 没有例句",
+  "template": "bubei_dark",
+  "fields_order": [
+    "word",
+    "syllable",
+    "phonetic_us",
+    "phonetic_uk",
+    "senses",
+    "derivatives",
+    "synonyms",
+    "antonyms",
+    "sentence_en",
+    "sentence_cn",
+    "blocks",
+    "exam_tag"
+  ],
+  "cards": [
+    {
+      "word": "lucid",
+      "senses": [
+        {
+          "pos": "adj.",
+          "cn": "清晰的，明白易懂的；头脑清醒的"
+        }
+      ]
+    },
+    {
+      "word": "meticulous",
+      "syllable": "me·tic·u·lous",
+      "phonetic_us": "/məˈtɪkjələs/",
+      "exam_tag": "高频词",
+      "senses": [
+        {
+          "pos": "adj.",
+          "cn": "极仔细的，一丝不苟的"
+        }
+      ],
+      "derivatives": [
+        {
+          "word": "meticulously",
+          "senses": [
+            {
+              "pos": "adv.",
+              "cn": "一丝不苟地"
+            }
+          ]
+        },
+        {
+          "word": "meticulousness",
+          "senses": [
+            {
+              "pos": "n.",
+              "cn": "谨小慎微，细致"
+            }
+          ]
+        }
+      ],
+      "synonyms": [
+        {
+          "word": "thorough",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "彻底的，详尽的"
+            }
+          ]
+        },
+        {
+          "word": "scrupulous",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "审慎的，一丝不苟的"
+            }
+          ]
+        }
+      ],
+      "antonyms": [
+        {
+          "word": "careless",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "粗心的，疏忽的"
+            }
+          ]
+        },
+        {
+          "word": "sloppy",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "马虎的，草率的"
+            }
+          ]
+        }
+      ],
+      "sentence_en": "She kept <u>meticulous</u> records of every experiment.",
+      "sentence_cn": "她对每次实验都做了极为详细的记录。",
+      "blocks": [
+        {
+          "type": "html",
+          "title": "词根词源",
+          "html": "<b>metus</b> (恐惧) + <b>-culous</b> → 怕出错所以格外仔细"
+        }
+      ]
+    },
+    {
+      "word": "ephemeral",
+      "phonetic_us": "/ɪˈfemərəl/",
+      "senses": [
+        {
+          "pos": "adj.",
+          "cn": "短暂的，转瞬即逝的"
+        }
+      ],
+      "derivatives": [
+        {
+          "word": "ephemerally",
+          "senses": [
+            {
+              "pos": "adv.",
+              "cn": "短暂地"
+            }
+          ]
+        }
+      ],
+      "synonyms": [
+        {
+          "word": "transient",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "短暂的，暂时的"
+            }
+          ]
+        },
+        {
+          "word": "fleeting",
+          "senses": [
+            {
+              "pos": "adj.",
+              "cn": "飞逝的，短暂的"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

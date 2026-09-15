@@ -293,10 +293,99 @@
     });
   }
 
+  // ---------- 固定卡片：派生词 / 近义词 / 反义词 ----------
+  // 这三个是**固定字段**（不是 blocks）：每条 = 词 + 词性释义，形状一致，
+  // 所以共用一套归一化与渲染。多词性 = 多条 senses。
+  //
+  // 宽容读取（json 里少写哪样都不崩）：
+  //   {word, senses:[{pos,cn}]}  |  {word, pos, cn}  |  "word"
+  function relatedOf(key) {
+    var raw = fields[key];
+    if (!Array.isArray(raw)) return [];
+    var out = [];
+    raw.forEach(function (it) {
+      if (it === null || it === undefined) return;
+      if (typeof it === "string") {
+        if (it.trim()) out.push({ word: it.trim(), senses: [] });
+        return;
+      }
+      if (typeof it !== "object") return;
+      var w = String(it.word || it.en || it.k || "").trim();
+      var senses = [];
+      var rawS = it.senses || it.meanings;
+      if (Array.isArray(rawS)) {
+        rawS.forEach(function (s) {
+          if (s && typeof s === "object") {
+            var cn = String(s.cn || s.meaning || "").trim();
+            if (cn) senses.push({ pos: String(s.pos || "").trim(), cn: cn });
+          } else if (typeof s === "string" && s.trim()) {
+            senses.push({ pos: "", cn: s.trim() });
+          }
+        });
+      }
+      if (!senses.length) {
+        var cn0 = String(it.cn || it.meaning || it.v || "").trim();
+        if (cn0) senses.push({ pos: String(it.pos || "").trim(), cn: cn0 });
+      }
+      if (!w && !senses.length) return;
+      out.push({ word: w, senses: senses });
+    });
+    return out;
+  }
+
+  // 一条关联词：左边词，右边逐条「词性 + 释义」
+  function relatedRowHtml(item) {
+    var s = '<div class="fc-rel-row">';
+    s += '<div class="fc-rel-word" data-say="' + escHtml(item.word) + '">' +
+         escHtml(item.word) + "</div>";
+    if (item.senses.length) {
+      s += '<div class="fc-rel-senses">';
+      item.senses.forEach(function (x) {
+        s += '<div class="fc-rel-sense">' +
+             (x.pos ? '<span class="fc-rel-pos">' + escHtml(x.pos) + "</span>" : "") +
+             '<span class="fc-rel-cn">' + escHtml(x.cn) + "</span></div>";
+      });
+      s += "</div>";
+    }
+    return s + "</div>";
+  }
+
+  // groups = [{label, items}]；全空则整张卡隐藏
+  function renderRelated(blockSel, bodySel, groups) {
+    var block = root.querySelector(blockSel);
+    var body = root.querySelector(bodySel);
+    if (!block || !body) return;
+    var html = "";
+    groups.forEach(function (g) {
+      if (!g.items || !g.items.length) return;
+      html += '<div class="fc-rel-group">' +
+              (g.label ? '<div class="fc-rel-label">' + escHtml(g.label) + "</div>" : "") +
+              g.items.map(relatedRowHtml).join("") +
+              "</div>";
+    });
+    body.innerHTML = html;
+    block.style.display = html ? "" : "none";
+  }
+
+  function renderDerivatives() {
+    renderRelated(".fc-deriv-block", ".fc-deriv-body",
+      [{ label: "", items: relatedOf("derivatives") }]);
+  }
+
+  // 近义词和反义词**同一张卡**：各带小标题，谁有显示谁
+  function renderThesaurus() {
+    renderRelated(".fc-thes-block", ".fc-thes-body", [
+      { label: "近义词", items: relatedOf("synonyms") },
+      { label: "反义词", items: relatedOf("antonyms") }
+    ]);
+  }
+
   // ---------- 渲染词义页的各个区块 ----------
   function renderBackFace() {
     renderSenses();
     renderSentence();
+    renderDerivatives();
+    renderThesaurus();
     renderBlocks();
   }
 
@@ -473,14 +562,26 @@
   }
 
   function renderCloze() {
-    var res = blankSentence(fields.sentence_en || "", fields.word || "");
+    var rawSent = String(fields.sentence_en || "").trim();
+    var box = root.querySelector(".fc-cloze-box");
+    var optBox = root.querySelector('.fc-options[data-for="cloze"]');
+
+    // 这张卡没有例句 —— 正常情况下会话编排已经把 cloze 考法对它跳过了，
+    // 这里再兜一道，避免出现「空题干 + 没选项」的死页面。
+    if (!rawSent) {
+      if (box) box.textContent = "（本词没有例句，已跳过选词填空）";
+      if (optBox) optBox.innerHTML = "";
+      var contBtn = root.querySelector(".fc-btn-continue");
+      if (contBtn) contBtn.removeAttribute("disabled");
+      return;
+    }
+
+    var res = blankSentence(rawSent, fields.word || "");
     // 抠完再把残留的标签洗掉（______ 留着）
     var shown = res.text.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-    var box = root.querySelector(".fc-cloze-box");
     if (box) box.textContent = shown;
 
     // 渲染 cloze 选项
-    var optBox = root.querySelector('.fc-options[data-for="cloze"]');
     if (!optBox) return;
     optBox.innerHTML = "";
 
@@ -880,6 +981,14 @@
     if (pwTarget) {
       e.stopPropagation();
       showPassageTooltip(pwTarget);
+      return;
+    }
+
+    // 2d. 关联词（派生词 / 近义词 / 反义词）点词 -> 发音
+    var sayTarget = e.target.closest("[data-say]");
+    if (sayTarget) {
+      e.stopPropagation();
+      speak(sayTarget.getAttribute("data-say") || "", "en-US");
       return;
     }
 

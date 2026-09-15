@@ -26,6 +26,63 @@ class Sense {
       };
 }
 
+/// 一个「关联词」条目 —— 派生词 / 近义词 / 反义词共用。
+///
+/// 形状 = 词 + 义项列表（**词性+释义绑定**），所以多词性照样表达得了：
+///   {"word":"intensively","senses":[{"pos":"adv.","cn":"密集地，集中地"}]}
+///
+/// 宽容读取（写盘一律规范形）：
+///   {"word":"intensively","pos":"adv.","cn":"密集地"}   ← 平铺简写
+///   "intensively"                                       ← 只有词，没释义也显示
+class RelatedWord {
+  final String word;
+  final List<Sense> senses;
+
+  const RelatedWord({this.word = '', this.senses = const []});
+
+  bool get isEmpty => word.trim().isEmpty && senses.isEmpty;
+
+  factory RelatedWord.fromJson(dynamic j) {
+    if (j is String) return RelatedWord(word: j.trim());
+    if (j is! Map) return const RelatedWord();
+
+    final w = (j['word'] ?? j['en'] ?? j['k'] ?? '').toString().trim();
+    final out = <Sense>[];
+
+    final raw = j['senses'] ?? j['meanings'];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is Map) {
+          final s = Sense.fromJson(e);
+          if (!s.isEmpty) out.add(s);
+        } else if (e is String && e.trim().isNotEmpty) {
+          out.add(Sense(cn: e.trim()));
+        }
+      }
+    }
+    // 平铺简写兜底：pos + cn 直接挂在条目上
+    if (out.isEmpty) {
+      final cn = (j['cn'] ?? j['meaning'] ?? j['v'] ?? '').toString().trim();
+      if (cn.isNotEmpty) {
+        out.add(Sense(pos: (j['pos'] ?? '').toString().trim(), cn: cn));
+      }
+    }
+    return RelatedWord(word: w, senses: out);
+  }
+
+  /// 纯中文释义（剥括号），用于紧凑展示
+  String get plain => senses
+      .map((s) => FlashCard.stripParenthetical(s.cn))
+      .where((s) => s.isNotEmpty)
+      .join('；');
+
+  Map<String, dynamic> toJson() => {
+        'word': word,
+        if (senses.isNotEmpty)
+          'senses': senses.map((s) => s.toJson()).toList(),
+      };
+}
+
 /// 单张卡片：字段字典 + 绑定的模板 id
 class FlashCard {
   final String id;
@@ -107,6 +164,35 @@ class FlashCard {
         if (e is Map) Map<String, dynamic>.from(e),
     ];
   }
+
+  /// 是否有例句。
+  /// **没有例句就不出「选词填空」** —— 空挖不出来，整题无从谈起，
+  /// 会话编排里会直接把 cloze 这个考法对这张卡跳过。
+  bool get hasSentence =>
+      (fields['sentence_en'] ?? '').toString().trim().isNotEmpty;
+
+  /// 关联词通用读取（派生词 / 近义词 / 反义词形状一致，共用一套解析）
+  List<RelatedWord> _related(String key) {
+    final raw = fields[key];
+    if (raw is! List) return const [];
+    final out = <RelatedWord>[];
+    for (final e in raw) {
+      final r = RelatedWord.fromJson(e);
+      if (!r.isEmpty) out.add(r);
+    }
+    return out;
+  }
+
+  /// 派生词（固定卡片）。没有就整张卡不显示。
+  List<RelatedWord> get derivatives => _related('derivatives');
+
+  /// 近义词（和反义词**同一张卡**）
+  List<RelatedWord> get synonyms => _related('synonyms');
+
+  /// 反义词
+  List<RelatedWord> get antonyms => _related('antonyms');
+
+  bool get hasThesaurus => synonyms.isNotEmpty || antonyms.isNotEmpty;
 
   /// 去掉 () （） 里的内容（一般是常用短语 / 搭配 / 近义标注）。
   /// 全剥没了就退回原串 —— 宁可留着，也别显示成空白。
