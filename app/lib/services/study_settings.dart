@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data_dir.dart';
+import 'tts_log.dart';
 
 class StudySettings {
   static const _fileName = 'settings.json';
@@ -51,6 +52,9 @@ class StudySettings {
   static const _kRemindOn = 'fc_remind_on';
   static const _kRemindHour = 'fc_remind_hour';
   static const _kRemindMin = 'fc_remind_min';
+
+  // 调试日志
+  static const _kTtsLog = 'fc_tts_log';
 
   /// 每日单词背诵量：背完 = 单词过关 😁
   int wordDailyLimit = 20;
@@ -87,6 +91,10 @@ class StudySettings {
   bool reminderEnabled = false;
   int reminderHour = 22;
   int reminderMinute = 50;
+
+  // ---------- 调试日志 ----------
+  /// TTS 日志开关：写 <公共目录>/logs/tts/，默认开
+  bool ttsLogEnabled = true;
 
   SharedPreferences? _prefs;
 
@@ -134,6 +142,7 @@ class StudySettings {
     reminderEnabled = _prefs!.getBool(_kRemindOn) ?? false;
     reminderHour = _prefs!.getInt(_kRemindHour) ?? 22;
     reminderMinute = _prefs!.getInt(_kRemindMin) ?? 50;
+    ttsLogEnabled = _prefs!.getBool(_kTtsLog) ?? true;
 
     _rolloverIfNewDay();
 
@@ -163,6 +172,7 @@ class StudySettings {
         'reminder_enabled': reminderEnabled,
         'reminder_hour': reminderHour,
         'reminder_minute': reminderMinute,
+        'tts_log_enabled': ttsLogEnabled,
       };
 
   void _applyJson(Map<String, dynamic> m) {
@@ -195,6 +205,7 @@ class StudySettings {
     reminderEnabled = b('reminder_enabled', reminderEnabled);
     reminderHour = i('reminder_hour', reminderHour).clamp(0, 23);
     reminderMinute = i('reminder_minute', reminderMinute).clamp(0, 59);
+    ttsLogEnabled = b('tts_log_enabled', ttsLogEnabled);
   }
 
   /// 落盘：公共文件 + prefs 备份
@@ -219,6 +230,9 @@ class StudySettings {
     _prefs?.setBool(_kRemindOn, reminderEnabled);
     _prefs?.setInt(_kRemindHour, reminderHour);
     _prefs?.setInt(_kRemindMin, reminderMinute);
+    _prefs?.setBool(_kTtsLog, ttsLogEnabled);
+    // 日志开关同步给静态 logger
+    TtsLog.enabled = ttsLogEnabled;
   }
 
   static Map<String, int> _decodeHist(String? raw) {
@@ -280,6 +294,13 @@ class StudySettings {
     if (enabled != null) reminderEnabled = enabled;
     if (hour != null) reminderHour = hour.clamp(0, 23);
     if (minute != null) reminderMinute = minute.clamp(0, 59);
+    _persist();
+  }
+
+  // ---------- 调试日志 ----------
+  Future<void> setTtsLogEnabled(bool v) async {
+    ttsLogEnabled = v;
+    TtsLog.enabled = v;
     _persist();
   }
 

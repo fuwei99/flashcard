@@ -9,6 +9,7 @@ import '../services/data_dir.dart';
 import '../services/study_settings.dart';
 import '../services/tts_diagnostics.dart';
 import '../services/update_service.dart';
+import 'debug_log_screen.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
 
@@ -229,6 +230,22 @@ class MeScreenState extends State<MeScreen> {
             label: 'TTS 自检',
             value: '发音不对点这里',
             onTap: _runTtsCheck,
+          ),
+          const SizedBox(height: 10),
+          _entry(
+            icon: Icons.bug_report_outlined,
+            label: '调试日志',
+            value: widget.settings.ttsLogEnabled ? 'TTS 开' : 'TTS 关',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      DebugLogScreen(settings: widget.settings),
+                ),
+              );
+              refresh();
+            },
           ),
           const SizedBox(height: 20),
           _sectionLabel('模板'),

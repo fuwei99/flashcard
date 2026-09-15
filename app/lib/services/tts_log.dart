@@ -13,8 +13,14 @@ import 'dart:io';
 import 'data_dir.dart';
 
 class TtsLog {
+  /// 开关：由 StudySettings 同步。关掉后一律不写 —— 只有 force=true
+  /// （手动点「TTS 自检」）例外，否则点了自检却什么都没记。
+  static bool enabled = true;
+
   /// 追加一行日志；任何失败都吞掉（记日志本身不能把 APP 搞崩）
-  static Future<void> write(String tag, String msg) async {
+  static Future<void> write(String tag, String msg,
+      {bool force = false}) async {
+    if (!enabled && !force) return;
     try {
       final root = await DataDir.root();
       if (root == null) return;
