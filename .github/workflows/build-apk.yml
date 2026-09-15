@@ -144,10 +144,22 @@ jobs:
               if 'android.permission.WRITE_EXTERNAL_STORAGE' not in s:
                   add += ('    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" '
                           'android:maxSdkVersion="28"/>\n')
-              if add:
-                  s = s.replace("<application", add + "    <application", 1)
+
+              # Android 11+（API 30）包可见性：不声明 <queries>，TextToSpeech
+              # 根本看不到系统 TTS 引擎，flutter_tts 会静默初始化失败 ——
+              # 手机（Redmi，API 33）念不出来、老设备（API 29-）却能念，就是这原因。
+              q = ''
+              if 'android.intent.action.TTS_SERVICE' not in s:
+                  q = ('    <queries>\n'
+                       '        <intent>\n'
+                       '            <action android:name="android.intent.action.TTS_SERVICE" />\n'
+                       '        </intent>\n'
+                       '    </queries>\n')
+
+              if add or q:
+                  s = s.replace("<application", add + q + "    <application", 1)
                   open(mf, "w").write(s)
-                  print("manifest patched")
+                  print("manifest patched (perms=%d, tts_queries=%s)" % (len(add), bool(q)))
           PY
 
       # 固定签名：从 Secrets 解码 keystore，写 key.properties，patch build.gradle

@@ -20,6 +20,7 @@ import '../models/book.dart';
 import '../models/deck.dart';
 import 'card_store.dart';
 import 'template_engine.dart';
+import 'tts_log.dart';
 
 class BridgeMessage {
   final String type;
@@ -44,13 +45,24 @@ class WebViewBridge {
       : tts = tts ?? FlutterTts();
 
   Future<void> initTts() async {
+    await TtsLog.write('init', 'initTts start');
     try {
-      await tts.setLanguage('en-US');
-      await tts.setSpeechRate(0.48);
-      await tts.setVolume(1.0);
-      await tts.setPitch(1.0);
-      await tts.awaitSpeakCompletion(true);
-    } catch (_) {}
+      final r1 = await tts.setLanguage('en-US');
+      final r2 = await tts.setSpeechRate(0.48);
+      final r3 = await tts.setVolume(1.0);
+      final r4 = await tts.setPitch(1.0);
+      final r5 = await tts.awaitSpeakCompletion(true);
+      await TtsLog.write('init',
+          'setLanguage=$r1 rate=$r2 vol=$r3 pitch=$r4 awaitCompletion=$r5');
+      final avail = await tts.isLanguageAvailable('en-US');
+      await TtsLog.write('init', 'isLanguageAvailable(en-US)=$avail');
+      final def = await tts.getDefaultEngine;
+      await TtsLog.write('init', 'defaultEngine=$def');
+      final engines = await tts.getEngines;
+      await TtsLog.write('init', 'engines=$engines');
+    } catch (e, st) {
+      await TtsLog.write('init', 'ERROR: $e\n$st');
+    }
   }
 
   /// 组装一张卡牌的完整 HTML 页面 —— SPA 骨架页，只在会话开始时 load 一次。
@@ -197,9 +209,13 @@ class WebViewBridge {
           _ttsGen++; // 打断可能正在进行的顺序朗读
           try {
             await tts.stop();
-            await tts.setLanguage(lang);
-            await tts.speak(text);
-          } catch (_) {}
+            final lr = await tts.setLanguage(lang);
+            final sr = await tts.speak(text);
+            await TtsLog.write('speak',
+                'lang=$lang setLanguage->$lr speak->$sr text="${_abbr(text)}"');
+          } catch (e, st) {
+            await TtsLog.write('speak', 'ERROR: $e\n$st');
+          }
         }
         break;
 
@@ -207,7 +223,10 @@ class WebViewBridge {
         _ttsGen++; // 打断可能正在进行的顺序朗读
         try {
           await tts.stop();
-        } catch (_) {}
+          await TtsLog.write('stop', 'stop ok');
+        } catch (e) {
+          await TtsLog.write('stop', 'ERROR: $e');
+        }
         break;
 
       case 'ttsSeq':
@@ -223,10 +242,14 @@ class WebViewBridge {
               final text = _plainText((it['text'] ?? '').toString());
               final lang = (it['lang'] ?? 'en-US').toString();
               if (text.isEmpty) continue;
-              await tts.setLanguage(lang);
-              await tts.speak(text);
+              final lr = await tts.setLanguage(lang);
+              final sr = await tts.speak(text);
+              await TtsLog.write('seq',
+                  'lang=$lang setLanguage->$lr speak->$sr text="${_abbr(text)}"');
             }
-          } catch (_) {}
+          } catch (e, st) {
+            await TtsLog.write('seq', 'ERROR: $e\n$st');
+          }
         }
         break;
 
@@ -251,6 +274,10 @@ class WebViewBridge {
       .replaceAll(RegExp(r'<[^>]*>'), '')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
+
+  /// 日志里别塞整段语篇，掐个头
+  static String _abbr(String s) =>
+      s.length <= 48 ? s : '${s.substring(0, 48)}…';
 
   void dispose() {
     _messages.close();

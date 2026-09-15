@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../services/card_store.dart';
 import '../services/data_dir.dart';
 import '../services/study_settings.dart';
+import '../services/tts_diagnostics.dart';
 import '../services/update_service.dart';
 import 'settings_screen.dart';
 import 'stats_screen.dart';
@@ -97,6 +98,33 @@ class MeScreenState extends State<MeScreen> {
 
   Future<void> refresh() async {
     if (mounted) setState(() {});
+  }
+
+  /// TTS 自检：跑一遍引擎信息 + 试念，写 logs/tts/，弹窗给结果
+  Future<void> _runTtsCheck() async {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('正在测 TTS…'),
+      duration: Duration(seconds: 1),
+      behavior: SnackBarBehavior.floating,
+    ));
+    final report = await TtsDiagnostics.run();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2629),
+        title: const Text('TTS 自检',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: SelectableText(report,
+            style: const TextStyle(color: Color(0xFFB7C4C8), fontSize: 12)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('好', style: TextStyle(color: Color(0xFF00C08B))),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -194,6 +222,13 @@ class MeScreenState extends State<MeScreen> {
               );
               refresh();
             },
+          ),
+          const SizedBox(height: 10),
+          _entry(
+            icon: Icons.record_voice_over_outlined,
+            label: 'TTS 自检',
+            value: '发音不对点这里',
+            onTap: _runTtsCheck,
           ),
           const SizedBox(height: 20),
           _sectionLabel('模板'),
