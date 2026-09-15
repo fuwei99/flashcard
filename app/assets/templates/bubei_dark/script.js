@@ -61,8 +61,8 @@
   var wrongToMeaning = false; // 答错后：先看错误项释义，点「继续」才进词义页
 
   // ---------- TTS 路由（改这里就能换：词 / 句 / 文章各走各的）----------
-  var TTS_WORD     = { plugin: "doubao", cache: true };   // 单词：豆包，落盘
-  var TTS_SENTENCE = { plugin: "doubao", cache: false };  // 例句：豆包，不落盘
+  var TTS_WORD     = { plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true };   // 单词：豆包·温柔桃子，落盘
+  var TTS_SENTENCE = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts",  cache: false };  // 例句：豆包·磁性君语，不落盘
   var TTS_PASSAGE  = { plugin: "system", cache: false };  // 文章：系统 TTS，不落盘
 
   // ---------- 朗读纯文本 ----------
