@@ -234,6 +234,22 @@ class MeScreenState extends State<MeScreen> {
           ),
           const SizedBox(height: 10),
           _entry(
+            icon: Icons.settings_voice,
+            label: 'TTS 引擎',
+            value: widget.settings.ttsOpenAiEnabled ? '在线 + 缓存' : '系统 TTS',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      TtsSettingsScreen(settings: widget.settings),
+                ),
+              );
+              refresh();
+            },
+          ),
+          const SizedBox(height: 10),
+          _entry(
             icon: Icons.bug_report_outlined,
             label: '调试日志',
             value: widget.settings.ttsLogEnabled ? 'TTS 开' : 'TTS 关',

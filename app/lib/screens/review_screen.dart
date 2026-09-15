@@ -83,7 +83,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
         if (widget.settings.modeSentenceCloze) StudyMode.cloze,
       ],
     );
-    _bridge = WebViewBridge(store: widget.store);
+    _bridge = WebViewBridge(
+        store: widget.store, tts: TtsService(settings: widget.settings));
     _bridge.initTts();
     _bridge.messages.listen(_onMsg);
   }
