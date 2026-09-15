@@ -67,6 +67,8 @@ class DeckRepository {
     for (final assetDir in _templateDirs) {
       final id = assetDir.split('/').last;
       final target = Directory('${root.path}/$id');
+      // 目录已存在且非空 → 这是用户自己的模板，整个跳过：不覆盖、也不补缺文件
+      if (await target.exists() && await target.list().isNotEmpty) continue;
       for (final name in _templateFiles) {
         try {
           final f = File('${target.path}/$name');
@@ -397,13 +399,28 @@ class DeckRepository {
     }
   }
 
-  /// 书架上的所有书 = 内置 + 导入
+  /// 公共 books 目录里是否已有内容
+  Future<bool> _hasPublicBooks() async {
+    final pub = await DataDir.sub('books', create: false);
+    if (pub == null) return false;
+    try {
+      if (!await pub.exists()) return false;
+      return await pub.list().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 书架上的所有书 = 内置 + 导入。
+  /// 公共 books 目录里只要已经有内容，就认为书是用户自己在管，不再导入内置词书。
   Future<List<Book>> loadAllBooks() async {
     final out = <Book>[];
-    for (final p in _assetBooks) {
-      try {
-        out.add(await loadBookAsset(p));
-      } catch (_) {}
+    if (!await _hasPublicBooks()) {
+      for (final p in _assetBooks) {
+        try {
+          out.add(await loadBookAsset(p));
+        } catch (_) {}
+      }
     }
     out.addAll(await loadImportedBooks());
     return out;
