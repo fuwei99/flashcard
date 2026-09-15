@@ -262,18 +262,26 @@ Flashcard.tts(text, lang)      ← 牌组只发这一句，不关心底下是谁
         │
    TtsService.speak(text, lang)          ← lib/services/tts_service.dart
         ├── 单个英文词 → cache/tts/ 命中 → just_audio 秒播（零延迟）
-        │                 未命中 → POST {base}/audio/speech → 收全字节落盘 → 播
-        └── 长句       → POST 响应字节流直接喂 StreamAudioSource
-                          → 边收边播，不攒完整包
-        └── 兜底       → flutter_tts（在线没配置 / 合成失败时）
+        │                 未命中 → 引擎收全字节落盘 → 播
+        ├── 长句       → 引擎字节流直接喂 StreamAudioSource
+        │                 → 边收边播，不攒完整包
+        └── 兜底       → flutter_tts（没选插件 / 合成失败时）
 ```
 
-- 在线引擎 = OpenAI 兼容接口：`POST {base_url}/audio/speech`，
-  `model / voice / base_url / api_key / speed / response_format` 全可配。
-- 缓存键：`word + lang + model + voice + speed` 取 sha1 → `cache/tts/<sha1>.<fmt>`，
-  换音色/模型/语速自动重建，不会串音。
+**底下换成插件系统了（v0.10）**：不再是「写死 OpenAI」，一切皆插件。
+
+- 插件 = 一个目录 `plugins/<tts|llm>/<id>/`：`manifest.json`（清单）+ 可选 `<entry>.js`（脚本）。
+  内置插件打包在 `assets/plugins/`，用户插件丢
+  `/storage/emulated/0/Documents/Flashcard/plugins/`，同名覆盖内置。
+- `engine` 三种：
+  - `openai-tts`：OpenAI 兼容 HTTP TTS（`POST /audio/speech`），声明式，不用写码；
+  - `openai-chat`：OpenAI 兼容 Chat（LLM provider），声明式；
+  - `js`：JS 脚本插件，跑在内置 QuickJS（`flutter_js`）上，宿主喂
+    `ttsrv.userVars / logger / Websocket(自定义头+二进制帧) / fs`，
+    插件实现 `PluginJS.getAudioV2(request, callback)`（豆包就是这个）。
+- 缓存键：`插件id + word + lang` 取 sha1 → `cache/tts/<sha1>.<fmt>`，换插件/音色自动重建，不串音。
 - 单词（纯字母、无空格、≤40 字符）走缓存；其余文本走流式，不缓存。
-- 设置页（我的 → TTS 引擎）：引擎开关 / base_url / key / model / voice / 语速 / 缓存开关 / 测试发音。
+- 入口（我的 → 插件管理）：TTS 插件 / LLM Provider 插件两个分类，选当前、填配置、测试发音、装 .js。
 - `manifest.tts.auto_play`（写了但没人读）要接上：进卡自动朗读单词。
 
 ### 已修：例句 TTS 念 HTML 标签

@@ -1,21 +1,15 @@
-/// TTS 服务：统一入口（在线 OpenAI 兼容 TTS 为主）+ 单词缓存 + 长句流式
+/// TTS 服务：统一入口
 /// ================================================================
 ///   Flashcard.tts(text, lang)
 ///        │
 ///   TtsService.speak(text, lang)
-///        ├── 单个英文词  → 查 cache/tts/ 命中秒播；
-///        │                未命中 POST /v1/audio/speech 拿全字节 → 存盘 → 播
-///        └── 其它（长句）→ POST 的响应字节流**直接喂 StreamAudioSource**，
-///                          边收边播（不缓存、不先攒完整包）
+///        │
+///   选中插件（PluginManager.active(tts)）
+///        ├── 单个英文词 → cache/tts/ 命中秒播；未命中收全字节落盘再播
+///        ├── 长句       → 音频流直接喂 StreamAudioSource，边收边播
+///        └── 没插件/失败 → flutter_tts（系统 TTS）兜底
 ///
-/// 兜底：在线没配置 / 合成失败时退回 flutter_tts（系统 TTS），绝不哑巴。
-///
-/// 缓存目录：<公共目录>/Flashcard/cache/tts/<sha1>.<fmt>
-/// 缓存键：word + lang + model + voice + speed（换音色/换模型自动重建）
-///
-/// 约定：
-///   · 持有 StudySettings 引用，读实时值——设置页改完即时生效，不用重启。
-///   · 每次新朗读 _gen++，旧的顺序朗读发现代号变了立刻收手。
+/// 插件怎么合成（HTTP / JS 脚本）由 tts_engine.dart 决定，这里只管调度 + 缓存 + 兜底。
 library;
 
 import 'dart:async';
@@ -25,48 +19,62 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 
 import 'data_dir.dart';
+import 'plugin.dart';
 import 'study_settings.dart';
+import 'tts_engine.dart';
 import 'tts_log.dart';
 
 class TtsService {
   final StudySettings settings;
 
-  /// 兜底引擎（在线未配置/失败时用；不是主力）
+  /// 兜底引擎（没插件 / 插件失败时用；不是主力）
   final FlutterTts _sysTts = FlutterTts();
 
   /// 主播放器：单词播缓存文件，长句播流式音频
   final AudioPlayer _player = AudioPlayer();
 
-  final http.Client _client = http.Client();
-
   /// 打断代号：每次新朗读 +1；旧的顺序朗读发现代号变了立刻收手。
   int _gen = 0;
 
+  TtsEngine? _engine;
+  String _engineKey = '';
+
   TtsService({required this.settings});
 
-  /// 初始化（兜底引擎先就位；在线引擎现连现用）
   Future<void> init() async {
     await TtsLog.write('init', 'TtsService init');
     try {
       final r1 = await _sysTts.setLanguage('en-US');
       final r2 = await _sysTts.setSpeechRate(0.48);
-      final r3 = await _sysTts.setVolume(1.0);
-      final r4 = await _sysTts.setPitch(1.0);
-      final r5 = await _sysTts.awaitSpeakCompletion(true);
-      await TtsLog.write('init',
-          'fallback setLanguage=$r1 rate=$r2 vol=$r3 pitch=$r4 await=$r5');
+      await _sysTts.setVolume(1.0);
+      await _sysTts.setPitch(1.0);
+      await _sysTts.awaitSpeakCompletion(true);
+      await TtsLog.write('init', 'fallback setLanguage=$r1 rate=$r2');
     } catch (e, st) {
       await TtsLog.write('init', 'ERROR: $e\n$st');
     }
   }
 
-  /// 在线引擎就绪？
-  bool get _onlineReady =>
-      settings.ttsOpenAiEnabled && settings.ttsOpenAiBaseUrl.trim().isNotEmpty;
+  /// 当前插件 → 引擎（插件换了就重建）
+  Future<TtsEngine?> _ensureEngine() async {
+    final m = PluginManager.I.active(PluginType.tts);
+    if (m == null) return null;
+    final key = '${m.id}|${m.engine.wire}';
+    if (_engine != null && _engineKey == key) return _engine;
+    await _engine?.dispose();
+    _engine = null;
+    _engineKey = key;
+    try {
+      _engine = await buildTtsEngine(m, PluginManager.I.varsOf(m.id));
+    } catch (e, st) {
+      await TtsLog.write('plugin', 'ERROR 造引擎: $e\n$st');
+      _engine = null;
+    }
+    return _engine;
+  }
 
   /// 是不是「单个英文词」（决定走缓存还是流式）
   static bool isSingleWord(String s) {
@@ -75,7 +83,7 @@ class TtsService {
     return RegExp(r"^[A-Za-z][A-Za-z'\-]*$").hasMatch(t);
   }
 
-  /// 朗读一段文本：单词走缓存，长句走流式；在线不可用时退系统 TTS
+  /// 朗读一段文本：单词走缓存，长句走流式；没插件时退系统 TTS
   Future<void> speak(String text, String lang) async {
     final t = text.trim();
     if (t.isEmpty) return;
@@ -101,18 +109,18 @@ class TtsService {
   Future<void> _speakOne(String text, String lang, int gen) async {
     if (gen != _gen) return;
 
-    // 主力：在线引擎。单词走缓存，其余流式播放。
-    if (_onlineReady) {
+    final engine = await _ensureEngine();
+    if (engine != null) {
       if (isSingleWord(text)) {
-        final ok = await _speakWordCached(text, lang, gen);
+        final ok = await _speakWordCached(engine, text, lang, gen);
         if (ok) return;
       } else {
-        final ok = await _speakStreamed(text, lang);
+        final ok = await _speakStreamed(engine, text, gen);
         if (ok) return;
       }
     }
 
-    // 兜底：系统 TTS（在线没配置 / 合成失败）
+    // 兜底：系统 TTS
     try {
       await _sysTts.setLanguage(lang);
       final r = await _sysTts.speak(text);
@@ -124,7 +132,8 @@ class TtsService {
   }
 
   /// 单词：收全字节落盘，之后秒播（受 ttsWordCacheEnabled 控制）
-  Future<bool> _speakWordCached(String word, String lang, int gen) async {
+  Future<bool> _speakWordCached(
+      TtsEngine engine, String word, String lang, int gen) async {
     try {
       final file = await _cacheFile(word, lang);
       if (file == null) return false;
@@ -134,7 +143,7 @@ class TtsService {
       if (hit) {
         await TtsLog.write('cache', 'hit word="$word"');
       } else {
-        final bytes = await _synthesize(word);
+        final bytes = await _collect(engine, word);
         if (bytes == null || bytes.isEmpty) return false;
         await file.parent.create(recursive: true);
         await file.writeAsBytes(bytes, flush: true);
@@ -146,7 +155,7 @@ class TtsService {
 
       if (gen != _gen) return true; // 已被新朗读打断
       await _player.setFilePath(file.path);
-      await _player.play(); // just_audio 的 play 会在播完时 complete
+      await _player.play();
       return true;
     } catch (e, st) {
       await TtsLog.write('cache', 'ERROR: $e\n$st');
@@ -154,10 +163,25 @@ class TtsService {
     }
   }
 
-  /// 长句：把 POST 的字节流直接喂给播放器，边收边播
-  Future<bool> _speakStreamed(String text, String lang) async {
+  Future<Uint8List?> _collect(TtsEngine engine, String text) async {
     try {
-      await _player.setAudioSource(_TtsStreamSource(this, text, lang));
+      final b = BytesBuilder();
+      await for (final chunk in engine.synthesize(text)) {
+        b.add(chunk);
+      }
+      return b.takeBytes();
+    } catch (e, st) {
+      await TtsLog.write('engine', 'ERROR: $e\n$st');
+      return null;
+    }
+  }
+
+  /// 长句：音频流直接喂播放器，边收边播
+  Future<bool> _speakStreamed(TtsEngine engine, String text, int gen) async {
+    try {
+      await _player.setAudioSource(
+          _EngineStreamSource(engine.synthesize(text), engine.contentType));
+      if (gen != _gen) return true;
       await _player.play();
       return true;
     } catch (e, st) {
@@ -166,88 +190,33 @@ class TtsService {
     }
   }
 
-  /// 发一次 POST，返回未读完的响应（body 留给调用方流式消费）
-  Future<http.StreamedResponse> _postStream(String text, String lang) async {
-    final base =
-        settings.ttsOpenAiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
-    final req = http.Request('POST', Uri.parse('$base/audio/speech'))
-      ..headers['Content-Type'] = 'application/json'
-      ..headers['Accept'] = 'audio/*';
-    final key = settings.ttsOpenAiApiKey.trim();
-    if (key.isNotEmpty) req.headers['Authorization'] = 'Bearer $key';
-    req.body = json.encode({
-      'model': settings.ttsOpenAiModel,
-      'input': text,
-      'voice': settings.ttsOpenAiVoice,
-      'response_format': settings.ttsOpenAiFormat,
-      'speed': settings.ttsOpenAiSpeed,
-    });
-    final resp = await _client.send(req).timeout(const Duration(seconds: 20));
-    if (resp.statusCode != 200) {
-      final body = await resp.stream
-          .bytesToString()
-          .timeout(const Duration(seconds: 5));
-      await TtsLog.write('stream',
-          'HTTP ${resp.statusCode}: ${body.length > 300 ? body.substring(0, 300) : body}');
-      throw TtsHttpException(resp.statusCode, body);
-    }
-    return resp;
-  }
-
-  /// 单词用：收全字节（用于落盘缓存）
-  Future<Uint8List?> _synthesize(String word) async {
-    try {
-      final resp = await _postStream(word, 'en-US');
-      // 注意：http 的 StreamedResponse 没有 toBytes()，扩展在 Stream 上
-      final bytes =
-          await resp.stream.toBytes().timeout(const Duration(seconds: 30));
-      if (bytes.isEmpty) return null;
-      return bytes;
-    } catch (e, st) {
-      await TtsLog.write('openai', 'ERROR: $e\n$st');
-      return null;
-    }
-  }
-
-  /// 缓存文件路径（按 词+lang+模型+音色+语速 取 sha1）
+  /// 缓存文件路径（按 插件+词+lang 取 sha1；换插件/音色自动重建）
   Future<File?> _cacheFile(String word, String lang) async {
     final dir = await DataDir.sub('cache/tts');
     if (dir == null) return null;
-    final key = [
-      word.toLowerCase(),
-      lang,
-      settings.ttsOpenAiModel,
-      settings.ttsOpenAiVoice,
-      settings.ttsOpenAiSpeed.toString(),
-    ].join('|');
+    final m = PluginManager.I.active(PluginType.tts);
+    final pid = m?.id ?? 'sys';
+    final key = '$pid|${word.toLowerCase()}|$lang';
     final hash = sha1.convert(utf8.encode(key)).toString();
-    final fmt = settings.ttsOpenAiFormat.trim().isEmpty
-        ? 'mp3'
-        : settings.ttsOpenAiFormat.trim();
-    return File('${dir.path}/$hash.$fmt');
+    return File('${dir.path}/$hash.${_extOf(m)}');
   }
 
-  /// 设置页「测试发音」用：强制走在线合成，返回是否成功
-  Future<bool> testOpenAi(String text) async {
-    final bytes = await _synthesize(text.trim());
-    return bytes != null && bytes.isNotEmpty;
-  }
-
-  /// 预热一批单词（可选：导入新词后批量拉音频，之后全走缓存）
-  Future<void> precacheWords(Iterable<String> words, String lang) async {
-    if (!_onlineReady) return;
-    for (final w in words) {
-      final t = w.trim();
-      if (!isSingleWord(t)) continue;
-      try {
-        final f = await _cacheFile(t, lang);
-        if (f == null || await f.exists()) continue;
-        final bytes = await _synthesize(t);
-        if (bytes == null || bytes.isEmpty) continue;
-        await f.parent.create(recursive: true);
-        await f.writeAsBytes(bytes, flush: true);
-      } catch (_) {}
+  String _extOf(PluginManifest? m) {
+    if (m == null) return 'mp3';
+    if (m.engine == PluginEngine.openaiTts) {
+      final f = PluginManager.I.varOf(m.id, 'format').trim();
+      return f.isEmpty ? 'mp3' : f;
     }
+    final f = '${m.defaults['audio_format'] ?? 'aac'}'.trim();
+    return f.isEmpty ? 'aac' : f;
+  }
+
+  /// 设置页「测试发音」用：走一遍合成，返回是否拿到音频
+  Future<bool> testSynthesize(String text) async {
+    final engine = await _ensureEngine();
+    if (engine == null) return false;
+    final bytes = await _collect(engine, text.trim());
+    return bytes != null && bytes.isNotEmpty;
   }
 
   Future<void> _stopAll() async {
@@ -273,44 +242,33 @@ class TtsService {
     try {
       await _sysTts.stop();
     } catch (_) {}
-    _client.close();
+    try {
+      await _engine?.dispose();
+    } catch (_) {}
+    _engine = null;
   }
 
   static String _abbr(String s) =>
       s.length <= 48 ? s : '${s.substring(0, 48)}…';
 }
 
-/// 长句流式：把在线 TTS 的响应字节流实时喂给 just_audio
-class _TtsStreamSource extends StreamAudioSource {
-  final TtsService owner;
-  final String text;
-  final String lang;
-  _TtsStreamSource(this.owner, this.text, this.lang);
+/// 长句流式：把插件的音频字节流实时喂给 just_audio
+class _EngineStreamSource extends StreamAudioSource {
+  final Stream<List<int>> _stream;
+  final String _contentType;
+  _EngineStreamSource(this._stream, this._contentType);
 
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
-    final resp = await owner._postStream(text, lang);
-    // just_audio 0.9.x 的 StreamAudioResponse 字段（实测 v0.9.46 源码）：
-    //   rangeRequestsSupported / sourceLength / contentLength / offset
-    //   / contentType / stream —— 根本没有 isLive 字段！
-    // 我们的流是一次性 POST 响应，不能重放、不支持 Range 请求。
+    // just_audio 0.9.x 字段（实测 v0.9.46）：没有 isLive。
+    // 一次性字节流，不能重放、不支持 Range。
     return StreamAudioResponse(
       rangeRequestsSupported: false,
-      sourceLength: null, // 总长未知
-      contentLength: null, // 本次返回长度未知
+      sourceLength: null,
+      contentLength: null,
       offset: 0,
-      contentType: resp.headers['content-type'] ?? 'audio/mpeg',
-      stream: resp.stream,
+      contentType: _contentType,
+      stream: _stream,
     );
   }
-}
-
-/// 在线接口报错（非 200）
-class TtsHttpException implements Exception {
-  final int code;
-  final String body;
-  TtsHttpException(this.code, this.body);
-  @override
-  String toString() =>
-      'TTS HTTP $code: ${body.length > 200 ? body.substring(0, 200) : body}';
 }

@@ -11,6 +11,7 @@ import 'models/deck.dart';
 import 'screens/main_scaffold.dart';
 import 'services/card_store.dart';
 import 'services/deck_repository.dart';
+import 'services/plugin.dart';
 import 'services/reminder_service.dart';
 import 'services/study_settings.dart';
 
@@ -65,6 +66,8 @@ class _BootstrapState extends State<_Bootstrap> {
     try {
       await _store.init();
       await _settings.init();
+      // 插件系统：扫内置 + 用户插件，读上次选中的 TTS/LLM 插件
+      await PluginManager.I.load();
       await ReminderService.init();
       await _applyReminder();
       // 首次运行：把内置模板铺到公共目录，之后改 CSS/HTML/JS 直接改文件

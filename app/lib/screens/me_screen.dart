@@ -6,13 +6,14 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/card_store.dart';
 import '../services/data_dir.dart';
+import '../services/plugin.dart';
 import '../services/study_settings.dart';
 import '../services/tts_diagnostics.dart';
 import '../services/update_service.dart';
 import 'debug_log_screen.dart';
 import 'settings_screen.dart';
+import 'plugins_screen.dart';
 import 'stats_screen.dart';
-import 'tts_settings_screen.dart';
 
 class MeScreen extends StatefulWidget {
   final CardStore store;
@@ -100,6 +101,12 @@ class MeScreenState extends State<MeScreen> {
 
   Future<void> refresh() async {
     if (mounted) setState(() {});
+  }
+
+  /// 「插件管理」右边那行小字：当前 TTS 插件名
+  String _pluginLabel() {
+    final m = PluginManager.I.active(PluginType.tts);
+    return m?.name ?? '未选';
   }
 
   /// TTS 自检：跑一遍引擎信息 + 试念，写 logs/tts/，弹窗给结果
@@ -234,15 +241,14 @@ class MeScreenState extends State<MeScreen> {
           ),
           const SizedBox(height: 10),
           _entry(
-            icon: Icons.settings_voice,
-            label: 'TTS 引擎',
-            value: widget.settings.ttsOpenAiEnabled ? '在线 + 缓存' : '系统 TTS',
+            icon: Icons.extension_outlined,
+            label: '插件管理',
+            value: _pluginLabel(),
             onTap: () async {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      TtsSettingsScreen(settings: widget.settings),
+                  builder: (_) => PluginsScreen(settings: widget.settings),
                 ),
               );
               refresh();

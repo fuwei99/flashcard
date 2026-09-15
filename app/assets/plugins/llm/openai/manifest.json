@@ -1,0 +1,1 @@
+{"author":"builtin","engine":"openai-chat","id":"openai-chat","name":"OpenAI 兼容 Chat","type":"llm","vars":[{"default":"","hint":"https://api.openai.com/v1","key":"base_url","label":"Base URL"},{"key":"api_key","label":"API Key","secret":true},{"default":"gpt-4o-mini","key":"model","label":"Model"}],"version":1}
