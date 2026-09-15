@@ -1,11 +1,12 @@
 /// TTS 引擎设置
 /// ================================================================
-/// 系统 TTS（默认，长句走它） / OpenAI 兼容 HTTP TTS（单词走它 + 缓存）
+/// 在线 OpenAI 兼容 TTS（主） / 系统 TTS（兜底）
 ///
-/// 顶部可切换「单词发音引擎」；开了 OpenAI 后，单个英文词会：
-///   首次 → 请求 {base_url}/audio/speech 拿 mp3 → 存 cache/tts/ → 播
-///   再次 → 直接读缓存秒播
-/// 长句永远走系统 TTS，不进缓存。
+/// 开了在线引擎后：
+///   单词 → 首次 POST {base_url}/audio/speech 拿音频 → 存 cache/tts/ → 播；
+///          之后再读直接秒播（读缓存）
+///   长句 → 响应字节流直接喂播放器，边收边播（不缓存）
+/// 在线没配置 / 合成失败时才退回系统 TTS。
 library;
 
 import 'package:flutter/material.dart';
@@ -120,9 +121,9 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
           _card(child: Column(children: [
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('单词用在线 TTS（可缓存）',
+              title: const Text('用在线 TTS（单词缓存 · 长句流式）',
                   style: TextStyle(color: Color(0xFFF0F4F5), fontSize: 15)),
-              subtitle: const Text('开：单个英文词走下面的 HTTP 接口并缓存；长句仍走系统 TTS',
+              subtitle: const Text('开：全部走下面的 HTTP 接口——单词缓存秒播，长句边收边播',
                   style: TextStyle(color: Color(0xFF54666C), fontSize: 12)),
               value: s.ttsOpenAiEnabled,
               activeColor: const Color(0xFF00C08B),
