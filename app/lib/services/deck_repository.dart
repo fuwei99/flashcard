@@ -37,7 +37,6 @@ class DeckRepository {
 
   static const _templateDirs = <String>[
     'assets/templates/bubei_dark',
-    'assets/templates/mixup_dark',
   ];
 
   /// 一个模板包固定这几个文件

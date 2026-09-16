@@ -50,7 +50,6 @@ flutter:
     - assets/decks/
     - assets/readme/
     - assets/templates/bubei_dark/
-    - assets/templates/mixup_dark/
     # 内置插件（插件管理系统从这里读清单）
     - assets/plugins/tts/openai/
     - assets/plugins/tts/doubao/
