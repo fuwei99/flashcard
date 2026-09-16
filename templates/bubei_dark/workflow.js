@@ -397,10 +397,324 @@
     srStart(data.items || []);
   };
 
-  WF.spell = {
-    start: srStart,
-    finish: srFinish,
-    isOn: function () { return srOn; },
-    snapshot: srSnapshot
+  // ============================================================
+  //  阶段 4：会话驱动 —— 整个切牌流程归 workflow.js
+  //  壳只做三件事：挂一张卡(web.mount) / 跑 FSRS 落盘(review.commit) / 报进度
+  // ============================================================
+  var S = null;              // 当前会话状态
+  var _committed = {};       // 已落 FSRS 的 cardId
+
+  function sPost(type, data) {
+    if (FC.post) FC.post(type, data || {});
+  }
+
+  function cardMeta(id) { return S.cardById[id] || null; }
+
+  function modesOf(id) {
+    var c = cardMeta(id);
+    return (c && c.modes) ? c.modes : [];
+  }
+
+  function allPassed(id) {
+    var modes = modesOf(id);
+    if (!modes.length) return true;
+    var p = S.passedModes[id] || {};
+    for (var i = 0; i < modes.length; i++) { if (!p[modes[i]]) return false; }
+    return true;
+  }
+
+  function bump(id, e) {
+    if (e > (S.effort[id] || 0)) S.effort[id] = e;
+  }
+
+  function ratingFor(id) {
+    var e = S.effort[id] || 0;
+    return e === 0 ? 'good' : (e === 1 ? 'hard' : 'again');
+  }
+
+  function cardsBetween(from, to) {
+    var out = [], seen = {};
+    for (var i = from; i < to && i < S.units.length; i++) {
+      var cs = S.units[i].cards || [];
+      for (var j = 0; j < cs.length; j++) {
+        if (!seen[cs[j].id]) { seen[cs[j].id] = 1; out.push(cs[j].id); }
+      }
+    }
+    return out;
+  }
+
+  function buildIndex() {
+    S.cardById = {};
+    for (var i = 0; i < S.units.length; i++) {
+      var cs = S.units[i].cards || [];
+      for (var j = 0; j < cs.length; j++) S.cardById[cs[j].id] = cs[j];
+    }
+  }
+
+  function removePool(id) {
+    var i = S.retestPool.indexOf(id);
+    if (i >= 0) S.retestPool.splice(i, 1);
+  }
+
+  function enterLearn() {
+    if (!S.queue.length) { nextUnit(); return; }
+    S.phase = 'learn';
+    S.roundTotal = S.queue.length;
+  }
+
+  function startUnit() {
+    S.queue = [];
+    S.retestPool = [];
+    S.passedModes = {};
+    S.wrongCount = {};
+    S.round = 1;
+    S.modeIdx = 0;
+    var u = S.units[S.unitIdx];
+    if (!u) { S.phase = 'done'; return; }
+    S.queue = (u.cards || []).map(function (c) {
+      return { cardId: c.id, mode: 'read', round: 1 };
+    });
+    S.roundTotal = S.queue.length;
+    if (u.hasPassage && u.readFirst) S.phase = 'passage';
+    else if (u.hasPassage && S.passageCloze) S.phase = 'passageCloze';
+    else enterLearn();
+  }
+
+  function nextUnit() {
+    S.unitIdx++;
+    if (!S.reviewSpellDone && S.leadingReviewCount > 0 &&
+        S.unitIdx === S.leadingReviewCount && S.unitIdx < S.units.length) {
+      S.reviewSpellDone = true;
+      var cs = cardsBetween(0, S.leadingReviewCount);
+      if (cs.length) {
+        S.spellCards = cs; S.spellReturnsToUnits = true; S.spellDone = 0;
+        S.phase = 'spellPrompt'; return;
+      }
+    }
+    if (S.unitIdx >= S.units.length) {
+      if (!S.finalSpellDone) {
+        S.finalSpellDone = true;
+        var from = S.reviewSpellDone ? S.leadingReviewCount : 0;
+        var cs2 = cardsBetween(from, S.units.length);
+        if (cs2.length) {
+          S.spellCards = cs2; S.spellReturnsToUnits = false; S.spellDone = 0;
+          S.phase = 'spellPrompt'; return;
+        }
+      }
+      S.phase = 'done'; return;
+    }
+    startUnit();
+  }
+
+  function startMode() {
+    S.retestPool.slice().forEach(function (id) {
+      if (!modesOf(id).length) { removePool(id); S.graduated[id] = true; }
+    });
+    while (S.modeIdx < S.retestModes.length) {
+      var m = S.retestModes[S.modeIdx];
+      var pending = S.retestPool.filter(function (id) {
+        if (S.graduated[id]) return false;
+        if (modesOf(id).indexOf(m) < 0) return false;
+        var p = S.passedModes[id] || {};
+        return !p[m];
+      });
+      if (!pending.length) { S.modeIdx++; continue; }
+      S.phase = (m === 'cloze') ? 'cloze' : 'choice';
+      S.queue = pending.map(function (id) {
+        return { cardId: id, mode: m, round: S.round };
+      });
+      S.roundTotal = S.queue.length;
+      return;
+    }
+    if (!S.retestPool.length) { nextUnit(); }
+    else { S.round++; S.modeIdx = 0; startMode(); }
+  }
+
+  function advance() {
+    if (S.queue.length) return;
+    if (S.phase === 'learn') {
+      if (!S.retestPool.length || !S.retestModes.length) { nextUnit(); return; }
+      S.round = 2; S.modeIdx = 0; startMode(); return;
+    }
+    S.modeIdx++;
+    startMode();
+  }
+
+  function submitLearn(rating) {
+    if (!S.queue.length) return;
+    var step = S.queue.shift();
+    var id = step.cardId;
+    if (rating === 'good' || !modesOf(id).length) {
+      S.graduated[id] = true;
+    } else {
+      if (S.retestPool.indexOf(id) < 0) S.retestPool.push(id);
+      bump(id, rating === 'again' ? 2 : 1);
+    }
+    advance();
+  }
+
+  function submitRetest(mode, ok) {
+    if (!S.queue.length) return;
+    var step = S.queue.shift();
+    var id = step.cardId;
+    if (ok) {
+      (S.passedModes[id] = S.passedModes[id] || {})[mode] = true;
+      if (allPassed(id)) { removePool(id); S.graduated[id] = true; }
+    } else {
+      var n = (S.wrongCount[id] || 0) + 1;
+      S.wrongCount[id] = n;
+      bump(id, n >= 2 ? 2 : 1);
+    }
+    advance();
+  }
+
+  function submitPassage() {
+    var u = S.units[S.unitIdx];
+    if (S.passageCloze && u && u.hasPassage) S.phase = 'passageCloze';
+    else enterLearn();
+  }
+
+  function submitPassageCloze(ok) { if (ok) enterLearn(); }
+
+  function flushGraduated() {
+    Object.keys(S.graduated).forEach(function (id) {
+      if (_committed[id]) return;
+      _committed[id] = true;
+      try {
+        FC.call('review.commit', { id: id, rating: ratingFor(id) })
+          .catch(function () {});
+      } catch (e) {}
+    });
+  }
+
+  function progressDone() {
+    if (S.phase === 'passage' || S.phase === 'passageCloze') return 0;
+    if (S.phase === 'spell' || S.phase === 'spellPrompt') return S.spellDone;
+    return Math.max(0, S.roundTotal - S.queue.length);
+  }
+
+  function progressTotal() {
+    if (S.phase === 'passage' || S.phase === 'passageCloze') return 1;
+    if (S.phase === 'spell' || S.phase === 'spellPrompt') return S.spellCards.length;
+    return S.roundTotal;
+  }
+
+  function reportProgress() {
+    sPost('web.progress', {
+      phase: S.phase,
+      done: progressDone(),
+      total: progressTotal(),
+      graduated: Object.keys(S.graduated).length
+    });
+  }
+
+  function render() {
+    if (!S) return;
+    if (S.phase === 'done') {
+      sPost('web.finish', { graduated: Object.keys(S.graduated).length });
+      return;
+    }
+    if (S.phase === 'spellPrompt') {
+      sPost('web.spellPrompt', { count: S.spellCards.length });
+      return;
+    }
+    if (S.phase === 'spell') {
+      sPost('web.spell', { cardIds: S.spellCards });
+      return;
+    }
+    if (S.phase === 'passage' || S.phase === 'passageCloze') {
+      sPost('web.mount', {
+        unit: S.unitIdx,
+        mode: S.phase === 'passage' ? 'passage' : 'passage_cloze',
+        index: 0, total: 1, round: 1
+      });
+      return;
+    }
+    var step = S.queue[0];
+    if (!step) return;
+    sPost('web.mount', {
+      unit: S.unitIdx,
+      cardId: step.cardId,
+      mode: step.mode,
+      index: Math.max(0, S.roundTotal - S.queue.length),
+      total: S.roundTotal,
+      round: step.round
+    });
+  }
+
+  function onAnswer(rating) {
+    if (!S) return;
+    if (S.phase === 'learn') submitLearn(rating);
+    else if (S.phase === 'choice' || S.phase === 'cloze') {
+      submitRetest(S.phase, rating !== 'again');
+    } else if (S.phase === 'passage') submitPassage();
+    else if (S.phase === 'passageCloze') submitPassageCloze(rating !== 'again');
+    else return;
+    flushGraduated();
+    reportProgress();
+    render();
+  }
+
+  function beginSpell() {
+    if (S && S.phase === 'spellPrompt') { S.spellDone = 0; S.phase = 'spell'; render(); }
+  }
+
+  function endSpell() {
+    if (!S) return;
+    S.spellCards = []; S.spellDone = 0;
+    if (S.spellReturnsToUnits) { S.spellReturnsToUnits = false; startUnit(); }
+    else S.phase = 'done';
+    render();
+  }
+
+  function startSession(plan) {
+    _committed = {};
+    S = {
+      units: plan.units || [],
+      retestModes: plan.retestModes || [],
+      passageCloze: !!plan.passageCloze,
+      cardById: {},
+      unitIdx: 0,
+      phase: 'done',
+      queue: [], retestPool: [], graduated: {}, passedModes: {},
+      effort: {}, wrongCount: {},
+      round: 1, modeIdx: 0, roundTotal: 0,
+      leadingReviewCount: 0,
+      reviewSpellDone: false, finalSpellDone: false,
+      spellReturnsToUnits: false, spellCards: [], spellDone: 0
+    };
+    buildIndex();
+    var n = 0;
+    for (var i = 0; i < S.units.length; i++) { if (!S.units[i].isReview) break; n++; }
+    S.leadingReviewCount = n;
+    if (!S.units.length) { S.phase = 'done'; render(); return; }
+
+    // 接管：评分 / 拼写回报都归本层
+    FC.answer = function (r) { onAnswer(r); };
+    FC.spellDone = function () { endSpell(); };
+    FC.spellProgress = function (d) { if (S) { S.spellDone = d || 0; reportProgress(); } };
+
+    startUnit();
+    reportProgress();
+    render();
+  }
+
+  if (FC.on) {
+    FC.on('web.start', function () {
+      if (!FC.call) return;
+      FC.call('session.plan', {}).then(function (plan) {
+        if (plan && plan.units && plan.units.length !== undefined) startSession(plan);
+      }).catch(function () {});
+    });
+    FC.on('web.spellDecision', function (d) {
+      if (!S) return;
+      if (d && d.go) beginSpell(); else endSpell();
+    });
+  }
+
+  WF.session = {
+    isOn: function () { return !!S; },
+    state: function () { return S; },
+    onAnswer: onAnswer
   };
 })();

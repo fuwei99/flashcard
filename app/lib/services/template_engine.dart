@@ -116,6 +116,12 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     ttsStop: function () { post({type:"ttsStop"}); },
     getState:function (k) { return (window.__FLASHCARD_KV__||{})[k]; },
     setState:function (k, v) { window.__FLASHCARD_KV__[k]=v; post({type:"setState", key:k, value:v}); },
+    // ---- 通用消息（阶段 4）：workflow.js 主动给壳发指令 ----
+    post:    function (type, data) {
+      var o = {type: type};
+      if (data) { for (var k in data) { if (Object.prototype.hasOwnProperty.call(data, k)) o[k] = data[k]; } }
+      post(o);
+    },
     undo:    function () { post({type:"undo"}); },
     // ---- 拼写轮（一轮走完触发，循环在模板里跑）----
     spellDone:     function () { post({type:"spellDone"}); },

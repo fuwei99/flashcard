@@ -40,6 +40,7 @@
   "id": "bubei_dark",
   "name": "不背单词 · 暗黑极简",
   "render_mode": "placeholder",
+  "web_session": true,
   "tts": {
     "auto_play": false,
     "fields": [

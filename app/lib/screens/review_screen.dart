@@ -16,6 +16,7 @@ import '../models/deck.dart';
 import '../models/study_session.dart';
 import '../services/card_store.dart';
 import '../services/scheduler.dart';
+import '../services/session_plan.dart';
 import '../services/status_writer.dart';
 import '../services/study_plan.dart';
 import '../services/study_settings.dart';
@@ -85,10 +86,30 @@ class _ReviewScreenState extends State<ReviewScreen>
   /// 「要不要拼写」弹窗正在显示 —— 防止并发弹两次
   bool _spellDialogOpen = false;
 
+  // ===== 阶段 4：Web 驱动模式 =====
+  /// 模板 manifest 声明 web_session=true 时，切牌流程归 workflow.js，
+  /// 壳只执行它发来的指令（web.mount / web.spell / web.finish…）。
+  late final bool _webDriven;
+  bool _webFinished = false;
+  String _webPhase = '';
+  int _webDone = 0;
+  int _webTotal = 0;
+  int _webGraduated = 0;
+
+  /// cardId -> 卡（从所有 unit 建索引，web.mount 按 id 找卡）
+  final Map<String, FlashCard> _webIndex = {};
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 阶段 4：模板 manifest 声明 web_session=true 时，切牌流程交给 workflow.js
+    _webDriven = widget.template.manifest['web_session'] == true;
+    for (final u in widget.units) {
+      for (final c in u.cards) {
+        _webIndex[c.id] = c;
+      }
+    }
     _session = StudySession(
       widget.units,
       passageClozeEnabled: widget.settings.modePassageCloze,
@@ -101,9 +122,25 @@ class _ReviewScreenState extends State<ReviewScreen>
         store: widget.store, tts: TtsService(settings: widget.settings));
     _bridge.initTts();
     _bridge.messages.listen(_onMsg);
+    if (_webDriven) {
+      _bridge.setPlan(SessionPlan.build(
+        units: widget.units,
+        passageCloze: widget.settings.modePassageCloze,
+        retestModes: [
+          if (widget.settings.modeChoice) 'choice',
+          if (widget.settings.modeSentenceCloze) 'cloze',
+        ],
+        passageJson: _bridge.passageJson,
+      ));
+    }
   }
 
   Future<void> _onMsg(BridgeMessage m) async {
+    // 阶段 4：Web 驱动模式下，会话推进全归 workflow.js，壳只执行指令。
+    if (_webDriven) {
+      await _onMsgWeb(m);
+      return;
+    }
     // 拼写轮：整轮循环在模板里跑，跑完回报 spellDone
     if (m.type == 'spellDone') {
       _session.endSpell();
@@ -204,6 +241,168 @@ class _ReviewScreenState extends State<ReviewScreen>
       await _maybePause();
     } finally {
       _handling = false;
+    }
+  }
+
+  // ================================================================
+  // 阶段 4：Web 驱动 —— 壳只执行 workflow.js 发来的指令
+  // ================================================================
+
+  Future<void> _onMsgWeb(BridgeMessage m) async {
+    switch (m.type) {
+      case 'web.mount':
+        await _webMount(m.data);
+        break;
+      case 'web.spell':
+        await _webSpell(m.data);
+        break;
+      case 'web.spellPrompt':
+        await _webSpellPrompt(m.data);
+        break;
+      case 'web.progress':
+        if (mounted) {
+          setState(() {
+            _webPhase = (m.data['phase'] ?? '').toString();
+            _webDone = (m.data['done'] as num?)?.toInt() ?? 0;
+            _webTotal = (m.data['total'] as num?)?.toInt() ?? 0;
+            _webGraduated = (m.data['graduated'] as num?)?.toInt() ?? 0;
+          });
+        }
+        break;
+      case 'web.finish':
+        if (mounted) {
+          setState(() {
+            _webFinished = true;
+            _webGraduated =
+                (m.data['graduated'] as num?)?.toInt() ?? _webGraduated;
+          });
+        }
+        StatusWriter.I.write();
+        break;
+    }
+  }
+
+  /// workflow.js 要挂某张卡 / 某个语篇
+  Future<void> _webMount(Map<String, dynamic> d) async {
+    final ctrl = _controller;
+    if (ctrl == null) return;
+    final unitIdx = (d['unit'] as num?)?.toInt() ?? 0;
+    if (unitIdx < 0 || unitIdx >= widget.units.length) return;
+    final unit = widget.units[unitIdx];
+    final modeKey = (d['mode'] ?? 'read').toString();
+    final cardId = (d['cardId'] ?? '').toString();
+    final index = (d['index'] as num?)?.toInt() ?? 0;
+    final total = (d['total'] as num?)?.toInt() ?? 0;
+    final round = (d['round'] as num?)?.toInt() ?? 1;
+
+    FlashCard? card;
+    if (cardId.isNotEmpty) {
+      for (final c in unit.cards) {
+        if (c.id == cardId) {
+          card = c;
+          break;
+        }
+      }
+      card ??= _webIndex[cardId];
+    }
+
+    final isPassage = modeKey == 'passage' || modeKey == 'passage_cloze';
+    final stepMode = StudyMode.fromKey(modeKey);
+    final choices = (card != null &&
+            (stepMode == StudyMode.choice || stepMode == StudyMode.cloze))
+        ? _choicesFor(StudyStep(card, stepMode, round))
+        : const <Map<String, String>>[];
+
+    await _bridge.mountCard(
+      ctrl,
+      fieldsOrder: widget.fieldsOrder,
+      template: widget.template,
+      card: card,
+      passage: isPassage ? unit.passage : null,
+      passageCards: unit.passageLookup,
+      blankLemmas: isPassage ? unit.blankLemmas : null,
+      index: index,
+      total: total,
+      session: {
+        'phase': modeKey,
+        'mode': modeKey,
+        'round': round,
+        'review': unit.isReview ? 1 : 0,
+      },
+      choices: choices,
+    );
+  }
+
+  /// workflow.js 要开拼写轮（给它要拼的卡 id，壳建条目并灌给模板）
+  Future<void> _webSpell(Map<String, dynamic> d) async {
+    final ctrl = _controller;
+    if (ctrl == null) return;
+    final ids = (d['cardIds'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
+    final cards = <FlashCard>[];
+    for (final id in ids) {
+      final c = _webIndex[id];
+      if (c != null) cards.add(c);
+    }
+    final items = _buildSpellItems(cards);
+    if (items.isEmpty) {
+      await _bridge.emit('web.spellDecision', {'go': false});
+      return;
+    }
+    await _bridge.startSpellRound(ctrl, items);
+  }
+
+  /// workflow.js 问「这一轮拼写吗」——壳弹原生弹窗，回执给它
+  Future<void> _webSpellPrompt(Map<String, dynamic> d) async {
+    final n = (d['count'] as num?)?.toInt() ?? 0;
+    if (!mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2629),
+        title: const Text('这一轮拼写吗？',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Text('$n 个词 · 拼错回队尾重来，不计入复习进度',
+            style: const TextStyle(color: Color(0xFFB7C4C8), fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('跳过', style: TextStyle(color: Color(0xFF8C9DA2))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('开始拼写',
+                style: TextStyle(color: Color(0xFF00C08B))),
+          ),
+        ],
+      ),
+    );
+    await _bridge.emit('web.spellDecision', {'go': go == true});
+  }
+
+  static String _webPhaseLabel(String p) {
+    switch (p) {
+      case 'passage':
+        return '语篇';
+      case 'passageCloze':
+      case 'passage_cloze':
+        return '语篇选词';
+      case 'learn':
+        return '学习';
+      case 'choice':
+        return '重测·选义';
+      case 'cloze':
+        return '重测·填空';
+      case 'spellPrompt':
+      case 'spell':
+        return '拼写';
+      case 'done':
+        return '完成';
+      default:
+        return '';
     }
   }
 
@@ -505,7 +704,7 @@ class _ReviewScreenState extends State<ReviewScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_session.finished) return _finished();
+    if (_webDriven ? _webFinished : _session.finished) return _finished();
 
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
@@ -533,22 +732,25 @@ class _ReviewScreenState extends State<ReviewScreen>
 
   /// 原生顶部：轮次 + 本组进度 + 今日进度
   Widget _topBar() {
-    final total = _session.roundTotal;
-    final prog = total == 0 ? 0.0 : _session.doneInRound / total;
+    final total = _webDriven ? _webTotal : _session.roundTotal;
+    final doneNow = _webDriven ? _webDone : _session.doneInRound;
+    final prog = total == 0 ? 0.0 : doneNow / total;
     final today = widget.settings;
     final doneToday = widget.isCard ? today.todayCardDone : today.todayWordDone;
     final limitToday = widget.isCard ? today.cardDailyLimit : today.wordDailyLimit;
-    final phaseName = switch (_session.phase) {
-      SessionPhase.passage => '语篇',
-      SessionPhase.passageCloze => '语篇选词',
-      SessionPhase.learn => '学习',
-      SessionPhase.choice => '重测 R${_session.round - 1}·选义',
-      SessionPhase.cloze => '重测 R${_session.round - 1}·填空',
-      SessionPhase.spellPrompt => '拼写',
-      SessionPhase.spell => '拼写',
-      SessionPhase.done => '完成',
-    };
-    final unitLabel = _session.unitCount > 1
+    final phaseName = _webDriven
+        ? _webPhaseLabel(_webPhase)
+        : switch (_session.phase) {
+            SessionPhase.passage => '语篇',
+            SessionPhase.passageCloze => '语篇选词',
+            SessionPhase.learn => '学习',
+            SessionPhase.choice => '重测 R${_session.round - 1}·选义',
+            SessionPhase.cloze => '重测 R${_session.round - 1}·填空',
+            SessionPhase.spellPrompt => '拼写',
+            SessionPhase.spell => '拼写',
+            SessionPhase.done => '完成',
+          };
+    final unitLabel = (!_webDriven && _session.unitCount > 1)
         ? '第 ${_session.unitIndex + 1}/${_session.unitCount} 组 · '
         : '';
 
@@ -575,7 +777,7 @@ class _ReviewScreenState extends State<ReviewScreen>
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
               ),
-              Text('$unitLabel$phaseName ${_session.doneInRound}/$total',
+              Text('$unitLabel$phaseName $doneNow/$total',
                   style: const TextStyle(
                       color: Color(0xFF00C08B),
                       fontSize: 13,
@@ -595,10 +797,11 @@ class _ReviewScreenState extends State<ReviewScreen>
           const SizedBox(height: 5),
           Text(
               [
-                if ((_session.currentUnit?.title ?? '').isNotEmpty)
+                if (!_webDriven &&
+                    (_session.currentUnit?.title ?? '').isNotEmpty)
                   _session.currentUnit!.title,
-                '毕业 ${_session.graduated.length}',
-                '待重测 ${_session.retestPoolSize}',
+                '毕业 ${_webDriven ? _webGraduated : _session.graduated.length}',
+                if (!_webDriven) '待重测 ${_session.retestPoolSize}',
                 '今日 $doneToday/$limitToday',
               ].join(' · '),
               maxLines: 1,
@@ -612,7 +815,7 @@ class _ReviewScreenState extends State<ReviewScreen>
   WebViewController? _ensure() {
     if (_controller != null) return _controller!;
     final step = _session.current;
-    if (step == null) return null;
+    if (step == null && !_webDriven) return null;
     final c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF141D1F))
@@ -625,7 +828,12 @@ class _ReviewScreenState extends State<ReviewScreen>
           onPageFinished: (_) {
             _ready = true;
             if (mounted) setState(() => _loading = false);
-            _load();
+            if (_webDriven) {
+              // 页面就绪 -> 让 workflow.js 拉计划、自己开跑
+              _bridge.emit('web.start');
+            } else {
+              _load();
+            }
           },
         ),
       );
@@ -635,21 +843,23 @@ class _ReviewScreenState extends State<ReviewScreen>
     final html = _bridge.buildCardPage(
       fieldsOrder: widget.fieldsOrder,
       template: widget.template,
-      card: step.card,
-      index: _session.doneInRound,
-      total: _session.roundTotal,
-      session: {
-        'phase': _session.phase.name,
-        'mode': step.mode.key,
-        'round': step.round,
-      },
+      card: _webDriven ? null : step?.card,
+      index: _webDriven ? 0 : _session.doneInRound,
+      total: _webDriven ? 0 : _session.roundTotal,
+      session: _webDriven
+          ? const <String, dynamic>{}
+          : {
+              'phase': _session.phase.name,
+              'mode': step!.mode.key,
+              'round': step.round,
+            },
     );
     c.loadHtmlString(html);
     return c;
   }
 
   Widget _finished() {
-    final n = _session.graduated.length;
+    final n = _webDriven ? _webGraduated : _session.graduated.length;
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
       body: Center(

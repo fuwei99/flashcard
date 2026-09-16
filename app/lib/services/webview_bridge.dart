@@ -55,6 +55,13 @@ class WebViewBridge {
   /// 最近一次 mount 的卡片数据快照（card.current 用）。
   Map<String, dynamic>? _lastCardJson;
 
+  /// 会话计划（阶段 4）：Web 驱动模式下，workflow.js 用它自己排流程。
+  /// 非 Web 驱动模式为 null。
+  Map<String, dynamic>? _plan;
+
+  /// 设置会话计划（由 ReviewScreen 在会话开始时调）。
+  void setPlan(Map<String, dynamic>? plan) => _plan = plan;
+
   /// 宿主控制器 —— RPC 回执 / 事件推送要它 runJavaScript。
   WebViewController? _ctrl;
 
@@ -135,6 +142,9 @@ class WebViewBridge {
       store.putState(id, st);
       return {'ok': true, 'id': id, 'rating': rating.key, 'state': st.toJson()};
     });
+
+    // 会话计划（阶段 4）：workflow.js 拉它自己排流程；非 Web 驱动返回 null
+    rpc.register('session.plan', (p) async => _plan);
 
     // 会话断点（workflow.js 用）
     rpc.register('session.save', (p) async {
