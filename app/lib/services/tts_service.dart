@@ -116,22 +116,94 @@ class TtsService {
   }
 
   /// 顺序朗读多条（单词 -> 例句）；每条可自带 plugin/voice/rate/pitch
+  ///
+  /// 关键优化：**本条一开口就去合成下一条**。
+  /// 原来 `await _speakOne(...)` 要等 `_player.play()` 整条播完才轮到下一条，
+  /// 于是「单词播 1.5s + 例句再等 1.2s TTFB」= 3s 才听到例句。
+  /// 现在单词起播的瞬间就把例句合成挂上（此刻引擎空闲），
+  /// 单词播完时例句字节已到手，落盘直接播，几乎无缝。
   Future<void> speakSeq(List items) async {
     final myGen = ++_gen;
     await _stopAll();
     await TtsLog.write('speak', 'seq gen=$myGen ${items.length}条');
+
+    // 先解析成结构化列表：要按下标「播第 i 条时预取第 i+1 条」
+    final list = <_SeqItem>[];
     for (final it in items) {
-      if (myGen != _gen) return;
       if (it is! Map) continue;
       final text = (it['text'] ?? '').toString().trim();
-      final lang = (it['lang'] ?? 'en-US').toString();
       if (text.isEmpty) continue;
-      await _speakOne(text, lang, myGen, TtsOptions.parse(it));
+      list.add(_SeqItem(
+        text: text,
+        lang: (it['lang'] ?? 'en-US').toString(),
+        opts: TtsOptions.parse(it),
+      ));
+    }
+
+    _Prefetch? pre; // 在途预取
+
+    for (var i = 0; i < list.length; i++) {
+      if (myGen != _gen) return;
+      final it = list[i];
+      final p = pre;
+      pre = null;
+
+      // 本条起播回调：此刻引擎空闲 → 并行把下一条合成挂上
+      void kick() {
+        if (myGen != _gen) return;
+        if (i + 1 >= list.length) return;
+        final nx = list[i + 1];
+        if (_willCache(nx)) return; // 下一条自己要走缓存，别跟它抢引擎
+        pre = _startPrefetch(nx, myGen);
+      }
+
+      // ① 预取命中：字节已在手，落盘直接播，跳过整段合成等待
+      if (p != null && p.key == it.key) {
+        final bytes = await p.bytes;
+        if (myGen != _gen) return;
+        if (bytes != null && bytes.isNotEmpty) {
+          final engine = await _ensureEngine(it.opts?.pluginId);
+          if (engine != null && myGen == _gen) {
+            if (await _playPrefetched(bytes, it, myGen, engine,
+                onStarted: kick)) {
+              continue;
+            }
+          }
+        }
+        // 预取废了（合成失败 / 被打断）→ 退回正常路径
+      }
+
+      // ② 正常路径
+      if (myGen != _gen) return;
+      await _speakOne(it.text, it.lang, myGen, it.opts, onStarted: kick);
     }
   }
 
+  /// 这条会不会走「落盘缓存」——决定要不要预取（会走缓存的别抢引擎，
+  /// 否则预取和它自己的合成会打架，白烧两次）
+  bool _willCache(_SeqItem it) {
+    final explicit = it.opts?.cache;
+    final long = !isSingleWord(it.text);
+    return explicit == true ||
+        (explicit == null && !long && settings.ttsWordCacheEnabled);
+  }
+
+  /// 后台预合成：只收字节，不碰播放器
+  _Prefetch _startPrefetch(_SeqItem it, int gen) {
+    final fut = () async {
+      final engine = await _ensureEngine(it.opts?.pluginId);
+      if (engine == null || gen != _gen) return null;
+      final b = await _collect(engine, it.text);
+      await TtsLog.write('seq',
+          '预取${b == null ? '失败' : '完成'} ${b?.length ?? 0}B "${_abbr(it.text)}"');
+      return b;
+    }();
+    return _Prefetch(it.key, fut);
+  }
+
   Future<void> _speakOne(
-      String text, String lang, int gen, TtsOptions? opts) async {
+      String text, String lang, int gen, TtsOptions? opts,
+      {void Function()? onStarted}) async {
     if (gen != _gen) return;
 
     // 模板点名走系统 TTS：plugin:"system"
@@ -154,7 +226,8 @@ class TtsService {
       // 长句优先流式；偶发中断不惩罚，连续失败达阈值才认定本机不可用。
       final tryStream = !shouldCache && _streamFails < _kStreamFailLimit;
       final ok = shouldCache
-          ? await _speakCached(engine, text, lang, gen, opts)
+          ? await _speakCached(engine, text, lang, gen, opts,
+              onStarted: onStarted)
           : (tryStream ? await _speakStreamed(engine, text, gen, opts) : false);
       if (ok) {
         if (tryStream) _streamFails = 0; // 成功即清零，别让偶发失败累积成「不可用」
@@ -164,7 +237,10 @@ class TtsService {
       // 流式失败：把整段收下来落临时文件再播（词条同款路径），
       // 别直接跳系统 TTS —— 那样音色全变了。
       if (!shouldCache && gen == _gen) {
-        if (await _speakCollected(engine, text, lang, gen, opts)) return;
+        if (await _speakCollected(engine, text, lang, gen, opts,
+                onStarted: onStarted)) {
+          return;
+        }
       }
     }
 
@@ -192,7 +268,7 @@ class TtsService {
   /// 落盘缓存：命中直接播；未命中收全字节落盘再播。
   /// 长句额外旁挂一个 .txt 存全文 + 参数，文件名只留前 20 字也认得出。
   Future<bool> _speakCached(TtsEngine engine, String text, String lang,
-      int gen, TtsOptions? opts) async {
+      int gen, TtsOptions? opts, {void Function()? onStarted}) async {
     try {
       final file = await _cacheFile(text, lang, opts);
       if (file == null) return false;
@@ -215,7 +291,9 @@ class TtsService {
 
       if (gen != _gen) return true; // 已被新朗读打断
       await _player.setFilePath(file.path);
-      await _player.play();
+      final done = _player.play();
+      onStarted?.call(); // 已起播：引擎此刻空闲，可以并行预取下一条
+      await done;
       return true;
     } catch (e, st) {
       await TtsLog.write('cache', 'ERROR: $e\n$st');
@@ -282,33 +360,63 @@ class TtsService {
     }
   }
 
+  /// 字节落 cache/tts/.tmp（同名覆盖），返回文件
+  Future<File?> _writeTmp(Uint8List bytes, String text, String lang,
+      TtsOptions? opts, TtsEngine engine) async {
+    final dir = await DataDir.sub('cache/tts/.tmp');
+    if (dir == null) return null;
+    await dir.create(recursive: true);
+    final hash = sha1
+        .convert(utf8.encode('$text|$lang|${opts?.fingerprint ?? ''}'))
+        .toString()
+        .substring(0, 12);
+    final ext = engine.contentType.contains('mpeg') ? 'mp3' : 'aac';
+    final f = File('${dir.path}/s-$hash.$ext');
+    await f.writeAsBytes(bytes, flush: true);
+    return f;
+  }
+
   /// 流式失败时的兜底：把整段收全 → 落临时文件 → 按文件播。
   /// 词条那条路（_speakCached）已证明「文件播放」稳；流式万一再出幺蛾子，
   /// 用这个兜住，音色还是原插件，别动不动退到系统 TTS 把音色换掉。
   Future<bool> _speakCollected(TtsEngine engine, String text, String lang,
-      int gen, TtsOptions? opts) async {
+      int gen, TtsOptions? opts, {void Function()? onStarted}) async {
     try {
       final bytes = await _collect(engine, text);
       if (bytes == null || bytes.isEmpty) return false;
       if (gen != _gen) return true;
-      final dir = await DataDir.sub('cache/tts/.tmp');
-      if (dir == null) return false;
-      await dir.create(recursive: true);
-      final hash = sha1
-          .convert(utf8.encode('$text|$lang|${opts?.fingerprint ?? ''}'))
-          .toString()
-          .substring(0, 12);
-      final ext = engine.contentType.contains('mpeg') ? 'mp3' : 'aac';
-      final f = File('${dir.path}/s-$hash.$ext');
-      await f.writeAsBytes(bytes, flush: true);
+      final f = await _writeTmp(bytes, text, lang, opts, engine);
+      if (f == null) return false;
       if (gen != _gen) return true;
       await TtsLog.write(
           'stream', '流式失败→落临时文件播放 ${bytes.length}B "${_abbr(text)}"');
       await _player.setFilePath(f.path);
-      await _player.play();
+      final done = _player.play();
+      onStarted?.call();
+      await done;
       return true;
     } catch (e, st) {
       await TtsLog.write('stream', 'collected ERROR: $e\n$st');
+      return false;
+    }
+  }
+
+  /// 预取命中：字节已在手，落 .tmp 直接播（跳过合成等待）
+  Future<bool> _playPrefetched(Uint8List bytes, _SeqItem it, int gen,
+      TtsEngine engine, {void Function()? onStarted}) async {
+    try {
+      final f = await _writeTmp(bytes, it.text, it.lang, it.opts, engine);
+      if (f == null) return false;
+      if (gen != _gen) return true;
+      await TtsLog.write(
+          'seq', '预取命中→直接播 ${bytes.length}B "${_abbr(it.text)}"');
+      await _player.setFilePath(f.path);
+      final done = _player.play();
+      onStarted?.call();
+      await done;
+      return true;
+    } catch (e, st) {
+      await TtsLog.write('seq', '预取播放 ERROR: $e\n$st');
       return false;
     }
   }
@@ -520,4 +628,22 @@ class _EngineStreamSource extends StreamAudioSource {
     _sub = null;
     _closeSinks();
   }
+}
+
+/// speakSeq 的一条：文本 + 语言 + 覆盖参数
+class _SeqItem {
+  final String text;
+  final String lang;
+  final TtsOptions? opts;
+  _SeqItem({required this.text, required this.lang, this.opts});
+
+  /// 预取对账用的 key（口径和 _writeTmp 的 hash 一致）
+  String get key => '$text|$lang|${opts?.fingerprint ?? ''}';
+}
+
+/// 在途预取：key 用来对账，bytes 是后台合成结果
+class _Prefetch {
+  final String key;
+  final Future<Uint8List?> bytes;
+  _Prefetch(this.key, this.bytes);
 }
