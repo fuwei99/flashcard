@@ -631,12 +631,14 @@ class TtsService {
     return File('${dir.path}/$stem-$sp-$hash.${_extOf(m)}');
   }
 
-  /// 文件名主干：优先自定义名；否则用文本，长文本截前 20 字
+  /// 文件名主干：优先自定义名；否则用文本前 30 字。
+  /// 语篇就用正文开头当名字 —— 30 字足够认出是哪句/哪段，
+  /// 又不会把文件名撑爆；唯一性由后面的 sha1 段兜底，前缀撞了也不覆盖。
   static String _cacheStem(String text, TtsOptions? opts) {
     final custom = (opts?.cacheName ?? '').trim();
     final t = custom.isNotEmpty ? custom : text.trim();
-    final cut = t.length <= 40 ? t : t.substring(0, 20);
-    return _fileSafe(cut, 40);
+    final cut = t.length <= 30 ? t : t.substring(0, 30);
+    return _fileSafe(cut, 30);
   }
 
   /// 文件名安全：只留 [A-Za-z0-9_-]，其余并成下划线，两端去下划线，截断到 max
