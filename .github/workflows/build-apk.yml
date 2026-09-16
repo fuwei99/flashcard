@@ -156,10 +156,29 @@ jobs:
                        '        </intent>\n'
                        '    </queries>\n')
 
-              if add or q:
-                  s = s.replace("<application", add + q + "    <application", 1)
+              # just_audio 的 StreamAudioSource 在 Android 上是本地 HTTP 代理
+              # （http://127.0.0.1:PORT/），README 明确要求开 cleartext，否则
+              # ExoPlayer 一连就被掐 -> TYPE_SOURCE（即 "(0) Source error"）。
+              # release manifest 默认不带，必须生成 network security config。
+              nsc_dir = "app/src/main/res/xml"
+              os.makedirs(nsc_dir, exist_ok=True)
+              with open(nsc_dir + "/network_security_config.xml", "w") as fh:
+                  fh.write('<?xml version="1.0" encoding="utf-8"?>\n'
+                           '<network-security-config>\n'
+                           '    <domain-config cleartextTrafficPermitted="true">\n'
+                           '        <domain includeSubdomains="false">127.0.0.1</domain>\n'
+                           '        <domain includeSubdomains="false">localhost</domain>\n'
+                           '    </domain-config>\n'
+                           '</network-security-config>\n')
+              nsc_attr = ''
+              if 'networkSecurityConfig' not in s:
+                  nsc_attr = ' android:networkSecurityConfig="@xml/network_security_config"'
+
+              if add or q or nsc_attr:
+                  s = s.replace("<application", add + q + "    <application" + nsc_attr, 1)
                   open(mf, "w").write(s)
-                  print("manifest patched (perms=%d, tts_queries=%s)" % (len(add), bool(q)))
+                  print("manifest patched (perms=%d, tts_queries=%s, nsc=%s)"
+                        % (len(add), bool(q), bool(nsc_attr)))
           PY
 
       # 固定签名：从 Secrets 解码 keystore，写 key.properties，patch build.gradle

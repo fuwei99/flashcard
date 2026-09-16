@@ -39,6 +39,11 @@ class TtsService {
   /// 打断代号：每次新朗读 +1；旧的顺序朗读发现代号变了立刻收手。
   int _gen = 0;
 
+  /// 流式本机是否可用。第一次流式失败就置 false，后续长句直接走
+  /// 「收全→落盘→播」，不再每次白炸一遍（白炸 = 双倍合成 + 双倍延迟）。
+  /// 不持久化：重启 App 自动重置，哪天修好了自己就恢复。
+  bool _streamUsable = true;
+
   /// 插件 id → 引擎（同插件复用；换插件才新建，JS 插件不必重载脚本）
   final Map<String, TtsEngine> _engines = {};
 
@@ -144,11 +149,14 @@ class TtsService {
       final long = !isSingleWord(text);
       final shouldCache = explicit == true ||
           (explicit == null && !long && settings.ttsWordCacheEnabled);
+      // 长句优先流式；本机已确认流式不可用就直接落盘，省一次无用合成。
+      final tryStream = !shouldCache && _streamUsable;
       final ok = shouldCache
           ? await _speakCached(engine, text, lang, gen, opts)
-          : await _speakStreamed(engine, text, gen, opts);
+          : (tryStream ? await _speakStreamed(engine, text, gen, opts) : false);
       if (ok) return;
-      // 流式仍失败：先把整段收下来落临时文件再播（词条同款路径），
+      if (tryStream) _streamUsable = false; // 这台机器上流式挂了，别再试
+      // 流式失败：把整段收下来落临时文件再播（词条同款路径），
       // 别直接跳系统 TTS —— 那样音色全变了。
       if (!shouldCache && gen == _gen) {
         if (await _speakCollected(engine, text, lang, gen, opts)) return;
