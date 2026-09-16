@@ -18,7 +18,7 @@ import 'data_dir.dart';
 
 /// 通用落盘器：写 <root>/logs/<sub>/<prefix>-YYYYMMDD.log
 /// 任何失败都吞掉（记日志本身不能把 APP 搞崩）。
-class _FileLog {
+class FileLog {
   static Future<void> write({
     required bool enabled,
     required String sub,
@@ -50,7 +50,7 @@ class TtsLog {
   static bool enabled = true;
 
   static Future<void> write(String tag, String msg, {bool force = false}) =>
-      _FileLog.write(
+      FileLog.write(
         enabled: enabled,
         sub: 'tts',
         prefix: 'tts',
@@ -66,7 +66,7 @@ class SwitchLog {
   static bool enabled = true;
 
   static Future<void> write(String tag, String msg, {bool force = false}) =>
-      _FileLog.write(
+      FileLog.write(
         enabled: enabled,
         sub: 'switch',
         prefix: 'switch',

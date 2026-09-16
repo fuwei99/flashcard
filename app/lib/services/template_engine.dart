@@ -116,6 +116,11 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     ttsStop: function () { post({type:"ttsStop"}); },
     getState:function (k) { return (window.__FLASHCARD_KV__||{})[k]; },
     setState:function (k, v) { window.__FLASHCARD_KV__[k]=v; post({type:"setState", key:k, value:v}); },
+    // ---- JS 日志（JSlogs）：模板层诊断输出，落 logs/js/ ----
+    log:     function (tag, msg) {
+      post({type:"log", tag: String(tag == null ? "js" : tag),
+            msg: String(msg == null ? "" : msg)});
+    },
     // ---- 通用消息（阶段 4）：workflow.js 主动给壳发指令 ----
     post:    function (type, data) {
       var o = {type: type};

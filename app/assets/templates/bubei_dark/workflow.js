@@ -30,6 +30,9 @@
   }
   var TTS_WORD = H.ttsWord || { cache: true };
 
+  // ---------- JSlogs：模板层诊断输出（落 logs/js/）----------
+  function log(msg) { if (FC.log) { try { FC.log("[WF]", msg); } catch (e) {} } }
+
   // ---------- 会话断点 ----------
   var WF_NAME = "bubei_dark.word";
   var _cursor = null;
@@ -580,6 +583,7 @@
     Object.keys(S.graduated).forEach(function (id) {
       if (_committed[id]) return;
       _committed[id] = true;
+      log("commit " + id + " rating=" + ratingFor(id));
       try {
         FC.call('review.commit', { id: id, rating: ratingFor(id) })
           .catch(function () {});
@@ -610,6 +614,8 @@
 
   function render() {
     if (!S) return;
+    log("render phase=" + S.phase + " unit=" + S.unitIdx +
+        " q=" + S.queue.length + " spell=" + S.spellCards.length);
     if (S.phase === 'done') {
       sPost('web.finish', { graduated: Object.keys(S.graduated).length });
       return;
@@ -644,6 +650,7 @@
 
   function onAnswer(rating) {
     if (!S) return;
+    log("answer " + rating + " phase=" + S.phase + " q=" + S.queue.length);
     if (S.phase === 'learn') submitLearn(rating);
     else if (S.phase === 'choice' || S.phase === 'cloze') {
       submitRetest(S.phase, rating !== 'again');
@@ -656,11 +663,15 @@
   }
 
   function beginSpell() {
-    if (S && S.phase === 'spellPrompt') { S.spellDone = 0; S.phase = 'spell'; render(); }
+    if (S && S.phase === 'spellPrompt') {
+      log("beginSpell n=" + S.spellCards.length);
+      S.spellDone = 0; S.phase = 'spell'; render();
+    }
   }
 
   function endSpell() {
     if (!S) return;
+    log("endSpell returns=" + S.spellReturnsToUnits);
     S.spellCards = []; S.spellDone = 0;
     if (S.spellReturnsToUnits) { S.spellReturnsToUnits = false; startUnit(); }
     else S.phase = 'done';
@@ -669,6 +680,7 @@
 
   function startSession(plan) {
     _committed = {};
+    log("start units=" + (plan.units || []).length);
     S = {
       units: plan.units || [],
       retestModes: plan.retestModes || [],
@@ -702,8 +714,10 @@
   if (FC.on) {
     FC.on('web.start', function () {
       if (!FC.call) return;
+      log("web.start -> 拉计划");
       FC.call('session.plan', {}).then(function (plan) {
         if (plan && plan.units && plan.units.length !== undefined) startSession(plan);
+        else log("web.start：没有计划（非 Web 驱动？）");
       }).catch(function () {});
     });
     FC.on('web.spellDecision', function (d) {

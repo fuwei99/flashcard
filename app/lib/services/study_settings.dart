@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data_dir.dart';
+import 'js_log.dart';
 import 'tts_log.dart';
 
 class StudySettings {
@@ -309,6 +310,7 @@ class StudySettings {
     // 日志开关同步给静态 logger（TTS / 切卡共用这一个开关）
     TtsLog.enabled = ttsLogEnabled;
     SwitchLog.enabled = ttsLogEnabled;
+    JsLog.enabled = ttsLogEnabled;
 
     _prefs?.setBool(_kTtsOpenAiEnabled, ttsOpenAiEnabled);
     _prefs?.setString(_kTtsOpenAiBaseUrl, ttsOpenAiBaseUrl);
@@ -393,6 +395,7 @@ class StudySettings {
     ttsLogEnabled = v;
     TtsLog.enabled = v;
     SwitchLog.enabled = v;
+    JsLog.enabled = v;
     _persist();
   }
 

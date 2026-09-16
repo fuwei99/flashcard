@@ -21,6 +21,7 @@ import '../models/deck.dart';
 import 'bridge_rpc.dart';
 import 'card_source.dart';
 import 'card_store.dart';
+import 'js_log.dart';
 import 'scheduler.dart';
 import 'session_store.dart';
 import 'template_engine.dart';
@@ -157,9 +158,12 @@ class WebViewBridge {
       return {'ok': true};
     });
 
-    // 前端日志直接落原生 SwitchLog —— 排查 JS 问题不用连电脑
+    // 前端日志（JSlogs）—— 排查 JS 问题不用连电脑
     rpc.register('sys.log', (p) async {
-      await SwitchLog.write('web', (p['msg'] ?? '').toString());
+      await JsLog.write(
+        (p['tag'] ?? 'rpc').toString(),
+        (p['msg'] ?? '').toString(),
+      );
       return {'ok': true};
     });
   }
@@ -385,6 +389,15 @@ class WebViewBridge {
       final script = await rpc.dispatch(id, method, params);
       final c = _ctrl;
       if (c != null) await c.runJavaScript(script);
+      return;
+    }
+
+    // JS 日志（JSlogs）：写独立文件，不进 messages 流、不掺切卡时序
+    if (type == 'log') {
+      await JsLog.write(
+        (data['tag'] ?? 'js').toString(),
+        (data['msg'] ?? '').toString(),
+      );
       return;
     }
 

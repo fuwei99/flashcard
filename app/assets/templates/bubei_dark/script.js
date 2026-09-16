@@ -990,6 +990,9 @@
   // 拼写轮的循环已迁到 workflow.js（阶段 3）—— 整轮状态机 + 落盘都在那边。
   // script.js 只保留「当场拼写」（顶栏 abc）。
 
+  // ---------- JSlogs：模板层诊断输出（落 logs/js/）----------
+  function jlog(msg) { if (FC.log) { try { FC.log("[SC]", msg); } catch (e) {} } }
+
   // ---------- 供 workflow.js 复用的渲染原语（阶段 3）----------
   FC.helpers = {
     speak: speak,
@@ -1004,6 +1007,8 @@
     sess = card.session || {};
     mode = sess.mode || "read";
     choices = card.choices || [];
+    jlog("mount id=" + (card.id || "") + " mode=" + mode +
+         " choices=" + (choices.length || 0));
     preRating = "good";
     pendingAnswer = null;
     wrongToMeaning = false;
