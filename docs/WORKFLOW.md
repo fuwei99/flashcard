@@ -344,3 +344,45 @@ Flashcard.tts(text, lang)      ← 牌组只发这一句，不关心底下是谁
 - 重测轮是**无限循环直到全过**，没有「跳过」出口。词太生时可能卡住，考虑加逃生口。
 - 首次间隔恒为 1 天（`kLearningInterval`），之后按 FSRS 递增（约 1 → 7 → 20 → 50 → …）。
 - `kMaxInterval = 365` 对长期使用偏保守，可调。
+
+---
+
+## 11. 双向 RPC 接口（壳 → Web 原子能力）
+
+> 2026-09-16 晚场落地「阶段 2」的四个读 / 写接口，给 workflow.js 自己开车铺路。
+> **壳只做「能力」，不做「流程」。**
+
+Web 层（卡牌脚本 / workflow.js）通过 `Flashcard.call(method, params)` 调壳，
+壳执行 handler 后 `__resolve` 回执。方法清单在 `webview_bridge.dart`
+`_registerCore()` 注册：
+
+| 方法 | 参数 | 返回 | 说明 |
+|---|---|---|---|
+| `ping` | — | `{pong, ts}` | 连通性自检 |
+| `card.current` | — | 最近 mount 的卡 JSON | 当前这张卡 |
+| `card.get` | `{id}` | `{card}` / `{card:null}` | 单卡完整数据（fields+state+kv），与 mountCard 同形状 |
+| `card.due` | `{limit?, bookId?}` | `{ids, count}` | 到期队列（已学+到期，不含新卡），按 due 升序 |
+| `card.new` | `{limit?, bookId?}` | `{ids, count}` | 新卡队列（未学、未标熟） |
+| `review.commit` | `{id, rating}` | `{ok, id, rating, state}` | 跑 FSRS + 落盘，回新状态。唯一会动调度数据的入口 |
+| `state.kvGet` | `{id}` | 卡级 KV | 标熟 / 收藏… |
+| `state.kvPut` | `{id, key, value}` | `{ok}` | 写卡级 KV |
+| `session.save` | `{workflow, cursor}` | `{ok}` | 会话断点 |
+| `session.load` | — | `{workflow, cursor, updated_at}` | 读断点 |
+| `session.clear` | — | `{ok}` | 正常结束清断点 |
+| `sys.log` | `{msg}` | `{ok}` | 前端日志落 SwitchLog |
+
+**关键设计**：
+
+- **队列只读 id，不读盘**：`card.due` / `card.new` 只用 `Book.allCardIds`
+  （来自 index.json），所以列 6500 词的到期也不会把书读进内存；真要某张卡，
+  才 `card.get` 读它所在的那一章。
+- **FSRS 只有一份**：`review.commit` 内部调 `scheduler.review()`（Dart），
+  Web 层永远拿不到算法，杜绝第三份实现。
+- **卡片内容源**：新增 `app/lib/services/card_source.dart`（`CardSource` /
+  `BookCardSource`），把「卡片状态」（`CardStore`）和「卡片内容」
+  （`DeckRepository` 的书 / 章分片）缝在一起，桥不再直接摸 book。
+- **标熟即出队**：`card.due` / `card.new` 都跳过 `store.isKnown(id)`。
+
+**现状（诚实）**：接口齐了，但 workflow.js 还**没接管**全局流程 —— 真正的会话
+状态机仍在 Dart 的 `StudySession`。下一步（plan 阶段 4）才是把单元顺序 / 重测轮 /
+毕业判定搬进 workflow.js。见 `text/plan/2026-09-16_web_first_refactor_plan.md`。

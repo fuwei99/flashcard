@@ -19,7 +19,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../models/book.dart';
 import '../models/deck.dart';
 import 'bridge_rpc.dart';
+import 'card_source.dart';
 import 'card_store.dart';
+import 'scheduler.dart';
 import 'session_store.dart';
 import 'template_engine.dart';
 import 'tts_engine.dart';
@@ -35,6 +37,9 @@ class BridgeMessage {
 class WebViewBridge {
   final CardStore store;
   final TtsService tts;
+
+  /// 卡片内容源（阶段 2）：card.get / card.due / card.new 靠它。
+  final CardSource cardSource;
 
   /// 双向 RPC 核心（阶段 0）。方法在 [_registerCore] 里注册。
   final BridgeRpc rpc = BridgeRpc();
@@ -53,7 +58,11 @@ class WebViewBridge {
   /// 宿主控制器 —— RPC 回执 / 事件推送要它 runJavaScript。
   WebViewController? _ctrl;
 
-  WebViewBridge({required this.store, required this.tts}) {
+  WebViewBridge({
+    required this.store,
+    required this.tts,
+    CardSource? cardSource,
+  }) : cardSource = cardSource ?? BookCardSource() {
     sessions.init();
     _registerCore();
   }
@@ -89,6 +98,44 @@ class WebViewBridge {
       return {'ok': true};
     });
 
+    // ---- 原子能力（阶段 2）：卡片查询 + 评级提交 ----
+    // 这四条是 workflow.js 自己开车的油：card.due / card.new 拿队列 ->
+    // card.get 取内容 -> review.commit 交评级。壳只做「能力」，不做「流程」。
+
+    // 单卡完整数据（形状与 mountCard 灌进模板的一致）
+    rpc.register('card.get', (p) async {
+      final id = (p['id'] ?? '').toString();
+      final c = await cardSource.cardById(id);
+      return {'card': c == null ? null : _cardJson(c)};
+    });
+
+    // 到期队列（已学 + 到期，不含新卡）。ids 按 due 升序，limit 截断。
+    rpc.register('card.due', (p) async {
+      final ids = await _queue(p, reviewOnly: true);
+      return {'ids': ids, 'count': ids.length};
+    });
+
+    // 新卡队列（未学、未标熟）
+    rpc.register('card.new', (p) async {
+      final ids = await _queue(p, reviewOnly: false);
+      return {'ids': ids, 'count': ids.length};
+    });
+
+    // 交评级：跑 FSRS + 落盘，回新状态。这是唯一会动调度数据的入口。
+    rpc.register('review.commit', (p) async {
+      final id = (p['id'] ?? '').toString();
+      if (id.isEmpty) return {'ok': false, 'error': 'missing id'};
+      Rating rating;
+      try {
+        rating = Rating.fromKey((p['rating'] ?? 'good').toString());
+      } catch (_) {
+        rating = Rating.good;
+      }
+      final st = review(store.stateOf(id), rating);
+      store.putState(id, st);
+      return {'ok': true, 'id': id, 'rating': rating.key, 'state': st.toJson()};
+    });
+
     // 会话断点（workflow.js 用）
     rpc.register('session.save', (p) async {
       sessions.save((p['workflow'] ?? '').toString(), p['cursor']);
@@ -105,6 +152,61 @@ class WebViewBridge {
       await SwitchLog.write('web', (p['msg'] ?? '').toString());
       return {'ok': true};
     });
+  }
+
+  // ---- RPC 辅助 ----
+
+  /// 一张卡的完整数据（与 mountCard 灌进模板的形状一致）
+  Map<String, dynamic> _cardJson(FlashCard c) => {
+        'id': c.id,
+        'fields': c.fields,
+        'state': store.stateOf(c.id).toJson(),
+        'kv': store.kvOf(c.id),
+      };
+
+  /// 到期 / 新卡队列。
+  /// 只用 [Book.allCardIds]（来自 index.json，**不读章节文件**）判队列，
+  /// 所以列 6500 词的到期也不会把书读进内存。
+  Future<List<String>> _queue(
+    Map<String, dynamic> p, {
+    required bool reviewOnly,
+  }) async {
+    final limit = (p['limit'] as num?)?.toInt() ?? 0;
+    final bookId = (p['bookId'] ?? '').toString();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final dueRefs = <MapEntry<String, DateTime?>>[];
+    final newIds = <String>[];
+
+    for (final b in await cardSource.books()) {
+      if (bookId.isNotEmpty && b.bookId != bookId) continue;
+      for (final id in b.allCardIds) {
+        if (store.isKnown(id)) continue; // 标熟 = 永久出队
+        final st = store.stateOf(id);
+        if (st.isNew) {
+          if (!reviewOnly) newIds.add(id);
+        } else if (st.due == null || !st.due!.isAfter(today)) {
+          dueRefs.add(MapEntry(id, st.due));
+        }
+      }
+    }
+
+    if (!reviewOnly) {
+      return limit > 0 ? newIds.take(limit).toList() : newIds;
+    }
+
+    // 最该复习的排前面：按到期时间升序
+    dueRefs.sort((a, b) {
+      final da = a.value;
+      final db = b.value;
+      if (da == null && db == null) return 0;
+      if (da == null) return -1;
+      if (db == null) return 1;
+      return da.compareTo(db);
+    });
+    final ids = [for (final e in dueRefs) e.key];
+    return limit > 0 ? ids.take(limit).toList() : ids;
   }
 
   /// 壳 → Web 事件推送
