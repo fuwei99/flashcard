@@ -39,10 +39,12 @@ class TtsService {
   /// 打断代号：每次新朗读 +1；旧的顺序朗读发现代号变了立刻收手。
   int _gen = 0;
 
-  /// 流式本机是否可用。第一次流式失败就置 false，后续长句直接走
-  /// 「收全→落盘→播」，不再每次白炸一遍（白炸 = 双倍合成 + 双倍延迟）。
-  /// 不持久化：重启 App 自动重置，哪天修好了自己就恢复。
-  bool _streamUsable = true;
+  /// 流式连续失败计数。单次偶发中断（Connection aborted）不惩罚，下次照试；
+  /// 连续 [_kStreamFailLimit] 次才认定本机流式不可用，之后长句直接走
+  /// 「收全→落盘→播」，省掉每次白炸（白炸 = 双倍合成 + 双倍延迟）。
+  /// 任意一次成功即清零；不持久化，重启也重置。
+  int _streamFails = 0;
+  static const int _kStreamFailLimit = 3;
 
   /// 插件 id → 引擎（同插件复用；换插件才新建，JS 插件不必重载脚本）
   final Map<String, TtsEngine> _engines = {};
@@ -149,13 +151,16 @@ class TtsService {
       final long = !isSingleWord(text);
       final shouldCache = explicit == true ||
           (explicit == null && !long && settings.ttsWordCacheEnabled);
-      // 长句优先流式；本机已确认流式不可用就直接落盘，省一次无用合成。
-      final tryStream = !shouldCache && _streamUsable;
+      // 长句优先流式；偶发中断不惩罚，连续失败达阈值才认定本机不可用。
+      final tryStream = !shouldCache && _streamFails < _kStreamFailLimit;
       final ok = shouldCache
           ? await _speakCached(engine, text, lang, gen, opts)
           : (tryStream ? await _speakStreamed(engine, text, gen, opts) : false);
-      if (ok) return;
-      if (tryStream) _streamUsable = false; // 这台机器上流式挂了，别再试
+      if (ok) {
+        if (tryStream) _streamFails = 0; // 成功即清零，别让偶发失败累积成「不可用」
+        return;
+      }
+      if (tryStream) _streamFails++;
       // 流式失败：把整段收下来落临时文件再播（词条同款路径），
       // 别直接跳系统 TTS —— 那样音色全变了。
       if (!shouldCache && gen == _gen) {
