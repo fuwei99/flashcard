@@ -260,7 +260,7 @@ class TtsService {
     final fut = () async {
       final engine = await _ensureEngine(it.opts?.pluginId);
       if (engine == null || gen != _gen) return null;
-      final b = await _collect(engine, it.text);
+      final b = await _collect(engine, it.text, opts: it.opts);
       await TtsLog.write('seq',
           '预取${b == null ? '失败' : '完成'} ${b?.length ?? 0}B "${_abbr(it.text)}"');
       return b;
@@ -365,7 +365,7 @@ class TtsService {
       if (hit) {
         await TtsLog.write('cache', 'hit "${_abbr(text)}"');
       } else {
-        final bytes = await _collect(engine, text);
+        final bytes = await _collect(engine, text, opts: opts);
         if (bytes == null || bytes.isEmpty) return false;
         if (gen != _gen) return true; // 被打断，别写半截缓存
         await file.parent.create(recursive: true);
@@ -408,10 +408,14 @@ class TtsService {
     } catch (_) {}
   }
 
-  Future<Uint8List?> _collect(TtsEngine engine, String text) async {
+  /// 收全一段合成的字节。
+  /// [opts] 必须原样传下去 —— voice / rate / pitch 都在里面。
+  /// 丢了就回落插件默认（例句被念成单词音色，就是这么来的）。
+  Future<Uint8List?> _collect(TtsEngine engine, String text,
+      {TtsOptions? opts}) async {
     try {
       final b = BytesBuilder();
-      await for (final chunk in engine.synthesize(text)) {
+      await for (final chunk in engine.synthesize(text, opts: opts)) {
         b.add(chunk);
       }
       return b.takeBytes();
@@ -460,7 +464,7 @@ class TtsService {
       final f = await _cacheFile(text, lang, opts);
       if (f == null) return true; // 算不出来路径，别重排
       if (await f.exists()) return true;
-      final bytes = await _collect(engine, text);
+      final bytes = await _collect(engine, text, opts: opts);
       if (bytes == null || bytes.isEmpty) return false;
       await f.parent.create(recursive: true);
       await f.writeAsBytes(bytes, flush: true);
@@ -569,7 +573,7 @@ class TtsService {
   Future<bool> _speakCollected(TtsEngine engine, String text, String lang,
       int gen, TtsOptions? opts, {void Function()? onStarted}) async {
     try {
-      final bytes = await _collect(engine, text);
+      final bytes = await _collect(engine, text, opts: opts);
       if (bytes == null || bytes.isEmpty) return false;
       if (gen != _gen) return true;
       final f = await _writeTmp(bytes, text, lang, opts, engine);

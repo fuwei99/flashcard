@@ -62,19 +62,32 @@
     var meta = cardMeta(id);
     var word = meta && meta.word;
     if (word) {
-      try { FC.tts(word, pfOpts(TTS_WORD, "en-US")); } catch (e) {}
+      try {
+        FC.tts(word, pfOpts(TTS_WORD, "en-US"));
+        log("[PF] word " + id + " «" + word + "»");
+      } catch (e) { log("[PF] word 抛错 " + id + " " + e); }
+    } else {
+      log("[PF] 无 word " + id + " meta=" + (meta ? "有" : "null"));
     }
 
     // 例句：SessionPlan 只带 {id, word, modes}，得单独取卡；取不到就只预取单词
-    if (!FC.call) return;
+    if (!FC.call) { log("[PF] 无 FC.call，跳过例句"); return; }
     try {
       FC.call("card.get", { id: id }).then(function (r) {
-        var f = r && r.card && r.card.fields;
+        var c = r && r.card;
+        var f = c && c.fields;
         var s = f ? String(f.sentence_en || "").replace(/<[^>]+>/g, "").trim() : "";
-        if (!s) return;
-        try { FC.tts(s, pfOpts(TTS_SENTENCE, "en-US")); } catch (e) {}
-      }).catch(function () {});
-    } catch (e) {}
+        if (!s) {
+          log("[PF] 无例句 " + id + " card=" + (c ? "有" : "null") +
+              " fields=" + (f ? Object.keys(f).join(",") : "null"));
+          return;
+        }
+        try {
+          FC.tts(s, pfOpts(TTS_SENTENCE, "en-US"));
+          log("[PF] sent " + id + " «" + s.slice(0, 36) + "»");
+        } catch (e) { log("[PF] sent 抛错 " + e); }
+      }).catch(function (e) { log("[PF] card.get 失败 " + id + " " + e); });
+    } catch (e) { log("[PF] 异常 " + e); }
   }
 
   /// 往后预取 PF_AHEAD 张：跟着当前队列走，天然按学习顺序
@@ -86,6 +99,10 @@
       if (_pfDone[id]) continue;
       n++;
       prefetchOne(id);
+    }
+    if (n) {
+      log("[PF] 本轮排 " + n + " 张 queue=" + S.queue.length +
+          " 累计已排=" + Object.keys(_pfDone).length);
     }
   }
 
