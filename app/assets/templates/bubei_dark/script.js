@@ -82,6 +82,26 @@
     FC.tts(say, o);
   }
 
+  // ---------- 语篇专用朗读（防重复触发）----------
+  // 进页自动播（延迟 260ms）和用户着急手动点，两路都会调到这，
+  // 壳那边就是 gen 连跳、豆包 ws 重开，白等两秒。
+  // 壳层去重会引新 bug，所以在这一层吃掉：同一段文本 3 秒内只发一次。
+  var _lastPassage = "";     // 上次发出的语篇正文
+  var _lastPassageAt = 0;    // 发出时刻
+  var PASSAGE_DEDUPE_MS = 3000;
+  function speakPassage() {
+    var say = String(passageText() || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!say) return;
+    var now = Date.now();
+    if (say === _lastPassage && now - _lastPassageAt < PASSAGE_DEDUPE_MS) return;
+    _lastPassage = say;
+    _lastPassageAt = now;
+    speak(say, "en-US", TTS_PASSAGE);
+  }
+
   // ---------- 词义页：义项列表 ----------
   // 一词多义 / 一词多性在这里逐条渲染。
   // 老数据（只有 pos + meaning 两个字符串）被折成一条，不改 json 也能看。
@@ -1094,6 +1114,7 @@
     //    cloze 例外：答案就是这个单词，一进卡就念 = 直接泄题。
     if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
     if (FC.ttsStop) FC.ttsStop(); // 切卡先掐断上一张可能还在念的语音
+    _lastPassage = ""; _lastPassageAt = 0; // 换卡了，防重复窗口清零
     if (curWord && mode !== "cloze") {
       autoTtsTimer = setTimeout(function () {
         autoTtsTimer = null;
@@ -1103,7 +1124,7 @@
       // 语篇通读：进页自动朗读全文（保持旧版「进卡即读」的听感）
       autoTtsTimer = setTimeout(function () {
         autoTtsTimer = null;
-        speak(passageText(), "en-US", TTS_PASSAGE);
+        speakPassage();
       }, 260);
     }
   }
@@ -1159,7 +1180,7 @@
     var ttsPassage = e.target.closest('[data-role="tts-passage"]');
     if (ttsPassage) {
       e.stopPropagation();
-      speak(passageText(), "en-US", TTS_PASSAGE);
+      speakPassage();
       return;
     }
 
