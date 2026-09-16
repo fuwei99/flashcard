@@ -683,8 +683,8 @@
 
   function showPassageTooltip(el) {
     var w = el.getAttribute("data-word") || el.textContent || "";
-    var pos = el.getAttribute("data-pos") || "";
-    var mean = el.getAttribute("data-meaning") || "";
+    var pos = String(el.getAttribute("data-pos") || "").trim();
+    var mean = String(el.getAttribute("data-meaning") || "").trim();
     speak(w, "en-US", TTS_WORD);
     var tip = root.querySelector(".fc-passage .fc-passage-tip");
     if (!tip) return;
@@ -694,12 +694,37 @@
     a.textContent = w;
     var b = document.createElement("div");
     b.className = "fc-tip-mean";
+    // 数据源的 meaning 有时已经带了词性前缀（"adj. 财政的…"），
+    // 再拼一次 pos 就变成「adj. adj. 财政的…」——这里去重。
+    if (pos && mean && mean.indexOf(pos) === 0) pos = "";
     b.textContent = (pos ? pos + " " : "") + (mean || "（本章未收录释义）");
     tip.appendChild(a);
     tip.appendChild(b);
     tip.classList.add("show");
+    // 浮到目标词正上方（上方放不下就翻到下方）；fixed 定位，不被正文滚动裁掉
+    positionTip(tip, el);
     if (passageTipTimer) clearTimeout(passageTipTimer);
     passageTipTimer = setTimeout(function () { tip.classList.remove("show"); }, 3000);
+  }
+
+  // 把浮层摆到目标词上方（水平居中，越界自动收回，上方不够翻到下方）
+  function positionTip(tip, el) {
+    var r = el.getBoundingClientRect();
+    var vw = window.innerWidth || document.documentElement.clientWidth || 360;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 640;
+    var tw = tip.offsetWidth || 0;
+    var th = tip.offsetHeight || 0;
+    var m = 8;
+    var left = r.left + r.width / 2 - tw / 2;
+    if (left < m) left = m;
+    if (left + tw > vw - m) left = vw - m - tw;
+    if (left < m) left = m;
+    var top = r.top - th - m;
+    if (top < m) top = r.bottom + m;
+    if (top + th > vh - m) top = vh - m - th;
+    if (top < m) top = m;
+    tip.style.left = Math.round(left) + "px";
+    tip.style.top = Math.round(top) + "px";
   }
 
   // ---------- 语篇选词（多邻国式填词） ----------

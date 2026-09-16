@@ -89,17 +89,21 @@ class CardStore {
 
   Map<String, dynamic> kvOf(String cardId) => _kv[cardId] ?? {};
 
+  /// 落盘策略：公共文件可用时只 append 追加日志（O(1)），**不**再全量刷 prefs；
+  /// 只有目录不可用（没文件兜底）时才回退到 prefs 全量写。
+  /// 之前这里每答一张卡就 `_flushPrefs()` 把全部状态 encode 一遍，
+  /// 直接把 append-only 的优化废掉，卡越多越卡 —— 是回归。
   void putKv(String cardId, String key, dynamic value) {
     final rec = _kv[cardId] ??= <String, dynamic>{};
     rec[key] = value;
     _append(cardId, kv: rec);
-    _flushPrefs();
+    if (_journal == null) _flushPrefs();
   }
 
   void putState(String cardId, CardState st) {
     _states[cardId] = st;
     _append(cardId, st: st);
-    _flushPrefs();
+    if (_journal == null) _flushPrefs();
   }
 
   /// 到期 / 新卡 的复习队列
@@ -119,11 +123,6 @@ class CardStore {
     }
     return [...due, ...fresh];
   }
-
-  int get dueCount => _states.values
-      .where((s) =>
-          !s.isNew && s.due != null && !s.due!.isAfter(DateTime.now()))
-      .length;
 
   /// 已处理过的卡片数（学过 或 标熟）—— 章节进度条用它
   int countLearned(List<String> ids) =>
@@ -272,6 +271,8 @@ class CardStore {
       if (j != null && j.existsSync()) j.writeAsStringSync('', flush: true);
     } catch (_) {}
     _journalLines = 0;
+    // 压完顺手把 prefs 兜底也刷一遍，保证两处一致
+    _flushPrefs();
   }
 
   void _writeSnap() {

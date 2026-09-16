@@ -903,15 +903,23 @@ html, body {
 
 .fc-passage-tip {
   display: none;
-  margin-top: 18px;
-  padding: 14px 16px;
+  /* 浮动释义：固定定位，由 JS 摆到目标词上方；不再占正文流位置 */
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  max-width: 320px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px;
   border-radius: var(--r-card);
   background: var(--bg-card);
   border: 1px solid var(--teal-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 .fc-passage-tip.show {
   display: block;
-  animation: fcFade 0.18s ease;
+  animation: fcFade 0.14s ease;
 }
 .fc-tip-word {
   font-size: 18px;

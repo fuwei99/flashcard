@@ -63,7 +63,8 @@ class HomeScreenState extends State<HomeScreen> {
     var n = 0;
     for (final b in books) {
       for (final id in b.allCardIds) {
-        if (!widget.store.isLearned(id)) n++;
+        // 标熟 = 永久出队，不算「新学」—— 否则首页数字和实际开背队列对不上
+        if (!widget.store.isLearned(id) && !widget.store.isKnown(id)) n++;
       }
     }
     return n;

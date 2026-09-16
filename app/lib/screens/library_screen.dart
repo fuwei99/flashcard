@@ -14,6 +14,7 @@ import '../services/deck_repository.dart';
 import '../services/study_settings.dart';
 import '../services/transfer_service.dart';
 import 'book_detail_screen.dart';
+import 'search_screen.dart';
 
 /// 书架的两种归类
 enum LibraryKind { word, card }
@@ -282,6 +283,21 @@ class LibraryScreenState extends State<LibraryScreen> {
     ));
   }
 
+  /// 打开搜索（跨所有单词书搜单词 / 释义）
+  void _openSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchScreen(
+          repo: widget.repo,
+          templates: widget.templates,
+          store: widget.store,
+          settings: widget.settings,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final books = _books;
@@ -290,6 +306,14 @@ class LibraryScreenState extends State<LibraryScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF141D1F),
         elevation: 0,
+        // 「单词」页左上角给一个搜索入口（Card 页不放）
+        leading: widget.kind == LibraryKind.word
+            ? IconButton(
+                icon: const Icon(Icons.search, color: Color(0xFF8C9DA2)),
+                tooltip: '搜索单词',
+                onPressed: _openSearch,
+              )
+            : null,
         title: Text(_title,
             style: const TextStyle(
                 color: Color(0xFFF0F4F5),

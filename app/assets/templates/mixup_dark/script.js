@@ -89,11 +89,28 @@
     }
   });
 
-  // ---------- 初始化 ----------
-  function boot() {
+  // ---------- 渲染 ----------
+  function render() {
     renderSenses(FC.getCard());
     root.setAttribute("data-state", "front");
     root.setAttribute("data-pre", "");
+  }
+
+  // SPA 增量挂卡：原生切卡 -> mountCard -> 这里重渲染。
+  // 以前没有这段，切卡后画面永远停在上一张（模板等于废的）。
+  if (FC.onMount) {
+    FC.onMount(function () {
+      render();
+      if (FC.ready) FC.ready();
+    });
+  }
+
+  // ---------- 初始化 ----------
+  function boot() {
+    // 真机骨架页首帧是空壳（id 为空），等原生 mountCard 灌数据后再渲染
+    var injected = window.__FLASHCARD_CARD__;
+    if (injected && !injected.id) return;
+    render();
     if (FC.ready) FC.ready();
   }
   if (document.readyState === "loading") {

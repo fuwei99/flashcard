@@ -262,7 +262,10 @@ class DeckRepository {
     for (final dir in await _booksDirs()) {
       try {
         if (!await dir.exists()) continue;
-        await for (final e in dir.list()) {
+        // 先把目录项收完再处理：_shardLegacy 会在遍历中建目录 / 改名，
+        // 边遍历边改目录会让 stream 漏项。
+        final entries = await dir.list().toList();
+        for (final e in entries) {
           try {
             if (e is Directory) {
               // 分片格式
@@ -344,6 +347,12 @@ class DeckRepository {
     if (!book.hasChapters) {
       final file = File('${booksDir.path}/${book.bookId}.json');
       await file.writeAsString(json.encode(book.toJson()));
+      // 这本书之前可能是分片目录 / .bak 备份，单文件写完后要清干净，
+      // 否则下次读盘先撞上旧目录里的 index.json，读到过期内容。
+      final oldDir = Directory('${booksDir.path}/${book.bookId}');
+      if (await oldDir.exists()) await oldDir.delete(recursive: true);
+      final oldBak = File('${booksDir.path}/${book.bookId}.json.bak');
+      if (await oldBak.exists()) await oldBak.delete();
       return;
     }
 
