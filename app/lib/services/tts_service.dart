@@ -148,6 +148,11 @@ class TtsService {
           ? await _speakCached(engine, text, lang, gen, opts)
           : await _speakStreamed(engine, text, gen, opts);
       if (ok) return;
+      // 流式仍失败：先把整段收下来落临时文件再播（词条同款路径），
+      // 别直接跳系统 TTS —— 那样音色全变了。
+      if (!shouldCache && gen == _gen) {
+        if (await _speakCollected(engine, text, lang, gen, opts)) return;
+      }
     }
 
     if (gen != _gen) return; // 已被新朗读打断，别再兜底出声
@@ -260,6 +265,37 @@ class TtsService {
       return true;
     } catch (e, st) {
       await TtsLog.write('stream', 'ERROR: $e\n$st');
+      return false;
+    }
+  }
+
+  /// 流式失败时的兜底：把整段收全 → 落临时文件 → 按文件播。
+  /// 词条那条路（_speakCached）已证明「文件播放」稳；流式万一再出幺蛾子，
+  /// 用这个兜住，音色还是原插件，别动不动退到系统 TTS 把音色换掉。
+  Future<bool> _speakCollected(TtsEngine engine, String text, String lang,
+      int gen, TtsOptions? opts) async {
+    try {
+      final bytes = await _collect(engine, text);
+      if (bytes == null || bytes.isEmpty) return false;
+      if (gen != _gen) return true;
+      final dir = await DataDir.sub('cache/tts/.tmp');
+      if (dir == null) return false;
+      await dir.create(recursive: true);
+      final hash = sha1
+          .convert(utf8.encode('$text|$lang|${opts?.fingerprint ?? ''}'))
+          .toString()
+          .substring(0, 12);
+      final ext = engine.contentType.contains('mpeg') ? 'mp3' : 'aac';
+      final f = File('${dir.path}/s-$hash.$ext');
+      await f.writeAsBytes(bytes, flush: true);
+      if (gen != _gen) return true;
+      await TtsLog.write(
+          'stream', '流式失败→落临时文件播放 ${bytes.length}B "${_abbr(text)}"');
+      await _player.setFilePath(f.path);
+      await _player.play();
+      return true;
+    } catch (e, st) {
+      await TtsLog.write('stream', 'collected ERROR: $e\n$st');
       return false;
     }
   }
@@ -434,12 +470,10 @@ class _EngineStreamSource extends StreamAudioSource {
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
     _ensureStarted();
-    final from = (start == null || start < 0) ? 0 : start;
     final ctrl = StreamController<List<int>>();
-    // 先把已收到的补上：新订阅者不会丢前面的音频
-    if (from < _buffer.length) {
-      ctrl.add(_buffer.sublist(from));
-    }
+    // 不认 range（rangeRequestsSupported=false）：永远从 0 补发。
+    // 若还按 start 切片却把 offset 报成 null，客户端会把这段当 0 起，音频错位。
+    if (_buffer.isNotEmpty) ctrl.add(_buffer.sublist(0));
     if (_done) {
       if (_error != null) ctrl.addError(_error!, _stack);
       await ctrl.close();
@@ -451,7 +485,15 @@ class _EngineStreamSource extends StreamAudioSource {
       rangeRequestsSupported: false,
       sourceLength: null,
       contentLength: null,
-      offset: 0,
+      // ★ 必须 null —— 这是「例句必炸 Source error」的真凶 ★
+      // just_audio 0.9.46 在本地代理 _ProxyHandler 里：
+      //   if (rangeRequest != null && sourceResponse.offset != null) {
+      //     _HttpRangeResponse(offset, offset + contentLength! - 1, sourceLength)
+      //   }
+      // ExoPlayer 一探测就带 Range 头 → 进该分支 → contentLength! 对 null 空断言崩，
+      // 代理断连 → ExoPlayer 报 TYPE_SOURCE（即 "(0) Source error"）。
+      // offset=null 会走 else：contentLength ?? -1 → chunked，正常流式。
+      offset: null,
       contentType: _contentType,
       stream: ctrl.stream,
     );
