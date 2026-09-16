@@ -82,20 +82,65 @@ class PageListBody extends StatelessWidget {
     this.passage,
   });
 
+  /// 开一轮背诵。
+  ///
+  /// 有没背过的 → 直接背那些。
+  /// 全背完了 → 弹窗问「还要再背一次吗」；确认后**整章重背**：
+  ///   不清空任何历史，只是把每张卡再过一遍 —— 每张毕业时照常走
+  ///   `review()`，遗忘曲线顺延、`markDone()` 计入今日已复习。
   void _startReview(BuildContext context, bool shuffle) {
     if (template == null) return;
-    // 只背没学过的卡；已背过的、以及手动标熟的不重复
-    final list = cards
+
+    final fresh = cards
         .where((c) => !store.isLearned(c.id) && !store.isKnown(c.id))
         .toList();
-    if (list.isEmpty) {
+    if (fresh.isNotEmpty) {
+      _pushReview(context, fresh, shuffle);
+      return;
+    }
+
+    // 已背完。标熟的仍然排除 —— 那是「永久出队」，重背也不该把它拉回来
+    final redo = cards.where((c) => !store.isKnown(c.id)).toList();
+    if (redo.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('本章新词已背完，去顶部「开始复习」巩固'),
+        content: Text('本章的词都标熟了，没有可背的'),
         backgroundColor: Color(0xFF1B2629),
         behavior: SnackBarBehavior.floating,
       ));
       return;
     }
+
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2629),
+        title: const Text('你已经背完了',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: const Text(
+            '还要再背一次吗？\n\n再背一次不会清空进度，会把本章当作一次复习：'
+            '每个词的遗忘曲线照常更新，并计入今日已复习。',
+            style:
+                TextStyle(color: Color(0xFFB7C4C8), fontSize: 13, height: 1.5)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                const Text('那算了', style: TextStyle(color: Color(0xFF8C9DA2))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                const Text('再背一次', style: TextStyle(color: Color(0xFF00C08B))),
+          ),
+        ],
+      ),
+    ).then((again) {
+      if (again != true || !context.mounted) return;
+      _pushReview(context, redo, shuffle);
+    });
+  }
+
+  void _pushReview(BuildContext context, List<FlashCard> list, bool shuffle) {
     if (shuffle) list.shuffle(math.Random());
 
     Navigator.push(
@@ -108,7 +153,7 @@ class PageListBody extends StatelessWidget {
               passage: passage,
               cards: list,
               passageCards: cards,
-              // 只挖「本章还没背过的词」；背过的只在语篇里划线展示
+              // 只挖「这一轮要背的词」；其余目标词在语篇里只划线展示
               blankLemmas: StudyPlanner.blankLemmasFor(list, passage),
               readFirst: true,
             ),
