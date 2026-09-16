@@ -543,6 +543,19 @@ html, body {
   display: none;
 }
 
+/* 语篇选词只有一个「pass」—— 嫌磨人直接整段跳过。
+   标熟 / 拼写那排按钮在两阶段全收起（card 为 null，点了会写脏数据）。 */
+.fc-top-pass { display: none; }
+.fc-root[data-mode="passage_cloze"] .fc-top-pass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 /* ============================================================
    拼写轮（一轮走完触发，整轮覆盖在卡片之上）
    ------------------------------------------------------------

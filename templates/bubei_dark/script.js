@@ -1339,6 +1339,9 @@
     root.querySelectorAll(".fc-actions button").forEach(function (b) {
       b.removeAttribute("disabled");
     });
+    // 顶栏 pass 是「一次性」按钮：上一章点过就 disabled 了，切章必须复位
+    var passBtn = root.querySelector(".fc-top-pass");
+    if (passBtn) passBtn.removeAttribute("disabled");
     var continueBtn = root.querySelector(".fc-btn-continue");
     if (continueBtn) {
       continueBtn.setAttribute("disabled", "disabled");
@@ -1414,6 +1417,12 @@
         toggleKnown();
       } else if (which === "spell") {
         enterSpell();
+      } else if (which === "pass") {
+        // 语篇选词太磨人：一键整段跳过，直接进单词背诵
+        if (topBtn.hasAttribute("disabled")) return;
+        topBtn.setAttribute("disabled", "disabled");
+        if (FC.ttsStop) FC.ttsStop();
+        FC.answer("good");
       }
       return;
     }
