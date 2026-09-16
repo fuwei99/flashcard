@@ -16,7 +16,21 @@ import 'book.dart';
 import 'deck.dart';
 import '../services/scheduler.dart';
 
-enum SessionPhase { passage, passageCloze, learn, choice, cloze, done }
+enum SessionPhase {
+  passage,
+  passageCloze,
+  learn,
+  choice,
+  cloze,
+
+  /// 一轮（复习段 / 新学段）走完，等用户选「开始拼写 / 跳过」
+  spellPrompt,
+
+  /// 拼写轮进行中 —— 循环跑在模板里，这里只等它回报 spellDone
+  spell,
+
+  done,
+}
 
 enum StudyMode {
   read('read'),
@@ -116,11 +130,32 @@ class StudySession {
   int _roundTotal = 0;
   int _modeIdx = 0;
 
+  /// 前导「复习单元」个数（StudyPlanner 保证复习段排在新学段前面）。
+  /// 复习段走完先问一次拼写；全部单元走完再问一次。
+  int _leadingReviewCount = 0;
+  bool _reviewSpellDone = false;
+  bool _finalSpellDone = false;
+
+  /// 拼写轮结束后：true = 接着开下一个单元；false = 整场结束
+  bool _spellReturnsToUnits = false;
+
+  /// 当前拼写轮要考的卡
+  List<FlashCard> _spellCards = const [];
+  int _spellDoneCount = 0;
+
   StudySession(
     List<StudyUnit> units, {
     this.passageClozeEnabled = true,
     this.retestModes = const [StudyMode.choice, StudyMode.cloze],
   }) : units = units {
+    // 前导的复习单元有几个 —— 复习段和新学段的分界线
+    var n = 0;
+    for (final u in units) {
+      if (!u.isReview) break;
+      n++;
+    }
+    _leadingReviewCount = n;
+
     if (units.isEmpty) {
       phase = SessionPhase.done;
     } else {
@@ -146,6 +181,9 @@ class StudySession {
         return const StudyStep(null, StudyMode.passage, 0);
       case SessionPhase.passageCloze:
         return const StudyStep(null, StudyMode.passageCloze, 0);
+      case SessionPhase.spellPrompt:
+      case SessionPhase.spell:
+        return null; // 拼写轮没有「当前卡片」—— 整轮由模板自己跑
       default:
         return _queue.isEmpty ? null : _queue.first;
     }
@@ -160,6 +198,9 @@ class StudySession {
       case SessionPhase.passage:
       case SessionPhase.passageCloze:
         return 1;
+      case SessionPhase.spellPrompt:
+      case SessionPhase.spell:
+        return _spellCards.length;
       default:
         return _roundTotal;
     }
@@ -170,6 +211,9 @@ class StudySession {
       case SessionPhase.passage:
       case SessionPhase.passageCloze:
         return 0;
+      case SessionPhase.spellPrompt:
+      case SessionPhase.spell:
+        return _spellDoneCount;
       default:
         return (_roundTotal - _queue.length).clamp(0, _roundTotal);
     }
@@ -204,11 +248,92 @@ class StudySession {
 
   void _nextUnit() {
     _unitIdx++;
+
+    // 复习段 → 新学段 的分界：先把「复习这一轮」的拼写过掉
+    if (!_reviewSpellDone &&
+        _leadingReviewCount > 0 &&
+        _unitIdx == _leadingReviewCount &&
+        _unitIdx < units.length) {
+      _reviewSpellDone = true;
+      final cards = _cardsBetween(0, _leadingReviewCount);
+      if (cards.isNotEmpty) {
+        _spellCards = cards;
+        _spellReturnsToUnits = true;
+        _spellDoneCount = 0;
+        phase = SessionPhase.spellPrompt;
+        return;
+      }
+    }
+
     if (_unitIdx >= units.length) {
+      // 全部单元走完 → 最后一场拼写（新学段；只有复习段时就是复习那轮）
+      if (!_finalSpellDone) {
+        _finalSpellDone = true;
+        final from = _reviewSpellDone ? _leadingReviewCount : 0;
+        final cards = _cardsBetween(from, units.length);
+        if (cards.isNotEmpty) {
+          _spellCards = cards;
+          _spellReturnsToUnits = false;
+          _spellDoneCount = 0;
+          phase = SessionPhase.spellPrompt;
+          return;
+        }
+      }
       phase = SessionPhase.done;
       return;
     }
+
     _startUnit();
+  }
+
+  /// 把 [from, to) 号单元的卡片合成一轮拼写清单（去重，保序）
+  List<FlashCard> _cardsBetween(int from, int to) {
+    final out = <FlashCard>[];
+    final seen = <String>{};
+    for (var i = from; i < to && i < units.length; i++) {
+      for (final c in units[i].cards) {
+        if (seen.add(c.id)) out.add(c);
+      }
+    }
+    return out;
+  }
+
+  // ---------- 拼写轮 ----------
+  //
+  // 只负责「什么时候问」和「问完往哪走」。真正一轮拼写的循环
+  // （逐格输入 / 跳过 / 提示 / 忘记了 / 三次机会 / 放回队尾）跑在模板里，
+  // 跑完回报 spellDone。
+  //
+  // **不写 FSRS**：拼写是加练，不该动 due / stability / difficulty。
+
+  /// 当前拼写轮要考的卡（spellPrompt / spell 阶段有效）
+  List<FlashCard> get spellCards => List.unmodifiable(_spellCards);
+
+  /// 用户在弹窗里点了「开始拼写」
+  void beginSpell() {
+    if (phase != SessionPhase.spellPrompt) return;
+    _spellDoneCount = 0;
+    phase = SessionPhase.spell;
+  }
+
+  /// 拼写轮结束（全部拼过 / 用户点「结束拼写」）
+  void endSpell() {
+    if (phase != SessionPhase.spellPrompt && phase != SessionPhase.spell) {
+      return;
+    }
+    _spellCards = const [];
+    _spellDoneCount = 0;
+    if (_spellReturnsToUnits) {
+      _spellReturnsToUnits = false;
+      _startUnit();
+    } else {
+      phase = SessionPhase.done;
+    }
+  }
+
+  /// 模板回报拼写进度（原生顶栏显示用）
+  void setSpellProgress(int done) {
+    _spellDoneCount = done < 0 ? 0 : done;
   }
 
   /// 语篇通读完成 -> 语篇选词（若开启）或直接进入逐卡 learn

@@ -126,6 +126,20 @@ class WebViewBridge {
     await ctrl.runJavaScript(js);
   }
 
+  /// 拼写轮：把整轮要拼的条目一次性灌给模板，循环由模板自己跑。
+  ///
+  /// 条目形状（三种 kind）：
+  ///   sentence —— 有例句：给例句（模板自己挖空，能认变形词）+ 中文释义
+  ///   word     —— 没例句：只给中文释义，纯拼单词
+  ///   passage  —— 在语篇里出现过：给语篇原文 + 文中表面形式，排最后
+  Future<void> startSpellRound(
+      WebViewController ctrl, List<Map<String, dynamic>> items) async {
+    final jsonStr = TemplateEngine.jsonForJs({'items': items});
+    await ctrl.runJavaScript(
+        "if(window.Flashcard&&window.Flashcard.startSpellRound)"
+        "{window.Flashcard.startSpellRound('$jsonStr');}");
+  }
+
   /// 把语篇解析成模板友好的 segments，并把每个目标词关联到本章卡片（词性/释义）。
   /// 模板拿到的是现成结构，不需要自己解析 [word] / [surface|lemma]。
   /// [blankLemmas] 为 null 时挖全部标记词；否则只挖命中的 lemma。

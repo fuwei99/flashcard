@@ -11,6 +11,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../models/book.dart';
 import '../models/deck.dart';
 import '../models/study_session.dart';
 import '../services/card_store.dart';
@@ -79,6 +80,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// mount 世代号：只有最后一次 mount 算数，过期的那次只记日志
   int _mountGen = 0;
 
+  /// 「要不要拼写」弹窗正在显示 —— 防止并发弹两次
+  bool _spellDialogOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -97,6 +101,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _onMsg(BridgeMessage m) async {
+    // 拼写轮：整轮循环在模板里跑，跑完回报 spellDone
+    if (m.type == 'spellDone') {
+      _session.endSpell();
+      await _resume();
+      return;
+    }
+    if (m.type == 'spellProgress') {
+      final d = (m.data['done'] is num) ? (m.data['done'] as num).toInt() : 0;
+      _session.setSpellProgress(d);
+      if (mounted) setState(() {});
+      return;
+    }
     if (m.type != 'answer') return;
     // 卡顿根因之一：answer 从 broadcast stream 进来，天然可并发。
     // 两条并发 answer 会各推进一次状态 -> 「点一下没反应、再点跳两页」。
@@ -139,6 +155,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
         case SessionPhase.cloze:
           _session.submitRetest(step.mode, rating != Rating.again);
           break;
+        case SessionPhase.spellPrompt:
+        case SessionPhase.spell:
         case SessionPhase.done:
           break;
       }
@@ -168,6 +186,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
       if (!mounted) return;
       setState(() {});
       if (_session.finished) return;
+      // 一轮走完 → 先问要不要拼写（拼写轮不落 FSRS）
+      if (_session.phase == SessionPhase.spellPrompt) {
+        await _maybeSpellPrompt();
+        return;
+      }
       await _load();
       final ms = DateTime.now().difference(t0).inMilliseconds;
       await SwitchLog.write('switch', 'answer 处理完 ${ms}ms');
@@ -204,6 +227,160 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ),
     );
     _pausing = false;
+  }
+
+  // ---------- 拼写轮 ----------
+
+  /// 一轮走完的「要不要拼写」弹窗。不强制，不写 FSRS。
+  Future<void> _maybeSpellPrompt() async {
+    if (_spellDialogOpen) return;
+    if (_session.phase != SessionPhase.spellPrompt) return;
+    if (!mounted) return;
+    _spellDialogOpen = true;
+
+    final n = _session.spellCards.length;
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B2629),
+        title: const Text('这一轮拼写吗？',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: Text('$n 个词 · 拼错回队尾重来，不计入复习进度',
+            style: const TextStyle(color: Color(0xFFB7C4C8), fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('跳过', style: TextStyle(color: Color(0xFF8C9DA2))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('开始拼写',
+                style: TextStyle(color: Color(0xFF00C08B))),
+          ),
+        ],
+      ),
+    );
+    _spellDialogOpen = false;
+    if (!mounted) return;
+
+    if (go == true) {
+      _session.beginSpell();
+      setState(() {});
+      await _startSpellRound();
+    } else {
+      _session.endSpell();
+      await _resume();
+    }
+  }
+
+  /// 拼写轮结束后的「回主线」：可能接着开下一个单元，也可能整场结束
+  Future<void> _resume() async {
+    if (!mounted) return;
+    setState(() {});
+    if (_session.finished) return;
+    if (_session.phase == SessionPhase.spellPrompt) {
+      await _maybeSpellPrompt();
+      return;
+    }
+    await _load();
+  }
+
+  Future<void> _startSpellRound() async {
+    final ctrl = _controller;
+    final items = _buildSpellItems(_session.spellCards);
+    if (ctrl == null || items.isEmpty) {
+      _session.endSpell();
+      await _resume();
+      return;
+    }
+    await _bridge.startSpellRound(ctrl, items);
+  }
+
+  /// 中文释义 —— 全部义项都显示
+  static String _spellCn(FlashCard c) {
+    final full = c.meaningFull.trim();
+    return full.isNotEmpty ? full : c.meaningPlain.trim();
+  }
+
+  /// 语篇正文（目标词用文中表面形式），语篇拼写用
+  static String _passagePlain(Passage p) {
+    final sb = StringBuffer();
+    for (final s in p.segments) {
+      sb.write(s.isWord ? (s.surface ?? '') : (s.text ?? ''));
+    }
+    return sb.toString();
+  }
+
+  /// 这个词在语篇里的表面形式（可能是变形词）
+  static String? _passageSurface(Passage p, String word) {
+    final lemma = word.trim().toLowerCase();
+    for (final s in p.segments) {
+      if (!s.isWord) continue;
+      if ((s.lemma ?? '').trim().toLowerCase() == lemma) {
+        return (s.surface ?? '').trim();
+      }
+    }
+    return null;
+  }
+
+  /// 拼这一轮的条目清单：
+  ///   有例句 → 句子拼写；没例句 → 单独拼写；在语篇里出现过 → 语篇拼写（排最后）
+  ///   标熟的词直接跳过。
+  List<Map<String, dynamic>> _buildSpellItems(List<FlashCard> cards) {
+    // 卡 -> 它所属单元的语篇
+    final passageOf = <String, Passage>{};
+    for (final u in _session.units) {
+      final p = u.passage;
+      if (p == null || !p.hasContent) continue;
+      for (final c in u.cards) {
+        passageOf[c.id] = p;
+      }
+    }
+
+    final sentence = <Map<String, dynamic>>[];
+    final single = <Map<String, dynamic>>[];
+    final passage = <Map<String, dynamic>>[];
+
+    for (final c in cards) {
+      if (widget.store.isKnown(c.id)) continue; // 标熟 = 跳过拼写
+      final w = c.word.trim();
+      if (w.isEmpty) continue;
+      final cn = _spellCn(c);
+
+      if (c.hasSentence) {
+        sentence.add({
+          'kind': 'sentence',
+          'id': c.id,
+          'word': w,
+          'cn': cn,
+          'sentence': (c.fields['sentence_en'] ?? '').toString(),
+        });
+      } else {
+        single.add({
+          'kind': 'word',
+          'id': c.id,
+          'word': w,
+          'cn': cn,
+        });
+      }
+
+      final p = passageOf[c.id];
+      if (p != null) {
+        final surface = _passageSurface(p, w);
+        if (surface != null && surface.isNotEmpty) {
+          passage.add({
+            'kind': 'passage',
+            'id': c.id,
+            'word': w,
+            'cn': cn,
+            'passage': _passagePlain(p),
+            'surface': surface,
+          });
+        }
+      }
+    }
+    return <Map<String, dynamic>>[...sentence, ...single, ...passage];
   }
 
   /// 毕业落盘：这一刻才算「已背」
@@ -360,6 +537,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       SessionPhase.learn => '学习',
       SessionPhase.choice => '重测 R${_session.round - 1}·选义',
       SessionPhase.cloze => '重测 R${_session.round - 1}·填空',
+      SessionPhase.spellPrompt => '拼写',
+      SessionPhase.spell => '拼写',
       SessionPhase.done => '完成',
     };
     final unitLabel = _session.unitCount > 1

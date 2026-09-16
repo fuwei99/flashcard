@@ -101,6 +101,9 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     getState:function (k) { return (window.__FLASHCARD_KV__||{})[k]; },
     setState:function (k, v) { window.__FLASHCARD_KV__[k]=v; post({type:"setState", key:k, value:v}); },
     undo:    function () { post({type:"undo"}); },
+    // ---- 拼写轮（一轮走完触发，循环在模板里跑）----
+    spellDone:     function () { post({type:"spellDone"}); },
+    spellProgress: function (d, t) { post({type:"spellProgress", done:d, total:t}); },
     next:    function () { post({type:"next"}); },
     prev:    function () { post({type:"prev"}); },
     ready:   function () { post({type:"ready"}); },

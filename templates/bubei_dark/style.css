@@ -543,6 +543,149 @@ html, body {
   display: none;
 }
 
+/* ============================================================
+   拼写轮（一轮走完触发，整轮覆盖在卡片之上）
+   ------------------------------------------------------------
+   逐格输入：真 input 藏在屏幕外收键盘，格子在 .fc-sr-slots 里画。
+   三种形态共用一套骨架：句子拼写 / 单词拼写 / 语篇拼写
+   ============================================================ */
+.fc-spellround {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #141D1F;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.fc-spellround[hidden] { display: none; }
+
+.fc-sr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fc-sr-progress {
+  color: #00C08B;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fc-sr-quit {
+  background: transparent;
+  border: 1px solid #2A3A3E;
+  color: #8C9DA2;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
+.fc-sr-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+.fc-sr-kind {
+  color: #54666C;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.fc-sr-cn {
+  color: #F0F4F5;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+.fc-sr-prompt {
+  color: #B7C4C8;
+  font-size: 15px;
+  line-height: 2.1;
+  word-break: break-word;
+}
+.fc-sr-tries {
+  color: #54666C;
+  font-size: 12px;
+}
+
+/* 逐格：每格一条下划线，填上字母后变绿 */
+.fc-sr-slots {
+  display: inline-flex;
+  gap: 6px;
+  vertical-align: middle;
+  margin: 0 6px;
+}
+.fc-sr-slots-block {
+  display: flex;
+  margin: 12px 0 0;
+}
+.fc-sr-slot {
+  min-width: 20px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-bottom: 2px solid #3A4A4E;
+  color: #F0F4F5;
+  font-size: 20px;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+.fc-sr-slot.is-filled { border-bottom-color: #00C08B; }
+.fc-sr-slots.is-wrong .fc-sr-slot { border-bottom-color: #E5534B; }
+.fc-sr-slots.is-wrong { animation: fc-sr-shake 0.36s; }
+@keyframes fc-sr-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.fc-sr-result {
+  min-height: 20px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.fc-sr-result.is-right { color: #00C08B; }
+.fc-sr-result.is-wrong { color: #E5534B; }
+
+.fc-sr-actions {
+  display: flex;
+  gap: 10px;
+}
+.fc-sr-btn {
+  flex: 1;
+  padding: 13px 0;
+  border-radius: 12px;
+  border: 1px solid #2A3A3E;
+  background: #1B2629;
+  color: #B7C4C8;
+  font-size: 14px;
+}
+.fc-sr-next {
+  background: #00C08B;
+  color: #141D1F;
+  border-color: #00C08B;
+  font-weight: 600;
+}
+
+/* 藏起来的真输入框：放在屏幕底部、几乎全透明，只为把键盘顶出来 */
+.fc-sr-input {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  opacity: 0.01;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+}
+
 /* ---------- 拼写测验（顶栏 abc 进入） ---------- */
 .fc-root[data-mode="spell"] .fc-spell {
   display: flex;

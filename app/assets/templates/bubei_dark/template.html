@@ -216,4 +216,28 @@
       <div class="fc-continue-line"></div>
     </button>
   </footer>
+
+  <!-- ============ 拼写轮（一轮走完由原生弹窗触发 · 整轮循环在模板里跑） ============ -->
+  <section class="fc-spellround" hidden>
+    <div class="fc-sr-head">
+      <span class="fc-sr-progress">0 / 0</span>
+      <button class="fc-sr-quit" type="button" data-sr="quit">结束拼写</button>
+    </div>
+    <div class="fc-sr-body">
+      <div class="fc-sr-kind"></div>
+      <div class="fc-sr-cn"></div>
+      <div class="fc-sr-prompt"></div>
+      <div class="fc-sr-tries"></div>
+    </div>
+    <div class="fc-sr-result"></div>
+    <div class="fc-sr-actions">
+      <button class="fc-sr-btn" type="button" data-sr="skip">跳过</button>
+      <button class="fc-sr-btn" type="button" data-sr="hint">提示</button>
+      <button class="fc-sr-btn" type="button" data-sr="forget">忘记了</button>
+      <button class="fc-sr-btn fc-sr-next" type="button" data-sr="next" style="display:none">继续</button>
+    </div>
+    <!-- 隐藏输入框：只为唤出键盘，字符逐格画到 .fc-sr-slots 上 -->
+    <input class="fc-sr-input" type="text" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false">
+  </section>
 </div>
