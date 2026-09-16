@@ -5,30 +5,9 @@
 (function () {
   "use strict";
 
-  /* ---------- 迷你模板引擎 ---------- */
-  function truthy(v) {
-    if (v === null || v === undefined) return false;
-    if (typeof v === "string") return v.trim() !== "";
-    if (Array.isArray(v)) return v.length > 0;
-    if (typeof v === "object") return Object.keys(v).length > 0;
-    return !!v;
-  }
-  function renderTpl(tpl, data) {
-    var prev;
-    do {
-      prev = tpl;
-      tpl = tpl.replace(/\{\{([#^])(\w+)\}\}([\s\S]*?)\{\{\/\2\}\}/g,
-        function (_, sign, name, body) {
-          var t = truthy(data[name]);
-          return sign === "#" ? (t ? body : "") : (t ? "" : body);
-        });
-    } while (tpl !== prev);
-    return tpl.replace(/\{\{(\w+)\}\}/g, function (_, name) {
-      var v = data[name];
-      if (v === null || v === undefined || typeof v === "object") return "";
-      return String(v);
-    });
-  }
+  /* 占位符渲染已统一到 Dart 端 TemplateEngine（生产唯一实现）。
+     bubei_dark 的 template.html 不含 {{}} 占位符，数据由 script.js 读
+     window.__FLASHCARD_CARD__ 动态生成，所以预览直接用模板 HTML 原文。 */
 
   /* ---------- FSRS-lite ---------- */
   var W = [0.4872,1.4003,3.7145,13.8206,5.1618,1.2290,0.8975,0.0310,
@@ -270,7 +249,7 @@
     (book.fields_order||[]).forEach(function(f){ fields[f] = card[f] || ""; });
     Object.keys(card).forEach(function(k){ if(k!=="word"||true) fields[k]=card[k]; });
 
-    var html = renderTpl(template.html, fields);
+    var html = template.html;
     $cardHost.innerHTML = html;
 
     // 注入 API 后重新执行模板 script.js

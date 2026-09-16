@@ -594,7 +594,7 @@ class _ReviewScreenState extends State<ReviewScreen>
     if (_written.contains(cardId)) return;
     _written.add(cardId);
     final st = widget.store.stateOf(cardId);
-    widget.store.putState(cardId, review(st, r));
+    widget.store.putReview(cardId, st, review(st, r), r);
   }
 
   Future<void> _load() async {

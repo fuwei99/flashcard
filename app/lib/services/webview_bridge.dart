@@ -139,8 +139,9 @@ class WebViewBridge {
       } catch (_) {
         rating = Rating.good;
       }
-      final st = review(store.stateOf(id), rating);
-      store.putState(id, st);
+      final prev = store.stateOf(id);
+      final st = review(prev, rating);
+      store.putReview(id, prev, st, rating);
       return {'ok': true, 'id': id, 'rating': rating.key, 'state': st.toJson()};
     });
 

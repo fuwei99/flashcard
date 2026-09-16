@@ -164,8 +164,7 @@ flashcard/
 ├── README.md
 ├── ARCHITECTURE.md
 ├── core/
-│   ├── fsrs.py              # FSRS-lite 参考实现 + 自测
-│   └── template.py          # 占位符模板引擎（Python 参考）
+│   └── fsrs.py              # FSRS-lite 参考实现 + 自测
 ├── decks/
 │   └── kaoyan_20.json       # 20 词考研测试牌组
 ├── templates/

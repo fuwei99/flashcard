@@ -106,6 +106,34 @@ class CardStore {
     if (_journal == null) _flushPrefs();
   }
 
+  /// 复习提交：跑完 FSRS 后落盘，同时把「输入侧」也写进日志 ——
+  /// 评分、复习前状态、间隔、当时可提取概率 R。
+  /// 只写结果状态（putState）的日志做不了 FSRS 参数拟合；补齐后
+  /// progress.log.jsonl 就是一条可用的 revlog（老行无 rev 字段，回放时忽略）。
+  void putReview(String cardId, CardState prev, CardState next, Rating rating) {
+    _states[cardId] = next;
+    final now = DateTime.now();
+    final last = prev.lastReview;
+    final elapsed = last == null
+        ? 0
+        : DateTime(now.year, now.month, now.day)
+            .difference(DateTime(last.year, last.month, last.day))
+            .inDays;
+    final recall = prev.stability > 0
+        ? forgettingCurve(elapsed.toDouble(), prev.stability)
+        : 0.0;
+    _append(cardId, st: next, rev: {
+      'rating': rating.key,
+      'at': now.toIso8601String(),
+      'elapsed_days': elapsed,
+      'prev_state': prev.state,
+      'prev_stability': prev.stability,
+      'prev_difficulty': prev.difficulty,
+      'retrievability': double.parse(recall.toStringAsFixed(4)),
+    });
+    if (_journal == null) _flushPrefs();
+  }
+
   /// 到期 / 新卡 的复习队列
   List<String> dueQueue(List<String> allIds) {
     final now = DateTime.now();
@@ -217,7 +245,8 @@ class CardStore {
       };
 
   /// 追加一行变更；失败就退回整份快照，绝不丢数据
-  void _append(String cardId, {CardState? st, Map<String, dynamic>? kv}) {
+  void _append(String cardId,
+      {CardState? st, Map<String, dynamic>? kv, Map<String, dynamic>? rev}) {
     final j = _journal;
     if (j == null) {
       _writeSnap();
@@ -227,6 +256,7 @@ class CardStore {
       final rec = <String, dynamic>{'id': cardId};
       if (st != null) rec['st'] = st.toJson();
       if (kv != null) rec['kv'] = kv;
+      if (rev != null) rec['rev'] = rev;
       j.writeAsStringSync(
         '${json.encode(rec)}\n',
         mode: FileMode.append,

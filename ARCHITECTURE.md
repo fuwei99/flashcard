@@ -97,10 +97,9 @@ WebViewBridge.handleMessage() → flutter_tts.speak()
 引擎强行展开只会限制设计。`script.js` 里读 `getCard().fields.phrases`
 自己生成 DOM。
 
-实现三份，逻辑一致：
-- `core/template.py`（参考）
-- `app/lib/services/template_engine.dart`（生产）
-- `webpreview/index.html` 内联（预览）
+只保留一份（生产）：`app/lib/services/template_engine.dart`。
+占位符渲染是兼容兜底 —— bubei_dark 的实际数据走 `window.__FLASHCARD_CARD__`
+预注入，由模板自带 `script.js` 动态生成 DOM。
 
 ---
 
