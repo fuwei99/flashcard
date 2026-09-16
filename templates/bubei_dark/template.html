@@ -244,4 +244,17 @@
     <input class="fc-sr-input" type="text" autocomplete="off" autocorrect="off"
            autocapitalize="off" spellcheck="false">
   </section>
+
+  <!-- ============ 拼写前确认（容器内浮层 · 取代原生 AlertDialog） ============ -->
+  <!-- 以前这一步要发 web.spellPrompt 让 Dart 弹框，改文案/样式都得重编 APK。 -->
+  <section class="fc-spell-ask" hidden>
+    <div class="fc-sa-box">
+      <div class="fc-sa-title">这一轮拼写吗？</div>
+      <div class="fc-sa-sub"></div>
+      <div class="fc-sa-actions">
+        <button class="fc-sa-btn" type="button" data-sa="skip">跳过</button>
+        <button class="fc-sa-btn fc-sa-go" type="button" data-sa="go">开始拼写</button>
+      </div>
+    </div>
+  </section>
 </div>

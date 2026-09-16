@@ -469,6 +469,138 @@
     });
   }
 
+  // ---------- 拼写前确认浮层（容器内，不再问壳）----------
+  // 以前：workflow 发 web.spellPrompt → Dart 弹 AlertDialog → 回 web.spellDecision。
+  // 现在：直接在这层弹，改文案 / 样式不用重编 APK —— 符合「一切都是 API」。
+  function srAskEl() { return srQ(".fc-spell-ask"); }
+
+  function srAskShow(n) {
+    var el = srAskEl();
+    if (!el) return;
+    var sub = el.querySelector(".fc-sa-sub");
+    if (sub) sub.textContent = n + " 个词 · 拼错回队尾重来，不计入复习进度";
+    el.hidden = false;
+  }
+
+  function srAskHide() {
+    var el = srAskEl();
+    if (el) el.hidden = true;
+  }
+
+  (function bindAsk() {
+    var el = srAskEl();
+    if (!el) return;
+    el.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-sa]");
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var k = btn.getAttribute("data-sa");
+      srAskHide();
+      if (k === "go") beginSpell(); else endSpell();
+    });
+  })();
+
+  // ---------- 这一轮考哪些词（原 Dart _buildSpellItems，搬进容器内）----------
+  // 有例句 → 句子拼写；没例句 → 单词拼写；在语篇里出现过 → 语篇拼写（排最后）。
+  // 标熟的跳过。cn 从 fields.senses 拼（复刻 script.js 的 spellCnText 口径）。
+  function spellCnOf(fields) {
+    var raw = fields && fields.senses;
+    var parts = [];
+    if (Array.isArray(raw)) {
+      for (var i = 0; i < raw.length; i++) {
+        var s = raw[i];
+        if (!s || typeof s !== "object") continue;
+        var cn = String(s.cn || s.meaning || "")
+          .replace(/[（(][^（()）]*[)）]/g, "").trim();
+        if (!cn) continue;
+        var pos = String(s.pos || "").trim();
+        parts.push((pos ? pos + " " : "") + cn);
+      }
+    }
+    if (!parts.length) {
+      var m = String((fields && fields.meaning) || "").trim();
+      if (m) parts.push(m);
+    }
+    return parts.join("；");
+  }
+
+  // plan 里的语篇是 {title, cn, segments:[{w,lemma,pos,meaning,plain,blank}|{t}]}
+  function passagePlainOf(p) {
+    var out = "";
+    var segs = (p && p.segments) || [];
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i] || {};
+      out += (s.w != null) ? String(s.w) : (s.t != null ? String(s.t) : "");
+    }
+    return out;
+  }
+
+  function passageSurfaceOf(p, word) {
+    var lemma = String(word || "").trim().toLowerCase();
+    var segs = (p && p.segments) || [];
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i] || {};
+      if (s.w == null) continue;                       // 非词段
+      if (String(s.lemma || "").trim().toLowerCase() === lemma) {
+        return String(s.w || "").trim();
+      }
+    }
+    return null;
+  }
+
+  /// 异步组条目：plan 只带 {id, word, modes}，释义 / 例句得现取。
+  function buildSpellItems(ids) {
+    var passageOf = {};
+    for (var i = 0; i < S.units.length; i++) {
+      var u = S.units[i];
+      if (!u || !u.hasPassage || !u.passage) continue;
+      var cs = u.cards || [];
+      for (var j = 0; j < cs.length; j++) passageOf[cs[j].id] = u.passage;
+    }
+
+    var jobs = (ids || []).map(function (id) {
+      var meta = cardMeta(id);
+      var w = meta && meta.word ? String(meta.word).trim() : "";
+      if (!w) return Promise.resolve(null);
+      return FC.call("card.get", { id: id }).then(function (r) {
+        var c = r && r.card;
+        if (!c) return null;
+        if (c.kv && c.kv.known) return null;           // 标熟 = 跳过拼写
+        var f = c.fields || {};
+        var cn = spellCnOf(f);
+        var sent = String(f.sentence_en || "").trim();
+        var main = sent
+          ? { kind: "sentence", id: id, word: w, cn: cn, sentence: sent }
+          : { kind: "word", id: id, word: w, cn: cn };
+        var p = passageOf[id];
+        var pas = null;
+        if (p) {
+          var surface = passageSurfaceOf(p, w);
+          if (surface) {
+            pas = {
+              kind: "passage", id: id, word: w, cn: cn,
+              passage: passagePlainOf(p), surface: surface
+            };
+          }
+        }
+        return { main: main, pas: pas };
+      }).catch(function () { return null; });
+    });
+
+    return Promise.all(jobs).then(function (rs) {
+      var sent = [], single = [], pas = [];
+      for (var i = 0; i < rs.length; i++) {
+        var r = rs[i];
+        if (!r) continue;
+        if (r.main.kind === "sentence") sent.push(r.main);
+        else single.push(r.main);
+        if (r.pas) pas.push(r.pas);
+      }
+      return sent.concat(single, pas);
+    });
+  }
+
   // 原生侧：开一轮拼写（覆盖 script.js 的默认实现）
   FC.startSpellRound = function (jsonStr) {
     var data = {};
@@ -698,11 +830,13 @@
       return;
     }
     if (S.phase === 'spellPrompt') {
-      sPost('web.spellPrompt', { count: S.spellCards.length });
+      // 容器内浮层问「拼不拼」——以前是发 web.spellPrompt 让壳弹原生框
+      srAskShow(S.spellCards.length);
       return;
     }
     if (S.phase === 'spell') {
-      sPost('web.spell', { cardIds: S.spellCards });
+      // 拼写轮 UI 归 srStart 管，这里不再向壳要 items
+      srAskHide();
       return;
     }
     if (S.phase === 'passage' || S.phase === 'passageCloze') {
@@ -740,10 +874,20 @@
   }
 
   function beginSpell() {
-    if (S && S.phase === 'spellPrompt') {
-      log("beginSpell n=" + S.spellCards.length);
-      S.spellDone = 0; S.phase = 'spell'; render();
-    }
+    if (!S || S.phase !== 'spellPrompt') return;
+    log("beginSpell n=" + S.spellCards.length);
+    S.spellDone = 0;
+    S.phase = 'spell';
+    render();
+    // 选卡要现取字段（plan 只带 id/word），异步组完再开轮。
+    // 空列表时 srStart 自己会调 FC.spellDone() → endSpell()。
+    buildSpellItems(S.spellCards).then(function (items) {
+      if (!S || S.phase !== 'spell') return;
+      srStart(items);
+    }).catch(function (e) {
+      log("buildSpellItems 失败 " + e);
+      if (S && S.phase === 'spell') endSpell();
+    });
   }
 
   function endSpell() {
@@ -798,8 +942,9 @@
         else log("web.start：没有计划（非 Web 驱动？）");
       }).catch(function () {});
     });
+    // 老路径兼容：壳主动回执（现在浮层在容器内，不再走这条）
     FC.on('web.spellDecision', function (d) {
-      if (!S) return;
+      if (!S || S.phase !== 'spellPrompt') return;
       if (d && d.go) beginSpell(); else endSpell();
     });
   }

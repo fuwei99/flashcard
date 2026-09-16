@@ -1228,3 +1228,53 @@ html, body {
 .fc-rel-cn {
   color: var(--txt-sub);
 }
+
+/* ---------- 拼写前确认浮层（容器内，取代原生 AlertDialog） ---------- */
+/* 配色对齐原来的原生弹窗：底 #1B2629 / 正文 #B7C4C8 / 主按钮 #00C08B */
+.fc-spell-ask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.fc-spell-ask[hidden] { display: none; }
+.fc-sa-box {
+  width: 100%;
+  max-width: 320px;
+  background: #1B2629;
+  border-radius: 14px;
+  padding: 20px 18px 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.fc-sa-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.fc-sa-sub {
+  color: #B7C4C8;
+  font-size: 13px;
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.fc-sa-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.fc-sa-btn {
+  background: none;
+  border: 0;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: #8C9DA2;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.fc-sa-btn:active { background: rgba(255, 255, 255, 0.06); }
+.fc-sa-go { color: #00C08B; font-weight: 600; }
