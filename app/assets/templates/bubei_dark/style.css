@@ -536,6 +536,12 @@ html, body {
   color: #00C08B;
   background: rgba(0, 192, 139, 0.14);
 }
+/* 语篇两阶段（passage / passage_cloze）没有具体单词 —— StudyStep 的 card 为 null，
+   标熟 / 拼写无处可施，硬点会拿空 id 写 KV。直接收起按钮组。 */
+.fc-root[data-mode="passage"] .fc-top-actions,
+.fc-root[data-mode="passage_cloze"] .fc-top-actions {
+  display: none;
+}
 
 /* ---------- 拼写测验（顶栏 abc 进入） ---------- */
 .fc-root[data-mode="spell"] .fc-spell {

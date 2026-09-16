@@ -868,7 +868,15 @@
     if (b) b.classList.toggle("is-on", !!known);
   }
 
+  /// 语篇两阶段（passage / passage_cloze）没有具体单词 —— StudyStep 的 card 是 null，
+  /// card.id 为空。标熟 / 拼写对它们无意义，硬点会把空 id 写进 KV，必须挡一道。
+  /// CSS 已经把按钮收起来了，这里是防御性兜底（改样式的人未必知道有这条约束）。
+  function hasWordCard() {
+    return !!(card && card.id);
+  }
+
   function toggleKnown() {
+    if (!hasWordCard()) return;
     known = !known;
     updateKnownBtn();
     // 落盘走宿主：bridge 收到 setState 就写进这张卡的私有 KV
@@ -904,6 +912,7 @@
   }
 
   function enterSpell() {
+    if (!hasWordCard()) return;
     spellPrevMode = mode;
     spellPrevState = root.getAttribute("data-state") || "front";
     root.setAttribute("data-mode", "spell");
