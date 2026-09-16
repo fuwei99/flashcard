@@ -46,6 +46,55 @@ class TtsService {
   int _streamFails = 0;
   static const int _kStreamFailLimit = 3;
 
+  /// 后台落盘队列（统一接口的 play:false 分支）：串行跑，且让路给播放。
+  /// 豆包是单会话宿主，并发合成会互相 cancel —— 后台只准一条一条来，
+  /// 而且有朗读在途时整队停摆。
+  final List<_CacheJob> _cacheQ = [];
+  bool _cacheDraining = false;
+
+  /// 朗读闸门：非 null = 有朗读在途，预取让路
+  Completer<void>? _speakGate;
+
+  void _openGate() => _speakGate ??= Completer<void>();
+
+  void _closeGate() {
+    final g = _speakGate;
+    _speakGate = null;
+    if (g != null && !g.isCompleted) g.complete();
+  }
+
+  /// 排一个后台落盘任务（去重：同一段音频不重复排队）
+  void _enqueueCache(_CacheJob j) {
+    if (_cacheQ.any((x) => x.key == j.key)) return;
+    _cacheQ.add(j);
+    unawaited(_drainCache());
+  }
+
+  Future<void> _drainCache() async {
+    if (_cacheDraining) return;
+    _cacheDraining = true;
+    try {
+      while (_cacheQ.isNotEmpty) {
+        while (_speakGate != null) {
+          await _speakGate!.future; // 播放优先，预取靠边
+        }
+        if (_cacheQ.isEmpty) break;
+        final job = _cacheQ.removeAt(0);
+        final engine = await _ensureEngine(job.opts?.pluginId);
+        if (engine == null) continue;
+        _lastEngine = engine;
+        final ok = await _cacheOnly(engine, job.text, job.lang, job.opts);
+        // 被播放打断（ws 被 cancel）→ 重排，别把任务丢了
+        if (!ok && job.retry < 2) {
+          job.retry++;
+          _cacheQ.add(job);
+        }
+      }
+    } finally {
+      _cacheDraining = false;
+    }
+  }
+
   /// 插件 id → 引擎（同插件复用；换插件才新建，JS 插件不必重载脚本）
   final Map<String, TtsEngine> _engines = {};
 
@@ -108,11 +157,21 @@ class TtsService {
   Future<void> speak(String text, String lang, {TtsOptions? options}) async {
     final t = text.trim();
     if (t.isEmpty) return;
+    // 统一接口的 play:false 分支：只落盘、不出声 → 丢后台队列
+    if (options?.shouldPlay == false) {
+      _enqueueCache(_CacheJob(t, lang, options));
+      return;
+    }
     final myGen = ++_gen;
-    await _stopAll();
-    await TtsLog.write('speak',
-        'gen=$myGen lang=$lang ${options == null ? '' : 'opts=[${options.fingerprint}] '}"${_abbr(t)}"');
-    await _speakOne(t, lang, myGen, options);
+    _openGate();
+    try {
+      await _stopAll();
+      await TtsLog.write('speak',
+          'gen=$myGen lang=$lang ${options == null ? '' : 'opts=[${options.fingerprint}] '}"${_abbr(t)}"');
+      await _speakOne(t, lang, myGen, options);
+    } finally {
+      _closeGate();
+    }
   }
 
   /// 顺序朗读多条（单词 -> 例句）；每条可自带 plugin/voice/rate/pitch
@@ -124,58 +183,66 @@ class TtsService {
   /// 单词播完时例句字节已到手，落盘直接播，几乎无缝。
   Future<void> speakSeq(List items) async {
     final myGen = ++_gen;
-    await _stopAll();
-    await TtsLog.write('speak', 'seq gen=$myGen ${items.length}条');
+    _openGate();
+    try {
+      await _stopAll();
+      await TtsLog.write('speak', 'seq gen=$myGen ${items.length}条');
 
-    // 先解析成结构化列表：要按下标「播第 i 条时预取第 i+1 条」
-    final list = <_SeqItem>[];
-    for (final it in items) {
-      if (it is! Map) continue;
-      final text = (it['text'] ?? '').toString().trim();
-      if (text.isEmpty) continue;
-      list.add(_SeqItem(
-        text: text,
-        lang: (it['lang'] ?? 'en-US').toString(),
-        opts: TtsOptions.parse(it),
-      ));
-    }
-
-    _Prefetch? pre; // 在途预取
-
-    for (var i = 0; i < list.length; i++) {
-      if (myGen != _gen) return;
-      final it = list[i];
-      final p = pre;
-      pre = null;
-
-      // 本条起播回调：此刻引擎空闲 → 并行把下一条合成挂上
-      void kick() {
-        if (myGen != _gen) return;
-        if (i + 1 >= list.length) return;
-        final nx = list[i + 1];
-        if (_willCache(nx)) return; // 下一条自己要走缓存，别跟它抢引擎
-        pre = _startPrefetch(nx, myGen);
+      // 先解析成结构化列表：要按下标「播第 i 条时预取第 i+1 条」
+      final list = <_SeqItem>[];
+      for (final it in items) {
+        if (it is! Map) continue;
+        final text = (it['text'] ?? '').toString().trim();
+        if (text.isEmpty) continue;
+        final lang = (it['lang'] ?? 'en-US').toString();
+        final o = TtsOptions.parse(it);
+        // play:false 的条目：丢后台落盘队列，不占本轮朗读
+        if (o?.shouldPlay == false) {
+          _enqueueCache(_CacheJob(text, lang, o));
+          continue;
+        }
+        list.add(_SeqItem(text: text, lang: lang, opts: o));
       }
 
-      // ① 预取命中：字节已在手，落盘直接播，跳过整段合成等待
-      if (p != null && p.key == it.key) {
-        final bytes = await p.bytes;
+      _Prefetch? pre; // 在途预取
+
+      for (var i = 0; i < list.length; i++) {
         if (myGen != _gen) return;
-        if (bytes != null && bytes.isNotEmpty) {
-          final engine = await _ensureEngine(it.opts?.pluginId);
-          if (engine != null && myGen == _gen) {
-            if (await _playPrefetched(bytes, it, myGen, engine,
-                onStarted: kick)) {
-              continue;
+        final it = list[i];
+        final p = pre;
+        pre = null;
+
+        // 本条起播回调：此刻引擎空闲 → 并行把下一条合成挂上
+        void kick() {
+          if (myGen != _gen) return;
+          if (i + 1 >= list.length) return;
+          final nx = list[i + 1];
+          if (_willCache(nx)) return; // 下一条自己要走缓存，别跟它抢引擎
+          pre = _startPrefetch(nx, myGen);
+        }
+
+        // ① 预取命中：字节已在手，落盘直接播，跳过整段合成等待
+        if (p != null && p.key == it.key) {
+          final bytes = await p.bytes;
+          if (myGen != _gen) return;
+          if (bytes != null && bytes.isNotEmpty) {
+            final engine = await _ensureEngine(it.opts?.pluginId);
+            if (engine != null && myGen == _gen) {
+              if (await _playPrefetched(bytes, it, myGen, engine,
+                  onStarted: kick)) {
+                continue;
+              }
             }
           }
+          // 预取废了（合成失败 / 被打断）→ 退回正常路径
         }
-        // 预取废了（合成失败 / 被打断）→ 退回正常路径
-      }
 
-      // ② 正常路径
-      if (myGen != _gen) return;
-      await _speakOne(it.text, it.lang, myGen, it.opts, onStarted: kick);
+        // ② 正常路径
+        if (myGen != _gen) return;
+        await _speakOne(it.text, it.lang, myGen, it.opts, onStarted: kick);
+      }
+    } finally {
+      _closeGate();
     }
   }
 
@@ -215,17 +282,38 @@ class TtsService {
     final engine = await _ensureEngine(opts?.pluginId);
     if (engine != null) {
       _lastEngine = engine; // 供 _stopAll 打断在途合成
+
       // 落盘三态：
       //   显式 true / "name" → 强制落盘
       //   显式 false        → 强制不落（流式）
       //   没传              → 单词看全局设置；长句不落（流式）
       final explicit = opts?.cache;
       final long = !isSingleWord(text);
-      final shouldCache = explicit == true ||
+      final wantCache = explicit == true ||
           (explicit == null && !long && settings.ttsWordCacheEnabled);
+      final wantPlay = opts?.shouldPlay ?? true;
+
+      // ① 本地已有 → 直接用。**不管 wantCache**：预取落盘的例句也要能被播放命中。
+      final cached = await _cacheFile(text, lang, opts);
+      if (cached != null && await cached.exists()) {
+        await _touch(cached);
+        if (!wantPlay) return; // 只要落盘 —— 已经在盘上了
+        if (gen != _gen) return;
+        await TtsLog.write('cache', 'hit(本地) "${_abbr(text)}"');
+        await _playFile(cached, onStarted: onStarted);
+        return;
+      }
+
+      // ② 不出声、只要落盘（预取兜底路径）
+      if (!wantPlay) {
+        await _cacheOnly(engine, text, lang, opts);
+        return;
+      }
+
+      // ③ 出声：走缓存（合成+播）或流式
       // 长句优先流式；偶发中断不惩罚，连续失败达阈值才认定本机不可用。
-      final tryStream = !shouldCache && _streamFails < _kStreamFailLimit;
-      final ok = shouldCache
+      final tryStream = !wantCache && _streamFails < _kStreamFailLimit;
+      final ok = wantCache
           ? await _speakCached(engine, text, lang, gen, opts,
               onStarted: onStarted)
           : (tryStream ? await _speakStreamed(engine, text, gen, opts) : false);
@@ -236,7 +324,7 @@ class TtsService {
       if (tryStream) _streamFails++;
       // 流式失败：把整段收下来落临时文件再播（词条同款路径），
       // 别直接跳系统 TTS —— 那样音色全变了。
-      if (!shouldCache && gen == _gen) {
+      if (!wantCache && gen == _gen) {
         if (await _speakCollected(engine, text, lang, gen, opts,
                 onStarted: onStarted)) {
           return;
@@ -282,6 +370,7 @@ class TtsService {
         if (gen != _gen) return true; // 被打断，别写半截缓存
         await file.parent.create(recursive: true);
         await file.writeAsBytes(bytes, flush: true);
+        await _writeTtl(file, opts?.ttlDays);
         if (!isSingleWord(text)) {
           await _writeSidecar(file, text, lang, opts);
         }
@@ -290,10 +379,7 @@ class TtsService {
       }
 
       if (gen != _gen) return true; // 已被新朗读打断
-      await _player.setFilePath(file.path);
-      final done = _player.play();
-      onStarted?.call(); // 已起播：引擎此刻空闲，可以并行预取下一条
-      await done;
+      await _playFile(file, onStarted: onStarted);
       return true;
     } catch (e, st) {
       await TtsLog.write('cache', 'ERROR: $e\n$st');
@@ -333,6 +419,107 @@ class TtsService {
       await TtsLog.write('engine', 'ERROR: $e\n$st');
       return null;
     }
+  }
+
+  /// 播放一个本地文件（统一出口：起播瞬间回调 onStarted，供预取用）
+  Future<void> _playFile(File f, {void Function()? onStarted}) async {
+    await _player.setFilePath(f.path);
+    final done = _player.play();
+    onStarted?.call();
+    await done;
+  }
+
+  /// 更新访问时间（清理策略按 mtime 走 LRU）
+  Future<void> _touch(File f) async {
+    try {
+      await f.setLastModified(DateTime.now());
+    } catch (_) {}
+  }
+
+  /// 写 TTL 标记：<audio>.ttl = {"expireAt": epochSec}；永久则清掉标记
+  Future<void> _writeTtl(File audio, int? ttlDays) async {
+    try {
+      final t = File('${audio.path}.ttl');
+      if (ttlDays == null) {
+        if (await t.exists()) await t.delete();
+        return;
+      }
+      final at = DateTime.now()
+              .add(Duration(days: ttlDays))
+              .millisecondsSinceEpoch ~/
+          1000;
+      await t.writeAsString('{"expireAt":$at,"ttlDays":$ttlDays}', flush: true);
+    } catch (_) {}
+  }
+
+  /// 只要落盘、不出声：合成 → 写 cache/tts → 记 TTL。
+  /// 已有同 key 文件则直接跳过，不重复合成。
+  Future<bool> _cacheOnly(
+      TtsEngine engine, String text, String lang, TtsOptions? opts) async {
+    try {
+      final f = await _cacheFile(text, lang, opts);
+      if (f == null) return true; // 算不出来路径，别重排
+      if (await f.exists()) return true;
+      final bytes = await _collect(engine, text);
+      if (bytes == null || bytes.isEmpty) return false;
+      await f.parent.create(recursive: true);
+      await f.writeAsBytes(bytes, flush: true);
+      await _writeTtl(f, opts?.ttlDays);
+      await TtsLog.write(
+          'cache', 'prefetch ${bytes.length}B "${_abbr(text)}"');
+      return true;
+    } catch (e, st) {
+      await TtsLog.write('cache', 'prefetch ERROR: $e\n$st');
+      return false;
+    }
+  }
+
+  /// 清理 TTS 缓存。
+  ///   · 有 .ttl 标记的：按标记的过期时间删（永久的不删）
+  ///   · 没有标记的：若给了 [olderThanDays]，按最后访问时间（mtime）删
+  Future<Map<String, dynamic>> purgeCache({int? olderThanDays}) async {
+    final dir = await DataDir.sub('cache/tts');
+    if (dir == null || !await dir.exists()) {
+      return {'removed': 0, 'freedBytes': 0};
+    }
+    final now = DateTime.now();
+    final nowSec = now.millisecondsSinceEpoch ~/ 1000;
+    var removed = 0;
+    var freed = 0;
+    await for (final e in dir.list()) {
+      if (e is! File) continue;
+      final p = e.path;
+      if (p.endsWith('.txt') || p.endsWith('.ttl') || p.endsWith('.tmp')) {
+        continue;
+      }
+      var dead = false;
+      final t = File('$p.ttl');
+      if (await t.exists()) {
+        try {
+          final m = jsonDecode(await t.readAsString());
+          if (m is Map) {
+            final at = (m['expireAt'] as num?)?.toInt();
+            if (at != null && nowSec > at) dead = true;
+          }
+        } catch (_) {}
+      } else if (olderThanDays != null && olderThanDays > 0) {
+        final st = await e.stat();
+        if (now.difference(st.modified).inDays >= olderThanDays) dead = true;
+      }
+      if (!dead) continue;
+      try {
+        freed += await e.length();
+        await e.delete();
+        removed++;
+        for (final ext in ['.txt', '.ttl']) {
+          final s = File('$p$ext');
+          if (await s.exists()) await s.delete();
+        }
+      } catch (_) {}
+    }
+    await TtsLog.write('cache',
+        'purge removed=$removed freed=${freed}B olderThan=$olderThanDays');
+    return {'removed': removed, 'freedBytes': freed};
   }
 
   /// 长句：真·流式 —— 插件音频边收边播，不预收整段。
@@ -390,10 +577,7 @@ class TtsService {
       if (gen != _gen) return true;
       await TtsLog.write(
           'stream', '流式失败→落临时文件播放 ${bytes.length}B "${_abbr(text)}"');
-      await _player.setFilePath(f.path);
-      final done = _player.play();
-      onStarted?.call();
-      await done;
+      await _playFile(f, onStarted: onStarted);
       return true;
     } catch (e, st) {
       await TtsLog.write('stream', 'collected ERROR: $e\n$st');
@@ -410,10 +594,7 @@ class TtsService {
       if (gen != _gen) return true;
       await TtsLog.write(
           'seq', '预取命中→直接播 ${bytes.length}B "${_abbr(it.text)}"');
-      await _player.setFilePath(f.path);
-      final done = _player.play();
-      onStarted?.call();
-      await done;
+      await _playFile(f, onStarted: onStarted);
       return true;
     } catch (e, st) {
       await TtsLog.write('seq', '预取播放 ERROR: $e\n$st');
@@ -646,4 +827,16 @@ class _Prefetch {
   final String key;
   final Future<Uint8List?> bytes;
   _Prefetch(this.key, this.bytes);
+}
+
+/// 后台落盘任务（统一接口的 play:false 分支）
+class _CacheJob {
+  final String text;
+  final String lang;
+  final TtsOptions? opts;
+  int retry = 0;
+  _CacheJob(this.text, this.lang, this.opts);
+
+  /// 去重 / 对账口径，与 _writeTmp 的 hash 一致
+  String get key => '$text|$lang|${opts?.fingerprint ?? ''}';
 }

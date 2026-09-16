@@ -38,6 +38,13 @@ class TtsOptions {
   /// 自定义缓存文件名前缀（cache 为字符串时）
   final String? cacheName;
 
+  /// 要不要现在出声：null = true。
+  /// false = 只把音频取回来落盘（预取），不碰播放器。
+  final bool? play;
+
+  /// 落盘有效期（天）：null = 永久。只在 cache 生效时有意义。
+  final int? ttlDays;
+
   /// 透传给 JS 插件的附件参数（并进 getAudioV2 的 request）
   final Map<String, String> extra;
 
@@ -48,11 +55,16 @@ class TtsOptions {
     this.pitch,
     this.cache,
     this.cacheName,
+    this.play,
+    this.ttlDays,
     this.extra = const {},
   });
 
   /// 走系统 TTS（flutter_tts）：plugin: "system"
   bool get system => pluginId == 'system';
+
+  /// 现在要不要出声（缺省要）
+  bool get shouldPlay => play ?? true;
 
   bool get isEmpty =>
       pluginId == null &&
@@ -61,6 +73,8 @@ class TtsOptions {
       pitch == null &&
       cache == null &&
       cacheName == null &&
+      play == null &&
+      ttlDays == null &&
       extra.isEmpty;
 
   /// 从 bridge 收到的 JSON map 解析
@@ -95,6 +109,21 @@ class TtsOptions {
     final extra = <String, String>{};
     final e = j['extra'];
     if (e is Map) e.forEach((k, v) => extra['$k'] = '$v');
+
+    // play：要不要现在出声（缺省 true）
+    bool? play;
+    if (j['play'] is bool) play = j['play'] as bool;
+
+    // ttlDays：落盘有效期（天）。null/缺省 = 永久；<=0 也当永久
+    int? ttlDays;
+    final tv = j['ttlDays'];
+    if (tv is num) {
+      ttlDays = tv.toInt();
+    } else if (tv is String) {
+      ttlDays = int.tryParse(tv.trim());
+    }
+    if (ttlDays != null && ttlDays <= 0) ttlDays = null;
+
     final o = TtsOptions(
       pluginId: s('plugin'),
       voice: s('voice'),
@@ -102,6 +131,8 @@ class TtsOptions {
       pitch: d('pitch'),
       cache: cache,
       cacheName: cacheName,
+      play: play,
+      ttlDays: ttlDays,
       extra: extra,
     );
     return o.isEmpty ? null : o;

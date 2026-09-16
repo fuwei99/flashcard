@@ -167,6 +167,14 @@ class WebViewBridge {
       );
       return {'ok': true};
     });
+
+    // TTS 缓存清理：删过期（.ttl 标记）/ 超期未用（mtime）的音频。
+    // workflow.js 定期调一次即可，别放在卡牌热路径上。
+    rpc.register('tts.purge', (p) async {
+      final d = p['olderThanDays'];
+      final n = d is num ? d.toInt() : int.tryParse('${d ?? ''}');
+      return tts.purgeCache(olderThanDays: (n == null || n <= 0) ? null : n);
+    });
   }
 
   // ---- RPC 辅助 ----
