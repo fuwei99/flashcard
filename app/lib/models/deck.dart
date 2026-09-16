@@ -251,11 +251,16 @@ class CardTemplate {
   final String css;
   final String js;
 
+  /// Web-first workflow（阶段 3）：卡牌包自定义学习流程的裸 JS。
+  /// 空字符串 = 没有，壳走老路径。
+  final String workflow;
+
   CardTemplate({
     required this.manifest,
     required this.html,
     required this.css,
     required this.js,
+    this.workflow = '',
   });
 
   String get id => (manifest['id'] ?? 'unknown').toString();

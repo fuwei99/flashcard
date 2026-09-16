@@ -46,6 +46,7 @@ class DeckRepository {
     'template.html',
     'style.css',
     'script.js',
+    'workflow.js',
   ];
 
   /// 公共目录里的模板根目录
@@ -164,6 +165,7 @@ class DeckRepository {
         html: await read('template', 'template.html'),
         css: await read('style', 'style.css'),
         js: await read('script', 'script.js'),
+        workflow: await read('workflow', 'workflow.js'),
       );
     } catch (_) {
       return null;
@@ -189,6 +191,7 @@ class DeckRepository {
       html: await maybe('template.html'),
       css: await maybe('style.css'),
       js: await maybe('script.js'),
+      workflow: await maybe('workflow.js'),
     );
   }
 

@@ -62,6 +62,7 @@ class TemplateEngine {
     required Map<String, dynamic> cardJson,
     Map<String, dynamic>? kv,
     Map<String, dynamic>? extra,
+    String workflowJs = '',
   }) {
     final html = render(templateHtml, fields, extra: extra);
     final cardJsonStr = _jsonEncode(cardJson);
@@ -85,6 +86,21 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
 (function () {
   var ch = (typeof FCChannel !== "undefined") ? FCChannel : null;
   function post(obj){ if (ch) ch.postMessage(JSON.stringify(obj)); }
+
+  // ---- 双向 RPC（阶段 0）：请求/响应 + 事件 ----
+  var seq = 0;
+  var pending = {};   // id -> {resolve, reject}
+  var listeners = {}; // event -> [fn]
+  function call(method, params) {
+    return new Promise(function (resolve, reject) {
+      if (!ch) { reject(new Error("no channel")); return; }
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      post({ type: "rpc", id: id, method: method, params: params || {} });
+    });
+  }
+  function on(evt, fn) { (listeners[evt] = listeners[evt] || []).push(fn); }
+
   window.Flashcard = {
     getCard: function () { return window.__FLASHCARD_CARD__; },
     answer:  function (r) { post({type:"answer", rating:r}); },
@@ -114,11 +130,36 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
     },
     onMount: function (fn) {
       window.__FLASHCARD_ONMOUNT__ = fn;
+    },
+
+    // ---- 双向 RPC（阶段 0）----
+    call: call,
+    on: on,
+    // 壳 -> Web：RPC 回执
+    __resolve: function (jsonStr) {
+      var m;
+      try { m = JSON.parse(jsonStr); } catch (e) { return; }
+      var p = pending[m.id];
+      if (!p) return;
+      delete pending[m.id];
+      if (m.ok) p.resolve(m.result);
+      else p.reject(new Error((m.result && m.result.error) || "rpc error"));
+    },
+    // 壳 -> Web：事件推送
+    __emit: function (evt, jsonStr) {
+      var ls = listeners[evt];
+      if (!ls) return;
+      var data = {};
+      if (jsonStr) { try { data = JSON.parse(jsonStr); } catch (e) {} }
+      for (var i = 0; i < ls.length; i++) {
+        try { ls[i](data); } catch (e) {}
+      }
     }
   };
 })();
 </script>
 <script>$js</script>
+${workflowJs.isEmpty ? '' : '<script>$workflowJs</script>'}
 </body>
 </html>''';
   }

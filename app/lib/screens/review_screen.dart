@@ -58,7 +58,8 @@ class ReviewScreen extends StatefulWidget {
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
 
-class _ReviewScreenState extends State<ReviewScreen> {
+class _ReviewScreenState extends State<ReviewScreen>
+    with WidgetsBindingObserver {
   late final WebViewBridge _bridge;
   late final StudySession _session;
   WebViewController? _controller;
@@ -86,6 +87,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _session = StudySession(
       widget.units,
       passageClozeEnabled: widget.settings.modePassageCloze,
@@ -623,6 +625,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       );
     _controller = c;
+    _bridge.attach(c); // 双向 RPC 回执 / 事件推送要用它
     // 骨架页：只在会话开始时 load 一次，之后全走 mountCard
     final html = _bridge.buildCardPage(
       fieldsOrder: widget.fieldsOrder,
@@ -673,7 +676,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 进后台 / 失焦 -> 通知 Web 层立刻落盘；回前台 -> 通知恢复。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _bridge.emit('lifecycle.pause');
+    } else if (state == AppLifecycleState.resumed) {
+      _bridge.emit('lifecycle.resume');
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _bridge.dispose();
     super.dispose();
   }

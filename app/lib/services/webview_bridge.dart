@@ -2,9 +2,10 @@
 /// ================================================================
 /// 职责：
 ///   1. 把「书本字段 + 模板三段资源 + 会话上下文」组装成完整 HTML
-///   2. 注入 glue JS（window.Flashcard）
+///   2. 注入 glue JS（window.Flashcard）+ workflow.js（阶段 3）
 ///   3. 监听卡牌脚本发来的消息，转发给上层（屏幕）
 ///   4. 把 TTS 转给 flutter_tts
+///   5. 双向 RPC（阶段 0）：Web 主动 call → 壳 handler → __resolve 回执
 ///
 /// 注意：answer 消息不再在这里写 CardStore —— 交给 ReviewScreen
 ///       按「会话阶段」决定是毕业落盘，还是只记轮内结果。
@@ -17,7 +18,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/book.dart';
 import '../models/deck.dart';
+import 'bridge_rpc.dart';
 import 'card_store.dart';
+import 'session_store.dart';
 import 'template_engine.dart';
 import 'tts_engine.dart';
 import 'tts_log.dart';
@@ -33,14 +36,83 @@ class WebViewBridge {
   final CardStore store;
   final TtsService tts;
 
+  /// 双向 RPC 核心（阶段 0）。方法在 [_registerCore] 里注册。
+  final BridgeRpc rpc = BridgeRpc();
+
+  /// 会话断点（workflow.js 的 session.save 落这）。
+  final SessionStore sessions = SessionStore();
+
   final _messages = StreamController<BridgeMessage>.broadcast();
   Stream<BridgeMessage> get messages => _messages.stream;
 
   String? _currentCardId;
 
-  WebViewBridge({required this.store, required this.tts});
+  /// 最近一次 mount 的卡片数据快照（card.current 用）。
+  Map<String, dynamic>? _lastCardJson;
+
+  /// 宿主控制器 —— RPC 回执 / 事件推送要它 runJavaScript。
+  WebViewController? _ctrl;
+
+  WebViewBridge({required this.store, required this.tts}) {
+    sessions.init();
+    _registerCore();
+  }
 
   Future<void> initTts() => tts.init();
+
+  /// 绑定控制器（必须在 load 之前调一次）。
+  void attach(WebViewController c) => _ctrl = c;
+
+  // ================================================================
+  // 双向 RPC：壳暴露给卡牌 / workflow 的原子能力
+  // ================================================================
+  void _registerCore() {
+    rpc.register('ping', (p) async => {
+          'pong': true,
+          'ts': DateTime.now().toIso8601String(),
+        });
+
+    // 当前这张卡（最近一次 mount 的数据）
+    rpc.register(
+        'card.current', (p) async => _lastCardJson ?? <String, dynamic>{});
+
+    // 卡级 KV（标熟 / 收藏…）
+    rpc.register('state.kvGet', (p) async {
+      final id = (p['id'] ?? '').toString();
+      return id.isEmpty ? <String, dynamic>{} : store.kvOf(id);
+    });
+    rpc.register('state.kvPut', (p) async {
+      final id = (p['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        store.putKv(id, (p['key'] ?? '').toString(), p['value']);
+      }
+      return {'ok': true};
+    });
+
+    // 会话断点（workflow.js 用）
+    rpc.register('session.save', (p) async {
+      sessions.save((p['workflow'] ?? '').toString(), p['cursor']);
+      return {'ok': true};
+    });
+    rpc.register('session.load', (p) async => sessions.data);
+    rpc.register('session.clear', (p) async {
+      sessions.clear();
+      return {'ok': true};
+    });
+
+    // 前端日志直接落原生 SwitchLog —— 排查 JS 问题不用连电脑
+    rpc.register('sys.log', (p) async {
+      await SwitchLog.write('web', (p['msg'] ?? '').toString());
+      return {'ok': true};
+    });
+  }
+
+  /// 壳 → Web 事件推送
+  Future<void> emit(String event, [dynamic data]) async {
+    final c = _ctrl;
+    if (c == null) return;
+    await c.runJavaScript(BridgeRpc.emitScript(event, data));
+  }
 
   /// 组装一张卡牌的完整 HTML 页面 —— SPA 骨架页，只在会话开始时 load 一次。
   ///
@@ -76,6 +148,7 @@ class WebViewBridge {
       templateHtml: template.html,
       css: template.css,
       js: template.js,
+      workflowJs: template.workflow,
       fields: fields,
       cardJson: cardJson,
       kv: const <String, dynamic>{},
@@ -121,6 +194,8 @@ class WebViewBridge {
         'passage': passageJson(passage, passageCards, blankLemmas),
     };
 
+    _lastCardJson = cardJson;
+
     final jsonStr = TemplateEngine.jsonForJs(cardJson);
     final js = "window.Flashcard.mountCard('$jsonStr');";
     await ctrl.runJavaScript(js);
@@ -128,10 +203,7 @@ class WebViewBridge {
 
   /// 拼写轮：把整轮要拼的条目一次性灌给模板，循环由模板自己跑。
   ///
-  /// 条目形状（三种 kind）：
-  ///   sentence —— 有例句：给例句（模板自己挖空，能认变形词）+ 中文释义
-  ///   word     —— 没例句：只给中文释义，纯拼单词
-  ///   passage  —— 在语篇里出现过：给语篇原文 + 文中表面形式，排最后
+  /// 阶段 3 起，拼写轮的循环归 workflow.js 所有；这里保留为兼容入口。
   Future<void> startSpellRound(
       WebViewController ctrl, List<Map<String, dynamic>> items) async {
     final jsonStr = TemplateEngine.jsonForJs({'items': items});
@@ -190,6 +262,19 @@ class WebViewBridge {
       return;
     }
     final type = (data['type'] ?? '').toString();
+
+    // 双向 RPC（阶段 0）：不走 messages 流，直接查表执行 + 回执。
+    if (type == 'rpc') {
+      final id = (data['id'] as num?)?.toInt() ?? 0;
+      final method = (data['method'] ?? '').toString();
+      final params = data['params'] is Map
+          ? Map<String, dynamic>.from(data['params'] as Map)
+          : <String, dynamic>{};
+      final script = await rpc.dispatch(id, method, params);
+      final c = _ctrl;
+      if (c != null) await c.runJavaScript(script);
+      return;
+    }
 
     // answer 只转发，不落盘 —— 由 ReviewScreen 决定
     _messages.add(BridgeMessage(type, data));

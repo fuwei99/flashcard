@@ -34,7 +34,8 @@
   "files": {
     "script": "script.js",
     "style": "style.css",
-    "template": "template.html"
+    "template": "template.html",
+    "workflow": "workflow.js"
   },
   "id": "bubei_dark",
   "name": "不背单词 · 暗黑极简",
