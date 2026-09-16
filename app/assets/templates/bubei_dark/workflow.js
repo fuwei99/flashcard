@@ -29,6 +29,65 @@
     return { text: String(raw || ""), answer: String(word || "") };
   }
   var TTS_WORD = H.ttsWord || { cache: true };
+  var TTS_SENTENCE = H.ttsSentence || {
+    plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", cache: false
+  };
+
+  // ---------- TTS 预取（阶段 5）：把「后面几张」的单词+例句先落盘 ----------
+  // 接口是合并的：play:false = 只取音频落盘、不出声；ttlDays = 存多久（0/缺省=永久）。
+  // 壳那边有后台串行队列，会自动让路给正在播放的朗读（豆包单会话，并发会互相 cancel）。
+  // 播放时 _speakOne 第一步就查本地文件 —— 命中即秒播，不再等豆包 TTFB。
+  var PF_TTL = 7;      // 落盘有效期（天）；设 0 = 永久
+  var PF_AHEAD = 12;   // 每次往后看几张
+  var _pfDone = {};    // 本次会话已排过的 cardId
+
+  /// 把「播放配置」改成「只要落盘」：不出声 + 强制存 + 带 TTL
+  function pfOpts(base, lang) {
+    var o = {};
+    for (var k in base) {
+      if (Object.prototype.hasOwnProperty.call(base, k)) o[k] = base[k];
+    }
+    o.play = false;
+    o.cache = true;
+    o.ttlDays = PF_TTL;
+    o.lang = lang || "en-US";
+    return o;
+  }
+
+  function prefetchOne(id) {
+    if (!FC.tts || !id || _pfDone[id]) return;
+    _pfDone[id] = 1;
+
+    // 单词：plan 里就有，零额外 IO
+    var meta = cardMeta(id);
+    var word = meta && meta.word;
+    if (word) {
+      try { FC.tts(word, pfOpts(TTS_WORD, "en-US")); } catch (e) {}
+    }
+
+    // 例句：SessionPlan 只带 {id, word, modes}，得单独取卡；取不到就只预取单词
+    if (!FC.call) return;
+    try {
+      FC.call("card.get", { id: id }).then(function (r) {
+        var f = r && r.card && r.card.fields;
+        var s = f ? String(f.sentence_en || "").replace(/<[^>]+>/g, "").trim() : "";
+        if (!s) return;
+        try { FC.tts(s, pfOpts(TTS_SENTENCE, "en-US")); } catch (e) {}
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  /// 往后预取 PF_AHEAD 张：跟着当前队列走，天然按学习顺序
+  function prefetchAhead() {
+    if (!S || !S.queue || !S.queue.length) return;
+    var n = 0;
+    for (var i = 0; i < S.queue.length && n < PF_AHEAD; i++) {
+      var id = S.queue[i].cardId;
+      if (_pfDone[id]) continue;
+      n++;
+      prefetchOne(id);
+    }
+  }
 
   // ---------- JSlogs：模板层诊断输出（落 logs/js/）----------
   function log(msg) { if (FC.log) { try { FC.log("[WF]", msg); } catch (e) {} } }
@@ -616,6 +675,7 @@
     if (!S) return;
     log("render phase=" + S.phase + " unit=" + S.unitIdx +
         " q=" + S.queue.length + " spell=" + S.spellCards.length);
+    prefetchAhead();   // 顺带把后面几张的音频先落盘
     if (S.phase === 'done') {
       sPost('web.finish', { graduated: Object.keys(S.graduated).length });
       return;
@@ -680,6 +740,7 @@
 
   function startSession(plan) {
     _committed = {};
+    _pfDone = {};
     log("start units=" + (plan.units || []).length);
     S = {
       units: plan.units || [],

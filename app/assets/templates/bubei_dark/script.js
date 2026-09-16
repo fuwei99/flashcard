@@ -997,7 +997,8 @@
   FC.helpers = {
     speak: speak,
     blankSentence: blankSentence,
-    ttsWord: TTS_WORD
+    ttsWord: TTS_WORD,
+    ttsSentence: TTS_SENTENCE
   };
 
   // ---------- mount：增量刷新全部卡片数据 ----------
