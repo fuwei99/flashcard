@@ -310,9 +310,21 @@ class TtsService {
         return;
       }
 
-      // ③ 出声：走缓存（合成+播）或流式
-      // 长句优先流式；偶发中断不惩罚，连续失败达阈值才认定本机不可用。
-      final tryStream = !wantCache && _streamFails < _kStreamFailLimit;
+      // ③ 出声：三条路
+      //   要落盘 + 长文本 → 流式播 + 搭车落盘（首字快，播完自动存）
+      //   要落盘 + 短文本 → 全收落盘再播（字节小，收得快）
+      //   不落盘          → 流式，失败再兜底全收
+      // 偶发中断不惩罚，连续失败达阈值才认定本机流式不可用。
+      final streamOk = _streamFails < _kStreamFailLimit;
+      if (wantCache && long && streamOk) {
+        if (await _speakStreamedCached(engine, text, lang, gen, opts,
+            onStarted: onStarted)) {
+          _streamFails = 0;
+          return;
+        }
+        _streamFails++; // 流式又炸了，记一笔，继续往下走全收兜底
+      }
+      final tryStream = !wantCache && streamOk;
       final ok = wantCache
           ? await _speakCached(engine, text, lang, gen, opts,
               onStarted: onStarted)
@@ -551,6 +563,55 @@ class TtsService {
     }
   }
 
+  /// 流式播 + 搭车落盘：边收边喂播放器，流一结束就把攒下的字节写盘。
+  /// 长文本 + wantCache 走这条 —— 不再「全收完才播」
+  /// （实测语篇 245KB 要等 2.3s 才出声，这条把它压到首个音频包）。
+  Future<bool> _speakStreamedCached(TtsEngine engine, String text, String lang,
+      int gen, TtsOptions? opts, {void Function()? onStarted}) async {
+    try {
+      final source = _EngineStreamSource(
+          engine.synthesize(text, opts: opts), engine.contentType);
+      _lastSource = source;
+      await _player.setAudioSource(source);
+      if (gen != _gen) {
+        await _player.stop();
+        return true;
+      }
+      await _player.play();
+      onStarted?.call();
+      // 不阻塞播放：流一结束（播完 / 出错 / 被打断）就落盘
+      unawaited(_saveAfterStream(source, text, lang, gen, opts));
+      return true;
+    } catch (e, st) {
+      await TtsLog.write('stream', 'ERROR: $e\n$st');
+      return false;
+    }
+  }
+
+  /// 等引擎流收完 → 把 [source] 攒下的字节写进 cache/tts/。
+  /// gen 变了（切卡 / 新朗读打断）就丢弃，别写半截缓存。
+  Future<void> _saveAfterStream(_EngineStreamSource source, String text,
+      String lang, int gen, TtsOptions? opts) async {
+    try {
+      await source.finished;
+      if (gen != _gen) return;
+      final bytes = source.buffered;
+      if (bytes.isEmpty) return;
+      final file = await _cacheFile(text, lang, opts);
+      if (file == null) return;
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes, flush: true);
+      await _writeTtl(file, opts?.ttlDays);
+      if (!isSingleWord(text)) {
+        await _writeSidecar(file, text, lang, opts);
+      }
+      await TtsLog.write('cache',
+          'saved(stream) ${file.path} (${bytes.length}B) "${_abbr(text)}"');
+    } catch (e, st) {
+      await TtsLog.write('cache', 'ERROR(save-stream): $e\n$st');
+    }
+  }
+
   /// 字节落 cache/tts/.tmp（同名覆盖），返回文件
   Future<File?> _writeTmp(Uint8List bytes, String text, String lang,
       TtsOptions? opts, TtsEngine engine) async {
@@ -738,8 +799,15 @@ class _EngineStreamSource extends StreamAudioSource {
   bool _started = false;
   Object? _error;
   StackTrace? _stack;
+  final Completer<void> _finished = Completer<void>();
 
   _EngineStreamSource(this._source, this._contentType);
+
+  /// 引擎流结束（正常 / 出错 / 被打断）时完成 —— 搭车落盘靠它等「收完」。
+  Future<void> get finished => _finished.future;
+
+  /// 已收下的完整字节（流结束后才有意义，用于落盘）。
+  List<int> get buffered => _buffer;
 
   void _ensureStarted() {
     if (_started) return;
@@ -759,10 +827,12 @@ class _EngineStreamSource extends StreamAudioSource {
           if (!c.isClosed) c.addError(e, st);
         }
         _closeSinks();
+        if (!_finished.isCompleted) _finished.complete();
       },
       onDone: () {
         _done = true;
         _closeSinks();
+        if (!_finished.isCompleted) _finished.complete();
       },
       cancelOnError: true,
     );
@@ -814,6 +884,8 @@ class _EngineStreamSource extends StreamAudioSource {
     } catch (_) {}
     _sub = null;
     _closeSinks();
+    // 被打断也要唤醒 await finished 的落盘协程，否则它永远挂着
+    if (!_finished.isCompleted) _finished.complete();
   }
 }
 
