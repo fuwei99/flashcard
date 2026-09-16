@@ -299,7 +299,6 @@ class DeckRepository {
       if (await dir.exists()) return false;
       await dir.create(recursive: true);
 
-      final metas = <Map<String, dynamic>>[];
       var i = 0;
       for (final c in b.chapters) {
         i++;
@@ -307,28 +306,10 @@ class DeckRepository {
         await File('${dir.path}/$name').writeAsString(
           const JsonEncoder.withIndent('  ').convert(c.toJson()),
         );
-        metas.add({
-          'chapter_id': c.chapterId,
-          'title': c.title,
-          if (c.passage != null) 'passage': c.passage!.toJson(),
-          'file': name,
-          'card_count': c.cards.length,
-          'card_ids': [for (final x in c.cards) x.id],
-        });
       }
 
-      final index = <String, dynamic>{
-        'format': 'flashcard.book.v2',
-        'book_id': b.bookId,
-        'title': b.title,
-        'subtitle': b.subtitle,
-        'template': b.templateId,
-        'fields_order': b.fieldsOrder,
-        if (b.passage != null) 'passage': b.passage!.toJson(),
-        'chapters': metas,
-      };
       await File('${dir.path}/index.json').writeAsString(
-        const JsonEncoder.withIndent('  ').convert(index),
+        const JsonEncoder.withIndent('  ').convert(b.toIndexJson()),
       );
 
       try {
@@ -360,7 +341,6 @@ class DeckRepository {
     if (await dir.exists()) await dir.delete(recursive: true);
     await dir.create(recursive: true);
 
-    final metas = <Map<String, dynamic>>[];
     var i = 0;
     for (final c in book.chapters) {
       i++;
@@ -368,28 +348,10 @@ class DeckRepository {
       await File('${dir.path}/$name').writeAsString(
         const JsonEncoder.withIndent('  ').convert(c.toJson()),
       );
-      metas.add({
-        'chapter_id': c.chapterId,
-        'title': c.title,
-        if (c.passage != null) 'passage': c.passage!.toJson(),
-        'file': name,
-        'card_count': c.cards.length,
-        'card_ids': [for (final x in c.cards) x.id],
-      });
     }
 
-    final index = <String, dynamic>{
-      'format': 'flashcard.book.v2',
-      'book_id': book.bookId,
-      'title': book.title,
-      'subtitle': book.subtitle,
-      'template': book.templateId,
-      'fields_order': book.fieldsOrder,
-      if (book.passage != null) 'passage': book.passage!.toJson(),
-      'chapters': metas,
-    };
     await File('${dir.path}/index.json').writeAsString(
-      const JsonEncoder.withIndent('  ').convert(index),
+      const JsonEncoder.withIndent('  ').convert(book.toIndexJson()),
     );
 
     // 顺手清掉可能存在的同名单文件

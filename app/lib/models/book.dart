@@ -13,21 +13,20 @@
 /// 语篇（Passage）挂在「章」上（无章时挂书上）：一章开头放一篇短文，
 /// 尽量短，但包含本章所有目标词。通读辅助记忆 + 语篇选词都用它。
 ///
-/// ## 分片存储（v0.7.0）
+/// ## 分片存储（v0.8.4）
 /// 大书不再塞进一个 json，而是一章一个文件：
 ///
-///   books/<book_id>/index.json      书元信息 + 章节目录（标题 / 卡片数 / 卡片 id / 语篇）
-///   books/<book_id>/ch_0001.json    第 1 章：**只有卡片**
+///   books/<book_id>/index.json      书元信息（书级字段，**不含章节列表**）
+///   books/<book_id>/ch_0001.json    第 1 章：标题 / 语篇 / 卡片
 ///   books/<book_id>/ch_0002.json    ...
 ///
-/// 好处：
-///   1. 启动只读 index.json —— 首页要的「今天到期多少 / 新词多少」靠
-///      [Chapter.cardIds] + [Book.allCardIds] 就能算，**一张卡都不用载入**；
-///   2. 真要开背了，才按章读 ch_*.json（一章几十~几百 KB，毫秒级）；
-///   3. Agent 改第 3 章就开 ch_0003.json，diff 干净，不会误伤别的章。
+/// 章节的**唯一真源是目录里的 ch_*.json**：
+///   1. 加一章 = 丢一个 ch_xxxx.json 进去，不用改 index.json；
+///   2. 删一章 = 删文件；
+///   3. Agent 改第 3 章只动 ch_0003.json，diff 干净。
 ///
-/// 语篇只写在 index.json 里（单一真源，避免两处不一致）；
-/// 单文件的老格式仍然支持，读取时自动兼容。
+/// index.json 里的老 `chapters` 数组仍会被读，但**只当缓存种子**（省一次读盘），
+/// 目录里的文件列表优先。单文件的老格式仍然支持，读取时自动兼容。
 library;
 
 import 'dart:convert';
@@ -117,76 +116,133 @@ class Passage {
       };
 }
 
-/// 从分片文件里同步读出一章的卡片（首次访问 [Chapter.cards] 时调用）
-List<FlashCard> _readChapterCards(String path, String templateId) {
+/// 从 ch_xxxx.json 解析出的一章内容（标题 / 语篇 / 卡片都在这一个文件里）
+class ChapterContent {
+  final String title;
+  final Passage? passage;
+  final List<FlashCard> cards;
+
+  const ChapterContent({
+    this.title = '',
+    this.passage,
+    this.cards = const <FlashCard>[],
+  });
+}
+
+/// 同步读一个 ch 分片文件（首次访问时才调用；单章几十~几百 KB，毫秒级）
+ChapterContent _readChapterFile(String path, String templateId) {
   try {
     final f = File(path);
-    if (!f.existsSync()) return const <FlashCard>[];
+    if (!f.existsSync()) return const ChapterContent();
     final m = json.decode(f.readAsStringSync());
-    if (m is! Map) return const <FlashCard>[];
-    return [
-      for (final e in (m['cards'] as List? ?? []))
-        FlashCard.fromJson(Map<String, dynamic>.from(e as Map), templateId),
-    ];
+    if (m is! Map) return const ChapterContent();
+    return ChapterContent(
+      title: (m['title'] ?? '').toString(),
+      passage: _passageFrom(m['passage']),
+      cards: [
+        for (final e in (m['cards'] as List? ?? []))
+          FlashCard.fromJson(Map<String, dynamic>.from(e as Map), templateId),
+      ],
+    );
   } catch (_) {
-    return const <FlashCard>[];
+    return const ChapterContent();
   }
 }
 
-/// 一章 = 一个文件
+/// ch_xxxx.json 的文件名规则（自然排序用文件名里的数字）
+final RegExp _chFileRe = RegExp(r'^ch_(\d+)\.json$');
+
+int _chFileNo(String name) {
+  final m = _chFileRe.firstMatch(name);
+  return m == null ? 0 : (int.tryParse(m.group(1)!) ?? 0);
+}
+
+/// 扫出目录里所有 ch_*.json，按编号排序 —— 章节的**唯一真源是文件本身**，
+/// 加一章只要丢一个 ch_xxxx.json 进来，不用动 index.json。
+List<String> _chapterFiles(String dir) {
+  final names = <String>[];
+  try {
+    final d = Directory(dir);
+    if (!d.existsSync()) return names;
+    for (final e in d.listSync()) {
+      if (e is! File) continue;
+      final n = e.uri.pathSegments.last;
+      if (_chFileRe.hasMatch(n)) names.add(n);
+    }
+  } catch (_) {}
+  names.sort((a, b) => _chFileNo(a).compareTo(_chFileNo(b)));
+  return names;
+}
+
+/// 一章 = 一个 ch_xxxx.json（老格式的章也可能内联在书文件里）
 class Chapter {
   final String chapterId;
-  final String title;
 
-  /// 本章语篇（可空 —— 老卡组没写就跳过语篇两阶段）
-  final Passage? passage;
-
-  /// 索引里声明的卡片数（分片存储时用；不载入卡片就能算总数）
-  final int cardCount;
-
-  /// 索引里声明的卡片 id 列表（不载入卡片就能算到期 / 新卡）
-  final List<String> cardIds;
-
-  /// 分片文件名（相对书目录）；null / 空 = 卡片已内联在书文件里
+  /// 分片文件名（相对书目录）；null / 空 = 卡片内联
   final String? file;
 
-  List<FlashCard>? _cards;
-  final List<FlashCard> Function()? _loader;
+  // ---- 老格式（index.json 里带 chapters）的「种子」 ----
+  // 有种子就不用读盘；新格式没有种子，title / passage / cards 全懒加载自 ch 文件。
+  final String _seedTitle;
+  final Passage? _seedPassage;
+  final int _seedCount;
+  final List<String> _seedIds;
+  final List<FlashCard>? _inlineCards;
+
+  final ChapterContent Function()? _loader;
+  ChapterContent? _loaded;
 
   Chapter({
     required this.chapterId,
-    required this.title,
-    List<FlashCard>? cards,
-    this.passage,
-    this.cardCount = 0,
-    this.cardIds = const <String>[],
     this.file,
-    List<FlashCard> Function()? loader,
-  })  : _cards = cards,
+    String seedTitle = '',
+    Passage? seedPassage,
+    int seedCount = 0,
+    List<String> seedIds = const <String>[],
+    List<FlashCard>? inlineCards,
+    ChapterContent Function()? loader,
+  })  : _seedTitle = seedTitle,
+        _seedPassage = seedPassage,
+        _seedCount = seedCount,
+        _seedIds = seedIds,
+        _inlineCards = inlineCards,
         _loader = loader;
 
-  /// 卡片。分片存储时**首次访问才真正读盘**（同步；单章文件很小，毫秒级）。
-  List<FlashCard> get cards => _cards ??= (_loader?.call() ?? <FlashCard>[]);
+  ChapterContent get _content => _loaded ??= (_loader != null
+      ? _loader!()
+      : ChapterContent(
+          title: _seedTitle,
+          passage: _seedPassage,
+          cards: _inlineCards ?? const <FlashCard>[],
+        ));
 
-  /// 已经载入内存了？
-  bool get loaded => _cards != null;
+  /// 内容已经载入内存了？（内联章永远算已载入）
+  bool get loaded => _loaded != null || _loader == null;
+
+  /// 卡片。分片章**首次访问才真正读盘**（同步；单章文件很小，毫秒级）。
+  List<FlashCard> get cards => _content.cards;
 
   /// 主动载入（不关心返回值时用）
   void ensureLoaded() => cards;
 
-  /// **不触发载入**的卡片数
+  String get title =>
+      _seedTitle.isNotEmpty ? _seedTitle : (_content.title.isNotEmpty ? _content.title : '未命名章节');
+
+  Passage? get passage => _seedPassage ?? _content.passage;
+
+  /// 卡片数 —— 有种子 / 内联就不读盘
   int get count {
-    final c = _cards;
-    if (c != null) return c.length;
-    if (cardCount > 0) return cardCount;
-    return cardIds.length;
+    if (_inlineCards != null) return _inlineCards!.length;
+    if (_seedCount > 0) return _seedCount;
+    if (_loaded != null) return _loaded!.cards.length;
+    return _content.cards.length;
   }
 
-  /// **不触发载入**的卡片 id 列表
+  /// 卡片 id 列表 —— 有种子 / 内联就不读盘
   List<String> get ids {
-    final c = _cards;
-    if (c != null) return [for (final x in c) x.id];
-    return cardIds;
+    if (_inlineCards != null) return [for (final x in _inlineCards!) x.id];
+    if (_seedIds.isNotEmpty) return _seedIds;
+    return [for (final x in _content.cards) x.id];
   }
 
   /// 老格式：卡片内联在书文件里
@@ -197,40 +253,32 @@ class Chapter {
         .toList();
     return Chapter(
       chapterId: (j['chapter_id'] ?? j['title'] ?? 'ch').toString(),
-      title: (j['title'] ?? '未命名章节').toString(),
-      cards: cards,
-      passage: _passageFrom(j['passage']),
+      seedTitle: (j['title'] ?? '未命名章节').toString(),
+      seedPassage: _passageFrom(j['passage']),
+      inlineCards: cards,
     );
   }
 
-  /// 新格式：只读 index.json 里的章节元信息（不含卡片）
+  /// 老格式：index.json 里的章节条目 —— **只当种子**（省一次读盘），
+  /// 目录里的 ch 文件列表才是真源。
   factory Chapter.meta(Map<String, dynamic> j) {
     return Chapter(
       chapterId: (j['chapter_id'] ?? j['title'] ?? 'ch').toString(),
-      title: (j['title'] ?? '未命名章节').toString(),
-      passage: _passageFrom(j['passage']),
-      cardCount: (j['card_count'] as num?)?.toInt() ?? 0,
-      cardIds: (j['card_ids'] as List? ?? [])
+      file: j['file']?.toString(),
+      seedTitle: (j['title'] ?? '').toString(),
+      seedPassage: _passageFrom(j['passage']),
+      seedCount: (j['card_count'] as num?)?.toInt() ?? 0,
+      seedIds: (j['card_ids'] as List? ?? [])
           .map((e) => e.toString())
           .toList(),
-      file: j['file']?.toString(),
     );
   }
 
-  /// index.json 里的章节条目（含语篇，不含卡片）
-  Map<String, dynamic> toMetaJson() => {
-        'chapter_id': chapterId,
-        'title': title,
-        if (passage != null) 'passage': passage!.toJson(),
-        'file': file ?? '',
-        'card_count': count,
-        'card_ids': ids,
-      };
-
-  /// ch_xxxx.json 的内容（只有卡片；语篇在 index 里）
+  /// ch_xxxx.json 的内容（标题 / 语篇 / 卡片全在这，单一真源）
   Map<String, dynamic> toJson() => {
         'chapter_id': chapterId,
         'title': title,
+        if (passage != null) 'passage': passage!.toJson(),
         'cards': cards.map((c) => c.toJson()).toList(),
       };
 }
@@ -337,26 +385,33 @@ class Book {
     );
   }
 
-  /// 新格式：只读 index.json，章节卡片按需载入
+  /// 新格式：只读 index.json 的**书级**元信息；章节从目录里的 ch_*.json 发现。
+  /// 加一章 = 丢一个 ch_xxxx.json，不用动 index.json。
   factory Book.fromIndex(Map<String, dynamic> j, String dir) {
     final tplId = (j['template'] ?? 'bubei_dark').toString();
     final order =
         (j['fields_order'] as List?)?.cast<String>() ?? const <String>[];
 
-    final chapters = <Chapter>[];
+    // 老 index.json 里的 chapters 只当「种子」（有 title/passage/card_ids，
+    // 省一次读盘）；目录里的 ch_*.json 列表才是唯一真源。
+    final seeds = <String, Chapter>{};
     for (final e in (j['chapters'] as List? ?? [])) {
-      final meta = Chapter.meta(Map<String, dynamic>.from(e as Map));
-      final fname = meta.file;
+      final m = Chapter.meta(Map<String, dynamic>.from(e as Map));
+      final f = m.file;
+      if (f != null && f.isNotEmpty) seeds[f] = m;
+    }
+
+    final chapters = <Chapter>[];
+    for (final fname in _chapterFiles(dir)) {
+      final seed = seeds[fname];
       chapters.add(Chapter(
-        chapterId: meta.chapterId,
-        title: meta.title,
-        passage: meta.passage,
-        cardCount: meta.cardCount,
-        cardIds: meta.cardIds,
+        chapterId: seed?.chapterId ?? 'ch_${_chFileNo(fname)}',
         file: fname,
-        loader: (fname == null || fname.isEmpty)
-            ? null
-            : () => _readChapterCards('$dir/$fname', tplId),
+        seedTitle: seed?.title ?? '',
+        seedPassage: seed?.passage,
+        seedCount: seed?.count ?? 0,
+        seedIds: seed?.ids ?? const <String>[],
+        loader: () => _readChapterFile('$dir/$fname', tplId),
       ));
     }
 
@@ -389,10 +444,11 @@ class Book {
           'cards': looseCards.map((c) => c.toJson()).toList(),
       };
 
-  /// 新格式：index.json（不含卡片）
+  /// 新格式：index.json —— **只有书级元信息**，章节列表不写在这
+  /// （章节由目录里的 ch_*.json 决定，加章不用改 index）
   Map<String, dynamic> toIndexJson() {
     final m = <String, dynamic>{
-      'format': 'flashcard.book.v2',
+      'format': 'flashcard.book.v3',
       'book_id': bookId,
       'title': title,
       'subtitle': subtitle,
@@ -400,9 +456,7 @@ class Book {
       'fields_order': fieldsOrder,
     };
     if (passage != null) m['passage'] = passage!.toJson();
-    if (hasChapters) {
-      m['chapters'] = [for (final c in chapters) c.toMetaJson()];
-    } else {
+    if (!hasChapters) {
       m['loose_count'] = looseCards.isNotEmpty ? looseCards.length : looseCount;
       m['loose_ids'] = looseCards.isNotEmpty
           ? [for (final c in looseCards) c.id]
