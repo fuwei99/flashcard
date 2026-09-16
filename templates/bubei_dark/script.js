@@ -69,7 +69,7 @@
   // ---------- TTS 路由（改这里就能换：词 / 句 / 文章各走各的）----------
   var TTS_WORD     = { plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true };   // 单词：豆包·温柔桃子，落盘
   var TTS_SENTENCE = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts",  cache: false };  // 例句：豆包·磁性君语，不落盘
-  var TTS_PASSAGE  = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: true };  // 文章：豆包·磁性俊宇，1.2x / 音高 0.9，落盘
+  var TTS_PASSAGE  = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: false };  // 文章：豆包·磁性俊宇，1.2x / 音高 0.9，不落盘 —— 长文本走流式，别全收完才播
 
   // ---------- 朗读纯文本 ----------
   function speak(text, lang, opts) {
