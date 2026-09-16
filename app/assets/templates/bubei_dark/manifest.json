@@ -15,7 +15,11 @@
     "sentence_en": "html",
     "sentence_cn": "text",
     "blocks": "list",
-    "exam_tag": "text"
+    "exam_tag": "text",
+    "phrases": "list",
+    "root": "html",
+    "meaning": "text",
+    "pos": "text"
   },
   "fields": [
     "word",
@@ -29,7 +33,11 @@
     "sentence_en",
     "sentence_cn",
     "blocks",
-    "exam_tag"
+    "exam_tag",
+    "phrases",
+    "root",
+    "meaning",
+    "pos"
   ],
   "files": {
     "script": "script.js",
