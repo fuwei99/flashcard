@@ -233,12 +233,16 @@ kForgetRetainExp = 1.5   // S_min = S / e^1.5 ≈ 保留 22%
 **不上 MCP**（后台常驻 + 保活 + 国产 ROM 杀进程，纯挖坑）。
 **走公共文件夹**，App 已申请 `MANAGE_EXTERNAL_STORAGE`。
 
+> ✅ 2026-09-16 落地：`StatusWriter` 负责写这份快照，
+> 触发点 = 启动 / 背完一张（限流 15s）/ 进后台 / 退出会话。
+> App 只写不读，写失败静默。
+
 ```
 flashcard App（K70）
    每次 answer / 每轮结束 / 退出时
         │ 原子写（先 .tmp 再 rename）
         ▼
-/storage/emulated/0/Documents/flashcard/status.json
+/storage/emulated/0/Documents/Flashcard/status.json
         │
 K70 Termux MCP（8994 hub，全权限）
         ▼
@@ -260,6 +264,13 @@ AI 定时查岗 → 读快照 → 知道今天背了几个、正确率、连续�
 
 现有的 `exportBook`（手动导出整本书）**保留**，那是备份 / 迁移用的；
 `status.json` 是给监工看的增量快照。
+
+### 自动热重载（2026-09-16）
+
+`HotReload` 在 App **回到前台**时对比 `templates/` + `books/` 的
+「文件数 + 最大 mtime」指纹：变了就自动重读模板 + 刷新四个 Tab，
+弹一句「已自动重载」。AI 往公共目录丢书 / 改 CSS 后，用户切回来即生效，
+不必再手点「重载模板」。首次进前台只建立基线，不误报。
 
 ---
 

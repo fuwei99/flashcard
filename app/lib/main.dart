@@ -12,7 +12,9 @@ import 'screens/main_scaffold.dart';
 import 'services/card_store.dart';
 import 'services/deck_repository.dart';
 import 'services/plugin.dart';
+import 'services/hot_reload.dart';
 import 'services/reminder_service.dart';
+import 'services/status_writer.dart';
 import 'services/study_settings.dart';
 
 void main() {
@@ -75,10 +77,23 @@ class _BootstrapState extends State<_Bootstrap> {
       // 说明文档也铺到公共目录（版本感知，用户改过的不覆盖）
       await _repo.seedReadme();
       final templates = await _repo.loadAllTemplates();
+
+      // status.json：给外部监工（AI）读的只读快照。之后背卡 / 进后台会刷新。
+      StatusWriter.I.init(
+        settings: _settings,
+        store: _store,
+        loadBooks: _repo.loadAllBooks,
+      );
+      // 公共目录变更指纹基线：首帧建立，之后回前台才比较
+      await HotReload.resync();
+
       if (!mounted) return;
       setState(() => _templates = templates);
       // 进 APP 就申请「全部文件访问权」，放到首帧之后避免 build 冲突
-      WidgetsBinding.instance.addPostFrameCallback((_) => _askPermission());
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        _askPermission();
+        await StatusWriter.I.write();
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e);

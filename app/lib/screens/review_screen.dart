@@ -16,6 +16,7 @@ import '../models/deck.dart';
 import '../models/study_session.dart';
 import '../services/card_store.dart';
 import '../services/scheduler.dart';
+import '../services/status_writer.dart';
 import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import '../services/tts_log.dart';
@@ -174,6 +175,10 @@ class _ReviewScreenState extends State<ReviewScreen>
         if (_written.contains(cid)) continue;
         _write(cid, _session.ratingFor(cid));
         await s.markDone(card: widget.isCard);
+      }
+      // 刷新给外部监工（AI）看的 status.json —— 限流，别每张卡都重算全书
+      if (_session.graduated.isNotEmpty) {
+        StatusWriter.I.writeThrottled();
       }
       // 完成每日背诵量 → 过关 😁
       final nowPassed = widget.isCard ? s.cardPassed : s.wordPassed;
@@ -689,6 +694,8 @@ class _ReviewScreenState extends State<ReviewScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // 退出会话：写一份完整的 status 快照（尽力而为，不阻塞返回）
+    StatusWriter.I.write();
     _bridge.dispose();
     super.dispose();
   }

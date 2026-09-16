@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../models/deck.dart';
 import '../services/card_store.dart';
 import '../services/deck_repository.dart';
+import '../services/hot_reload.dart';
+import '../services/status_writer.dart';
 import '../services/study_settings.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
@@ -33,7 +35,8 @@ class MainScaffold extends StatefulWidget {
   State<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold> {
+class _MainScaffoldState extends State<MainScaffold>
+    with WidgetsBindingObserver {
   int _index = 0;
 
   final _homeKey = GlobalKey<HomeScreenState>();
@@ -58,6 +61,45 @@ class _MainScaffoldState extends State<MainScaffold> {
         _meKey.currentState?.refresh();
         break;
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // 进后台写一份 status 快照，让外部监工（AI）拿到最新状态
+      StatusWriter.I.write();
+    } else if (state == AppLifecycleState.resumed) {
+      _maybeHotReload();
+    }
+  }
+
+  /// 回到前台：公共目录被改过（AI 丢书 / 改模板）就自动重载，省得手动点。
+  /// 只读文件 mtime，开销可忽略；没变就啥也不做。
+  Future<void> _maybeHotReload() async {
+    if (!await HotReload.changed()) return;
+    await widget.onReloadTemplates?.call();
+    if (!mounted) return;
+    _homeKey.currentState?.refresh();
+    _wordKey.currentState?.refresh();
+    _cardKey.currentState?.refresh();
+    _meKey.currentState?.refresh();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('检测到公共目录有改动，已自动重载'),
+      backgroundColor: Color(0xFF1B2629),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   @override
