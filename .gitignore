@@ -7,7 +7,10 @@
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
 **/.packages
-**/pubspec.lock
+# pubspec.lock **必须入库**：依赖全是 caret 范围，lock 不进仓库等于每次 CI
+# 都重新解一套新版本，构建不可复现。tts_service 里还有一处依赖 just_audio
+# 内部行为的写法，上游小版本一改就静默失效 —— 更要锁住。
+# **/pubspec.lock
 app/android/.gradle/
 app/android/local.properties
 app/android/app/debug/

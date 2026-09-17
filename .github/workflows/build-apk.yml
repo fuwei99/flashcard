@@ -294,6 +294,12 @@ jobs:
         working-directory: app
         run: flutter pub get
 
+      # 静态分析：解析失败 / 未定义符号等 error 级问题会中断构建；
+      # info / warning 只报告不阻断（历史债较多，逐步收敛）
+      - name: Flutter analyze
+        working-directory: app
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
       - name: Build release APK (arm64-v8a only)
         working-directory: app
         run: |

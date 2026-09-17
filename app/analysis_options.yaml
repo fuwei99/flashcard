@@ -1,0 +1,28 @@
+# 静态分析配置
+#
+# 以前仓库里没有这个文件，CI 也不跑 analyze —— 于是「未 await 的 Future」
+# 「StreamController 没 close」「订阅没 cancel」这类问题只能靠人肉 code review
+# 发现。这里把它们至少开到 info，配合 CI 的 `flutter analyze --no-fatal-infos`：
+# 历史债不阻断构建，但扫得出来、也能在 IDE 里看到波浪线。
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # 本仓库踩过的坑，给明确提示（暂不升级为 error，避免历史债一次性炸掉 CI）
+    unawaited_futures: info
+    cancel_subscriptions: info
+    close_sinks: info
+    use_build_context_synchronously: info
+  exclude:
+    - build/**
+    - .dart_tool/**
+
+linter:
+  rules:
+    - unawaited_futures        # 忘了 await 的 Future（TTS / 落盘里最容易漏）
+    - cancel_subscriptions     # StreamSubscription 必须 cancel
+    - close_sinks              # StreamController 必须 close
+    - avoid_dynamic_calls      # dynamic 上的调用没有静态检查
+    - always_declare_return_types
+    - prefer_const_constructors
+    - unnecessary_this
