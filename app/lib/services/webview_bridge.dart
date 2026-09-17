@@ -223,6 +223,7 @@ class WebViewBridge {
                   'engine': m.engine.wire,
                   'version': m.version,
                   'builtin': m.builtin,
+                  'api': m.api,
                   'methods': host.methodsOf(m.id),
                 })
             .toList(),

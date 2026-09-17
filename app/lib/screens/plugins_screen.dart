@@ -1,12 +1,14 @@
 /// 插件管理
 /// ================================================================
-/// 一切皆插件：
-///   · TTS 插件        —— OpenAI 兼容 HTTP / JS 脚本（豆包那类）
-///   · LLM Provider 插件 —— OpenAI 兼容 Chat
+/// 插件管理 —— 一个注册表，两条车道：
+///   · 能力插件（capability）—— type: tts / llm
+///       契约固定，壳拥有流水线（缓存 / 播放 / 队列 / 选择）
+///   · 通用插件（tool）—— type: tool
+///       走 plugin.call 的 JSON 路径；壳只给原语，业务全在插件 JS
 ///
-/// 内置插件打包在 assets/plugins/；用户插件丢在
-/// /storage/emulated/0/Documents/Flashcard/plugins/<tts|llm>/<id>/
-/// 同名覆盖内置。
+/// 目录平铺：plugins/<id>/manifest.json（类型写在 manifest 的 type 里）。
+/// 内置插件打包在 assets/plugins/，用户插件在
+/// /storage/emulated/0/Documents/Flashcard/plugins/，同名覆盖内置。
 library;
 
 import 'dart:convert';
@@ -44,7 +46,16 @@ class _PluginsScreenState extends State<PluginsScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
-  PluginType get _type => _tab == 0 ? PluginType.tts : PluginType.llm;
+  /// 当前筛选：null = 全部
+  PluginType? get _filter => switch (_tab) {
+        1 => PluginType.tts,
+        2 => PluginType.llm,
+        3 => PluginType.tool,
+        _ => null,
+      };
+
+  /// 安装目标类型：全部 tab 下默认装通用工具插件
+  PluginType get _installType => _filter ?? PluginType.tool;
 
   Future<void> _open(PluginManifest m) async {
     await Navigator.push(
@@ -67,23 +78,27 @@ class _PluginsScreenState extends State<PluginsScreen> {
     if (path == null) return;
     final base = File(path).uri.pathSegments.last.replaceAll('.js', '');
     final id = base.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
-    final dir = await DataDir.sub('plugins/${_type.wire}/$id');
+    final dir = await DataDir.sub('plugins/$id');
     if (dir == null) return;
     await File(path).copy('${dir.path}/plugin.js');
-    final manifest = {
+    final t = _installType;
+    final manifest = <String, dynamic>{
       'id': id,
       'name': base,
-      'type': _type.wire,
+      'type': t.wire,
       'engine': 'js',
       'author': 'imported',
       'version': 1,
       'entry': 'plugin.js',
-      'defaults': {'audio_format': 'aac'},
-      'vars': [
-        {'key': 'cookie', 'label': 'Cookie', 'hint': '完整请求头 Cookie', 'secret': true},
-        {'key': 'voice', 'label': '音色 / speaker', 'hint': '插件要求的音色标识'},
-        {'key': 'rate', 'label': '语速倍率', 'hint': '0.5 ~ 2.0', 'default': '1.0'},
-      ],
+      'api': <String>[],
+      if (t == PluginType.tts) ...{
+        'defaults': {'audio_format': 'aac'},
+        'vars': [
+          {'key': 'cookie', 'label': 'Cookie', 'hint': '完整请求头 Cookie', 'secret': true},
+          {'key': 'voice', 'label': '音色 / speaker', 'hint': '插件要求的音色标识'},
+          {'key': 'rate', 'label': '语速倍率', 'hint': '0.5 ~ 2.0', 'default': '1.0'},
+        ],
+      },
     };
     await File('${dir.path}/manifest.json')
         .writeAsString(const JsonEncoder.withIndent('  ').convert(manifest));
@@ -105,8 +120,12 @@ class _PluginsScreenState extends State<PluginsScreen> {
             style: TextStyle(color: Colors.white, fontSize: 16)),
         content: SelectableText(
           '${DataDir.publicPath}/plugins/\n'
-          '  ├── tts/<插件id>/manifest.json + plugin.js\n'
-          '  └── llm/<插件id>/manifest.json',
+          '  └── <插件id>/\n'
+          '        ├── manifest.json\n'
+          '        ├── plugin.js（engine=js 时）\n'
+          '        └── kv.json（插件私有存储）\n'
+          '\n'
+          '类型写在 manifest 的 type 字段：tts / llm / tool',
           style: const TextStyle(color: Color(0xFFB7C4C8), fontSize: 12),
         ),
         actions: [
@@ -121,7 +140,9 @@ class _PluginsScreenState extends State<PluginsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final list = PluginManager.I.of(_type);
+    final all = PluginManager.I.all;
+    final list =
+        _filter == null ? all : all.where((p) => p.type == _filter).toList();
     return Scaffold(
       backgroundColor: const Color(0xFF141D1F),
       appBar: AppBar(
@@ -151,9 +172,13 @@ class _PluginsScreenState extends State<PluginsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Row(
               children: [
-                _tabBtn('TTS 插件', 0),
-                const SizedBox(width: 8),
-                _tabBtn('LLM Provider', 1),
+                _tabBtn('全部', 0),
+                const SizedBox(width: 6),
+                _tabBtn('TTS', 1),
+                const SizedBox(width: 6),
+                _tabBtn('LLM', 2),
+                const SizedBox(width: 6),
+                _tabBtn('工具', 3),
               ],
             ),
           ),
@@ -181,7 +206,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
                         ),
-                        label: Text('安装 ${_type.label}（选 .js）'),
+                        label: Text('安装 ${_installType.label}（选 .js）'),
                       ),
                     ],
                   ),
@@ -261,7 +286,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${m.engine.label} · ${m.builtin ? "内置" : "用户"} · v${m.version}',
+                      '${m.type.label}${m.type.singleton ? " · 底层能力" : ""} · ${m.engine.label} · ${m.builtin ? "内置" : "用户"} · v${m.version}',
                       style: const TextStyle(
                           color: Color(0xFF54666C), fontSize: 12),
                     ),
@@ -442,6 +467,24 @@ class _PluginDetailScreenState extends State<PluginDetailScreen> {
                 ],
               ),
             ),
+          if (m.api.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _label('对外 API'),
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final a in m.api)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(a,
+                          style: const TextStyle(
+                              color: Color(0xFFF0F4F5), fontSize: 13)),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           if (m.type == PluginType.tts) ...[
             _label('测试'),
@@ -491,19 +534,29 @@ class _PluginDetailScreenState extends State<PluginDetailScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor:
-                  active ? const Color(0xFF1B2629) : const Color(0xFF00C08B),
-              foregroundColor:
-                  active ? const Color(0xFF8C9DA2) : const Color(0xFF141D1F),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
+          if (m.type.singleton)
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    active ? const Color(0xFF1B2629) : const Color(0xFF00C08B),
+                foregroundColor:
+                    active ? const Color(0xFF8C9DA2) : const Color(0xFF141D1F),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: _activate,
+              child: Text(active ? '当前使用中（点一下重新保存）' : '设为当前插件'),
+            )
+          else
+            _card(
+              child: Text(
+                '工具插件常驻可用，不需要「启用」。\n'
+                '模板里这样调：plugin.call("${m.id}", "<方法>", {…})',
+                style:
+                    const TextStyle(color: Color(0xFF8C9DA2), fontSize: 12.5),
+              ),
             ),
-            onPressed: _activate,
-            child: Text(active ? '当前使用中（点一下重新保存）' : '设为当前插件'),
-          ),
         ],
       ),
     );

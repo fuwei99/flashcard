@@ -107,6 +107,15 @@ class PluginVar {
       );
 }
 
+/// 字符串数组（manifest 里的 api 之类）
+List<String> _strList(dynamic v) {
+  if (v is! List) return const [];
+  return v
+      .map((e) => '$e'.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+}
+
 class PluginManifest {
   final String id;
   final String name;
@@ -118,6 +127,12 @@ class PluginManifest {
   final String entry;
   final List<PluginVar> vars;
   final Map<String, dynamic> defaults;
+
+  /// 声明式 API 清单：这个插件对外暴露哪些方法。
+  ///
+  /// JS 插件运行时会用 registerPlugin({methods}) 再报一次（运行时真源），
+  /// 这里只是让「没加载脚本也能列出 API」—— UI / 文档 / LLM 工具发现用。
+  final List<String> api;
 
   /// 内置 = asset 目录；用户 = 磁盘绝对目录
   final String location;
@@ -134,6 +149,7 @@ class PluginManifest {
     this.entry = '',
     this.vars = const [],
     this.defaults = const {},
+    this.api = const [],
     required this.location,
     required this.builtin,
   });
@@ -168,6 +184,7 @@ class PluginManifest {
         defaults: j['defaults'] is Map
             ? Map<String, dynamic>.from(j['defaults'] as Map)
             : const {},
+        api: _strList(j['api']),
         location: location,
         builtin: builtin,
       );
