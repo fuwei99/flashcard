@@ -98,7 +98,11 @@ class HomeScreenState extends State<HomeScreen> {
     return out;
   }
 
-  /// 打开一组编排好的单元
+  /// 打开一组编排好的单元。
+  ///
+  /// 跨书复习时，不同书的 templateId 可能不同 —— 模板间字段结构有差异，
+  /// 硬套「第一本的模板」会把别的书渲染成空白/错位。这里按 templateId 把
+  /// units 分组，每组用自己那本书的模板**顺序**开一个 ReviewScreen 会话。
   void _openUnits(
       List<Book> books, List<StudyUnit> units, String title, bool isCard) {
     if (books.isEmpty) {
@@ -109,26 +113,72 @@ class HomeScreenState extends State<HomeScreen> {
       _toast('今天没有要背的卡片 🎉');
       return;
     }
-    final tpl = widget.templates[books.first.templateId];
-    if (tpl == null) {
-      _toast('模板缺失：${books.first.templateId}');
+
+    // cardId -> 书（unit 内卡片同属一本书的同一章，取首张即可定位）
+    final bookOfCard = <String, Book>{};
+    for (final b in books) {
+      for (final id in b.allCardIds) {
+        bookOfCard[id] = b;
+      }
+    }
+
+    // templateId -> 该模板下要背的 units（保持原顺序）
+    final groups = <String, List<StudyUnit>>{};
+    final order = <String>[];
+    for (final u in units) {
+      final src =
+          u.cards.isNotEmpty ? u.cards : (u.passageCards ?? const <FlashCard>[]);
+      final b = src.isNotEmpty ? bookOfCard[src.first.id] : null;
+      final tid = b?.templateId ?? books.first.templateId;
+      if (groups[tid] == null) order.add(tid);
+      (groups[tid] ??= <StudyUnit>[]).add(u);
+    }
+
+    _runGroups(order, 0, groups, title, isCard, bookOfCard);
+  }
+
+  /// 按模板分组顺序开 ReviewScreen：一组结束（返回）后自动进下一组，
+  /// 全部跑完才 refresh 一次。
+  Future<void> _runGroups(
+    List<String> order,
+    int i,
+    Map<String, List<StudyUnit>> groups,
+    String title,
+    bool isCard,
+    Map<String, Book> bookOfCard,
+  ) async {
+    if (i >= order.length) {
+      refresh();
       return;
     }
-    Navigator.push(
+    final tid = order[i];
+    final tpl = widget.templates[tid];
+    if (tpl == null) {
+      _toast('模板缺失：$tid');
+      if (!mounted) return;
+      return _runGroups(order, i + 1, groups, title, isCard, bookOfCard);
+    }
+    final us = groups[tid]!;
+    final src =
+        us.first.cards.isNotEmpty ? us.first.cards : (us.first.passageCards ?? const <FlashCard>[]);
+    final b = src.isNotEmpty ? bookOfCard[src.first.id] : null;
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ReviewScreen(
-          title: title,
-          units: units,
+          title: order.length > 1 ? '$title · ${i + 1}/${order.length}' : title,
+          units: us,
           template: tpl,
-          fieldsOrder: books.first.fieldsOrder,
-          distractorPool: _poolFromUnits(units),
+          fieldsOrder: b?.fieldsOrder ?? const <String>[],
+          distractorPool: _poolFromUnits(us),
           store: widget.store,
           settings: widget.settings,
           isCard: isCard,
         ),
       ),
-    ).then((_) => refresh());
+    );
+    if (!mounted) return;
+    return _runGroups(order, i + 1, groups, title, isCard, bookOfCard);
   }
 
   /// 只复习到期词（跨牌组，语篇只挖今天要复习的词）

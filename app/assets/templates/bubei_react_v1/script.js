@@ -720,9 +720,13 @@
     started = true;
     call("session.plan", {}).then(function (plan) {
       var units = arr(plan && plan.units);
-      var anyReview = units.some(function (u) { return u && u.isReview; });
-      var anyNew = units.some(function (u) { return u && !u.isReview; });
-      var mode = (anyReview && !anyNew) ? "review" : "learn";
+      /* 模式由壳直给（plan.mode）。老壳没这字段时退回本地聚合兜底。 */
+      var mode = plan && plan.mode;
+      if (mode !== "review" && mode !== "learn") {
+        var anyReview = units.some(function (u) { return u && u.isReview; });
+        var anyNew = units.some(function (u) { return u && !u.isReview; });
+        mode = (anyReview && !anyNew) ? "review" : "learn";
+      }
       log("autoStart mode=" + mode + " units=" + units.length);
       startSession(mode);
     }).catch(function (e) {

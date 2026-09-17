@@ -46,7 +46,12 @@ class SessionPlan {
         'cards': cards,
       });
     }
+    // 模式直给：壳是唯一真相源，模板别再自己从 units[].isReview 猜。
+    // 聚合逻辑只此一处，混合批次不会再「壳判 review、模板判 learn」。
+    final anyReview = units.any((u) => u.isReview);
+    final anyNew = units.any((u) => !u.isReview);
     return {
+      'mode': (anyReview && !anyNew) ? 'review' : 'learn',
       'passageCloze': passageCloze,
       'retestModes': retestModes,
       'units': out,
