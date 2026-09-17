@@ -901,6 +901,18 @@ html, body {
   background: var(--teal-soft);
 }
 
+/* 中文译文里的目标词：与英文正文 .fc-pw 同款高亮（划线亮亮），点按读英文 + 浮释义 */
+.fc-cn-pw {
+  color: var(--teal);
+  font-weight: 700;
+  border-bottom: 2px solid var(--teal-border);
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+.fc-cn-pw:active {
+  background: var(--teal-soft);
+}
+
 .fc-passage-tip {
   display: none;
   /* 浮动释义：固定定位，由 JS 摆到目标词上方；不再占正文流位置 */

@@ -666,7 +666,7 @@
     var tip = root.querySelector(".fc-passage .fc-passage-tip");
     if (titleEl) titleEl.textContent = p.title || "语篇";
     if (cnEl) {
-      cnEl.textContent = p.cn || "";
+      renderPassageCn(cnEl, p.cn || "");
       cnEl.style.display = p.cn ? "block" : "none";
     }
     if (tip) tip.classList.remove("show");
@@ -686,6 +686,61 @@
         body.appendChild(document.createTextNode(seg.t || ""));
       }
     });
+  }
+
+  // 中文译文目标词：数据格式 [中文](english)。中文划线高亮，点按读英文 + 浮释义。
+  // 兼容旧数据：没有 (...) 的 [x] 原样保留，不解析，绝不吞字。
+  function renderPassageCn(cnEl, cn) {
+    if (!cnEl) return;
+    cnEl.innerHTML = "";
+    var s = String(cn || "");
+    var re = /\[([^\[\]]+)\]\(([^()]+)\)/g;
+    var last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      if (m.index > last) cnEl.appendChild(document.createTextNode(s.slice(last, m.index)));
+      var span = document.createElement("span");
+      span.className = "fc-cn-pw";
+      span.textContent = m[1];
+      span.setAttribute("data-en", m[2]);
+      cnEl.appendChild(span);
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) cnEl.appendChild(document.createTextNode(s.slice(last)));
+  }
+
+  // 中文译文目标词对应的英文释义（从语篇 segments 里捞）
+  function segmentMeaning(en) {
+    var key = String(en || "").toLowerCase().split("|")[0];
+    var found = "";
+    passageSegments().forEach(function (seg) {
+      if (seg.w === undefined || seg.w === null) return;
+      var lem = String(seg.lemma || seg.w).toLowerCase();
+      var sur = String(seg.w).toLowerCase();
+      if (lem === key || sur === key) found = seg.meaning || found;
+    });
+    return found;
+  }
+
+  // 点中文译文划线词：读英文 + 浮释义
+  function showCnTooltip(el) {
+    var raw = String(el.getAttribute("data-en") || "");
+    var en = raw.split("|")[0];
+    speak(en, "en-US", TTS_WORD);
+    var tip = root.querySelector(".fc-passage .fc-passage-tip");
+    if (!tip) return;
+    tip.innerHTML = "";
+    var a = document.createElement("div");
+    a.className = "fc-tip-word";
+    a.textContent = raw;
+    var b = document.createElement("div");
+    b.className = "fc-tip-mean";
+    b.textContent = segmentMeaning(raw) || "（本章未收录释义）";
+    tip.appendChild(a);
+    tip.appendChild(b);
+    tip.classList.add("show");
+    positionTip(tip, el);
+    if (passageTipTimer) clearTimeout(passageTipTimer);
+    passageTipTimer = setTimeout(function () { tip.classList.remove("show"); }, 3000);
   }
 
   function showPassageTooltip(el) {
@@ -1189,6 +1244,14 @@
     if (pwTarget) {
       e.stopPropagation();
       showPassageTooltip(pwTarget);
+      return;
+    }
+
+    // 2c-2. 中文译文里的划线目标词 -> 读英文 + 浮释义
+    var cnPwTarget = e.target.closest(".fc-cn-pw");
+    if (cnPwTarget) {
+      e.stopPropagation();
+      showCnTooltip(cnPwTarget);
       return;
     }
 
