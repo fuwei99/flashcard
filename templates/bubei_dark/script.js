@@ -234,58 +234,6 @@
       if (!b.src) return "";
       return '<img class="fc-block-img" src="' + escHtml(b.src) +
              '" alt="' + escHtml(b.alt || "") + '">';
-    },
-    // 易混辨析：[{word, cn}] / [{k, v}] —— 左词（加粗定宽）右释
-    diff: function (b) {
-      var items = b.items || b.rows || [];
-      if (!items.length) return "";
-      var s = '<div class="fc-diff">';
-      items.forEach(function (it) {
-        var o = blockItem(it);
-        if (!o.left && !o.right) return;
-        s += '<div class="fc-dif"><span class="fc-difk">' + escHtml(o.left) +
-             '</span><span class="fc-difv">' + escHtml(o.right) + "</span></div>";
-      });
-      return s + "</div>";
-    },
-    // 词根词缀：[{tag, text}] / [{k, v}] / ["纯文本"]
-    roots: function (b) {
-      var items = b.items || b.rows || [];
-      if (!items.length) return "";
-      var s = '<div class="fc-roots">';
-      items.forEach(function (it) {
-        if (it === null || it === undefined) return;
-        var tag = "", text = "";
-        if (typeof it === "object") {
-          tag = String(it.tag || it.k || it.label || "").trim();
-          text = String(it.text || it.v || it.cn || it.value || "").trim();
-        } else {
-          text = String(it).trim();
-        }
-        if (!tag && !text) return;
-        s += '<div class="fc-rrow">' +
-             (tag ? '<span class="fc-rtag">' + escHtml(tag) + "</span>" : "") +
-             '<span class="fc-rtext">' + escHtml(text) + "</span></div>";
-      });
-      return s + "</div>";
-    },
-    // 笔记：b.html 原样（富文本），否则转义 b.text，保留换行
-    note: function (b) {
-      if (b.html) return '<div class="fc-note">' + String(b.html) + "</div>";
-      return '<div class="fc-note">' + escHtml(b.text || "") + "</div>";
-    },
-    // 其他拓展：单列 bullet（左主右辅）
-    ulist: function (b) {
-      var items = b.items || [];
-      if (!items.length) return "";
-      var s = '<ul class="fc-ulist">';
-      items.forEach(function (it) {
-        var o = blockItem(it);
-        s += "<li><span>" + escHtml(o.left) +
-             (o.right ? '<i class="fc-uli-cn">' + escHtml(o.right) + "</i>" : "") +
-             "</span></li>";
-      });
-      return s + "</ul>";
     }
   };
 
@@ -467,38 +415,6 @@
     ]);
   }
 
-  /// 底部模块导航条：按当前实际渲染出来的卡片标题生成，
-  /// 点一下滚到对应模块。没有可跳转的模块就整条隐藏。
-  function renderDock() {
-    var dock = root.querySelector(".fc-dock");
-    if (!dock) return;
-    var blocks = root.querySelectorAll(".fc-back .fc-card-block");
-    var tabs = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var el = blocks[i];
-      if (el.style.display === "none") continue;
-      var t = el.querySelector(".fc-block-title");
-      var title = t ? String(t.textContent || "").trim() : "";
-      if (!title) continue;
-      tabs.push({ title: title, el: el });
-    }
-    if (!tabs.length) { dock.hidden = true; dock.innerHTML = ""; return; }
-    dock.hidden = false;
-    dock.innerHTML = "";
-    tabs.forEach(function (x, k) {
-      var s = document.createElement("span");
-      s.className = "fc-dtab" + (k === 0 ? " on" : "");
-      s.textContent = x.title;
-      s.addEventListener("click", function () {
-        var all = dock.querySelectorAll(".fc-dtab");
-        for (var j = 0; j < all.length; j++) all[j].classList.remove("on");
-        s.classList.add("on");
-        try { x.el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {}
-      });
-      dock.appendChild(s);
-    });
-  }
-
   // ---------- 渲染词义页的各个区块 ----------
   function renderBackFace() {
     renderSenses();
@@ -506,7 +422,6 @@
     renderDerivatives();
     renderThesaurus();
     renderBlocks();
-    renderDock();
   }
 
   // ---------- choice 考法：渲染四大选项卡片（对标图 1） ----------
