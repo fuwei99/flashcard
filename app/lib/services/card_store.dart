@@ -28,6 +28,7 @@ import 'scheduler.dart';
 class CardStore {
   static const _snapFile = 'progress.json';
   static const _journalFile = 'progress.log.jsonl';
+  static const _dueFile = 'due.jsonl';
 
   // 公共文件不可用时的兜底（老版本数据也在这）
   static const _kStates = 'fc_card_states_v1';
@@ -40,6 +41,11 @@ class CardStore {
   File? _snap;
   File? _journal;
   int _journalLines = 0;
+
+  /// due 索引重建的节流计数：每 [_dueEvery] 次状态变更重建一次 due.jsonl。
+  /// 索引是派生数据，滞后几行无妨 —— Agent 可叠加 progress.log.jsonl 补齐。
+  int _sinceDue = 0;
+  static const _dueEvery = 10;
 
   /// 是否落在公共文件上（Agent 可读）
   bool get fileBacked => DataDir.available;
@@ -77,6 +83,7 @@ class CardStore {
       // 备份的同步交给 compact（本身就会刷），启动时不再额外写。
       // 日志太长就压一次
       if (_journalLines > _compactThreshold) _compact();
+      _writeDueIndex();
       return;
     }
 
@@ -84,6 +91,7 @@ class CardStore {
     _loadPrefs();
     _compact();
     _flushPrefs();
+    _writeDueIndex();
   }
 
   /// 公共目录从「不可用」翻成「可用」后重新挂上文件（授权回调里调）。
@@ -262,6 +270,7 @@ class CardStore {
     }
     _compact();
     _flushPrefs();
+    _writeDueIndex();
   }
 
   Future<void> reset() async {
@@ -270,6 +279,7 @@ class CardStore {
     await _prefs?.remove(_kStates);
     await _prefs?.remove(_kKv);
     _compact();
+    _writeDueIndex();
   }
 
   // ---------- 追加日志 ----------
@@ -306,6 +316,8 @@ class CardStore {
       );
       _journalLines++;
       if (_journalLines > _compactThreshold) _compact();
+      _sinceDue++;
+      if (_sinceDue >= _dueEvery) _writeDueIndex();
     } catch (_) {
       _writeSnap();
     }
@@ -356,11 +368,57 @@ class CardStore {
     // 只在**有文件兜底**时才需要这次同步 —— 纯 prefs 模式下 _append
     // 每次都刷过了，没必要再刷一遍。
     _flushPrefs();
+    _writeDueIndex();
   }
 
   /// 写快照；返回是否成功
   bool _writeSnap() {
     return DataDir.writeJsonSync(_snapFile, _doc());
+  }
+
+  static String? _day(DateTime? d) =>
+      d == null ? null : d.toIso8601String().substring(0, 10);
+
+  /// 派生索引 due.jsonl：按 due 升序，一行一张卡。
+  ///
+  /// 给 Agent / 外部工具直接读 —— 「下次复习啥」看文件头几行就行，
+  /// 不用解析 progress.json 再遍历。真相源仍是 _states，删了能重建。
+  /// 每 [_dueEvery] 次状态变更重建一次；compact / 启动时也会重建。
+  /// 字段：id / due / state / s(稳定性) / d(难度) / reps / lapses / last / known。
+  void _writeDueIndex() {
+    final r = DataDir.cachedRoot;
+    if (r == null) return;
+    try {
+      final entries = _states.entries.toList()
+        ..sort((a, b) {
+          final da = a.value.due;
+          final db = b.value.due;
+          if (da == null && db == null) return 0;
+          if (da == null) return -1;
+          if (db == null) return 1;
+          return da.compareTo(db);
+        });
+      final sb = StringBuffer();
+      for (final e in entries) {
+        final s = e.value;
+        sb.writeln(json.encode({
+          'id': e.key,
+          'due': _day(s.due),
+          'state': s.state,
+          's': s.stability,
+          'd': s.difficulty,
+          'reps': s.reps,
+          'lapses': s.lapses,
+          'last': _day(s.lastReview),
+          'known': _kv[e.key]?['known'] == true,
+        }));
+      }
+      final f = File('${r.path}/$_dueFile');
+      final tmp = File('${f.path}.tmp');
+      tmp.writeAsStringSync(sb.toString(), flush: true);
+      tmp.renameSync(f.path);
+      _sinceDue = 0;
+    } catch (_) {}
   }
 
   // ---------- prefs 兜底 ----------
