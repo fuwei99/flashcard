@@ -21,8 +21,9 @@ import '../models/deck.dart';
 import 'bridge_rpc.dart';
 import 'card_source.dart';
 import 'card_store.dart';
-import 'dict_service.dart';
 import 'js_log.dart';
+import 'js_plugin_host.dart';
+import 'plugin.dart';
 import 'scheduler.dart';
 import 'session_store.dart';
 import 'template_engine.dart';
@@ -204,26 +205,45 @@ class WebViewBridge {
       return tts.purgeCache(olderThanDays: (n == null || n <= 0) ? null : n);
     });
 
-    // ---- 有道词典（有道智云 v3）----
-    // 壳侧发签名请求（WebView fetch 会被 CORS 拦，appSecret 也不能进模板）。
-    rpc.register('dict.lookup', (p) async {
-      final w = (p['w'] ?? p['word'] ?? '').toString();
-      if (w.isEmpty) return {'ok': false, 'error': 'empty'};
-      final e = await DictService.lookup(w);
-      return e == null
-          ? {'ok': false, 'error': 'not_found'}
-          : {'ok': true, 'entry': e};
+    // ---- 通用插件系统 ----
+    // 清单（发现 / 类型 / 配置）统一走 PluginManager，唯一真源。
+    // 运行时按 engine 分派：js 的工具插件灌进 JsPluginHost；
+    // TTS 的 js 插件仍走 JsTtsHost（它特殊，先不动）。
+    rpc.register('plugin.list', (p) async {
+      await PluginManager.I.load();
+      await JsPluginHost.instance.ensureLoaded();
+      final host = JsPluginHost.instance;
+      return {
+        'ok': true,
+        'plugins': PluginManager.I.all
+            .map((m) => {
+                  'id': m.id,
+                  'name': m.name,
+                  'kind': m.type.wire,
+                  'engine': m.engine.wire,
+                  'version': m.version,
+                  'builtin': m.builtin,
+                  'methods': host.methodsOf(m.id),
+                })
+            .toList(),
+      };
     });
-    rpc.register('dict.getConfig', (p) async {
-      await DictService.ensureLoaded();
-      return {'ok': true, ...DictService.config()};
+    rpc.register('plugin.reload', (p) async {
+      await PluginManager.I.load(force: true);
+      final n = await JsPluginHost.instance.reload();
+      return {'ok': true, 'count': n};
     });
-    rpc.register('dict.setConfig', (p) async {
-      await DictService.setConfig(
-        (p['appKey'] ?? '').toString(),
-        (p['appSecret'] ?? '').toString(),
-      );
-      return {'ok': true, ...DictService.config()};
+    rpc.register('plugin.call', (p) async {
+      final id = (p['id'] ?? '').toString();
+      final method = (p['method'] ?? '').toString();
+      final args = p['args'] is Map
+          ? Map<String, dynamic>.from(p['args'] as Map)
+          : <String, dynamic>{};
+      if (id.isEmpty || method.isEmpty) {
+        return {'ok': false, 'error': 'missing id/method'};
+      }
+      await JsPluginHost.instance.ensureLoaded();
+      return JsPluginHost.instance.call(id, method, args);
     });
 
     // ---- 模板文件接口（fs.*）----

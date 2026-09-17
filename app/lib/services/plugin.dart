@@ -2,10 +2,11 @@
 /// ================================================================
 /// 一切皆插件：TTS 插件、LLM provider 插件，统一走这里。
 ///
-/// 一个插件 = 一个目录：
-///   plugins/<type>/<id>/
-///     ├── manifest.json    清单（声明式）
-///     └── <entry>.js       脚本（engine = js 时才要）
+/// 一个插件 = 一个目录（平铺，不按类型分层）：
+///   plugins/<id>/
+///     ├── manifest.json    清单（声明式，type 字段决定谁来消费）
+///     ├── <entry>.js       脚本（engine = js 时才要）
+///     └── kv.json          插件私有存储（运行时生成）
 ///
 /// 目录两处，合并展示；用户插件同名覆盖内置插件：
 ///   · 内置：打包进 APK 的 assets/plugins/...（只读）
@@ -20,24 +21,39 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart';
 
 import 'data_dir.dart';
 
-/// 插件类型
+/// 插件类型（能力种类）
+///
+/// 目录不再按类型分层 —— 所有插件平铺在 `plugins/<id>/`，
+/// 类型只写在 manifest 的 `type` 里，决定「谁来消费它」：
+///   tts  → TtsService 选一个当朗读引擎
+///   llm  → 模型调用选一个当 provider
+///   tool → 常驻工具（词典 / 翻译…），没有「启用」概念，随时可调
 enum PluginType {
   tts,
-  llm;
+  llm,
+  tool;
 
   static PluginType? parse(String? s) => switch (s) {
         'tts' => PluginType.tts,
         'llm' => PluginType.llm,
+        'tool' => PluginType.tool,
         _ => null,
       };
 
   String get wire => name;
 
-  String get label => this == PluginType.tts ? 'TTS 插件' : 'LLM Provider 插件';
+  String get label => switch (this) {
+        PluginType.tts => 'TTS 插件',
+        PluginType.llm => 'LLM Provider 插件',
+        PluginType.tool => '工具插件',
+      };
+
+  /// 单例能力：同一时刻只能启用一个。tool 是常驻能力，不存在「启用」
+  bool get singleton => this == PluginType.tts || this == PluginType.llm;
 }
 
 /// 插件后端引擎
@@ -206,8 +222,10 @@ class PluginManager {
     return null;
   }
 
-  /// 当前选中的插件；没选/选的没了就取该类型第一个
+  /// 当前选中的插件；没选/选的没了就取该类型第一个。
+  /// tool 不是单例能力，没有「当前选中」这一说，恒返回 null。
   PluginManifest? active(PluginType t) {
+    if (!t.singleton) return null;
     final id = t == PluginType.tts ? _activeTts : _activeLlm;
     final hit = byId(id);
     if (hit != null && hit.type == t) return hit;
@@ -217,7 +235,8 @@ class PluginManager {
 
   String activeId(PluginType t) => active(t)?.id ?? '';
 
-  bool isActive(PluginManifest m) => active(m.type)?.id == m.id;
+  bool isActive(PluginManifest m) =>
+      m.type.singleton && active(m.type)?.id == m.id;
 
   String varOf(String id, String key) {
     final m = _vars[id];
@@ -271,38 +290,45 @@ class PluginManager {
     _loadConfig();
   }
 
-  // 内置插件目录（写死清单，省得列 asset 目录）
-  static const _builtinDirs = [
-    'assets/plugins/tts/openai',
-    'assets/plugins/tts/doubao',
-    'assets/plugins/llm/openai',
-  ];
-
+  /// 内置插件：扫 assets/plugins/**/manifest.json，不再写死清单
+  /// —— 往 assets/plugins/ 丢个目录就是一个内置插件，不用改代码
   Future<void> _scanBuiltin() async {
-    for (final dir in _builtinDirs) {
-      try {
-        final raw = await rootBundle.loadString('$dir/manifest.json');
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      for (final k in manifest.listAssets()) {
+        if (!k.startsWith('assets/plugins/') ||
+            !k.endsWith('/manifest.json')) {
+          continue;
+        }
+        final dir = k.substring(0, k.length - '/manifest.json'.length);
+        final raw = await rootBundle.loadString(k);
         final m = PluginManifest.parse(raw, location: dir, builtin: true);
         if (m != null) _put(m);
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
   }
 
+  /// 用户插件：`Flashcard/plugins/<id>/manifest.json`（平铺）。
+  /// 兼容旧布局 `plugins/<type>/<id>/manifest.json` —— 只多递归一层。
   Future<void> _scanUser() async {
     final base = await DataDir.sub('plugins');
     if (base == null) return;
-    for (final t in ['tts', 'llm']) {
-      final d = Directory('${base.path}/$t');
-      if (!await d.exists()) continue;
-      await for (final e in d.list()) {
-        if (e is! Directory) continue;
-        final mf = File('${e.path}/manifest.json');
-        if (!await mf.exists()) continue;
+    await _scanDir(base, depth: 0);
+  }
+
+  Future<void> _scanDir(Directory dir, {required int depth}) async {
+    if (!await dir.exists()) return;
+    await for (final e in dir.list()) {
+      if (e is! Directory) continue;
+      final mf = File('${e.path}/manifest.json');
+      if (await mf.exists()) {
         try {
           final m = PluginManifest.parse(await mf.readAsString(),
               location: e.path, builtin: false);
           if (m != null) _put(m);
         } catch (_) {}
+      } else if (depth < 1) {
+        await _scanDir(e, depth: depth + 1);
       }
     }
   }

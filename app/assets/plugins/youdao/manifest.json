@@ -1,0 +1,9 @@
+{
+  "id": "youdao",
+  "name": "有道词典",
+  "type": "tool",
+  "engine": "js",
+  "version": 1,
+  "author": "builtin",
+  "entry": "plugin.js"
+}

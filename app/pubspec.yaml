@@ -50,7 +50,9 @@ flutter:
     - assets/decks/
     - assets/readme/
     - assets/templates/bubei_dark/
-    # 内置插件（插件管理系统从这里读清单）
-    - assets/plugins/tts/openai/
-    - assets/plugins/tts/doubao/
-    - assets/plugins/llm/openai/
+    # 内置插件（平铺，PluginManager 扫 assets/plugins/**/manifest.json）
+    - assets/plugins/
+    - assets/plugins/doubao/
+    - assets/plugins/openai-tts/
+    - assets/plugins/openai-chat/
+    - assets/plugins/youdao/
