@@ -40,7 +40,7 @@
   function clickable(text, boldWord, selected, cls) { var toks = String(text || "").split(/([A-Za-z][A-Za-z'-]*)/g); return '<p class="' + (cls || "") + '">' + toks.map(function (tk) { if (!/^[A-Za-z]/.test(tk)) return esc(tk); var isBold = boldWord && tk.toLowerCase().indexOf(boldWord.toLowerCase()) === 0; var isSel = selected && tk.toLowerCase() === selected.toLowerCase(); return '<span data-word="' + esc(tk) + '" class="cursor-pointer rounded-[4px] transition-colors ' + (isSel ? "bg-[#4a5578]/80 px-[2px] -mx-[2px] " : "active:bg-white/15 ") + (isBold ? "font-bold text-white" : "") + '">' + esc(tk) + "</span>"; }).join("") + "</p>"; }
 
   var S = {
-    screen: "home", phase: "cards", face: "front", tab: "colloc",
+    screen: "learn", phase: "cards", face: "front", tab: "colloc",
     tabOrder: ["colloc", "deriv", "syn", "root"],
     card: null, queue: [], idx: 0, hinted: false,
     prefs: { passage: true, cloze: true, confusion: true, syllable: true, clozeEx: false, topbar: true },
@@ -136,26 +136,18 @@
     return '<div class="relative mx-4 mt-[22px] rounded-[16px] bg-[#222226]/90 px-[18px] pb-[46px] pt-[17px]">' + clickable((f.sentence || {}).en, f.word, S.dictWord, "text-[17px] leading-[1.55] text-[#ececef]") + '<p class="mt-[6px] text-[15px] leading-relaxed text-[#c5c5ca]">' + esc((f.sentence || {}).cn) + '</p><button data-act="sentence-view" class="absolute bottom-[13px] right-[13px] flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#2e2e33] text-[#b9b9bf]">' + ico(I.sentswitch, "h-[17px] w-[17px]") + "</button></div>" +
       '<div class="mx-4 mb-4 mt-[13px] flex min-h-[280px] flex-1 flex-col rounded-[16px] bg-[#222226]/90 px-[18px] pt-[19px]"><div class="flex-1">' + body + '</div><div class="flex flex-none items-center gap-[6px] pb-[15px] pt-3">' + tabHtml + '<span class="flex-1"></span>' + (!S.notes[card.id] ? '<button data-act="note" class="mr-[4px] text-[#a8a8ae]">' + ico(I.noteadd, "h-[18px] w-[18px]") + "</button>" : "") + '<button data-act="exam" class="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-[#2e2e33] text-[#b9b9bf]">' + ico(I.textsearch, "h-[16px] w-[16px]") + "</button></div></div>";
   }
-  function home() {
-    var learnN = 0, reviewN = S.due.length;
-    return '<div class="relative flex h-full flex-col overflow-hidden"><div class="absolute inset-0" style="background:' + LEARN_BG + '"></div><div class="relative flex h-full flex-col">' +
-      '<div class="px-5 pt-5"><button class="relative block"><span class="flex h-[46px] w-[46px] items-center justify-center rounded-full border-2 border-black/60 bg-[#f7c948] text-[24px] shadow-lg">🐶</span><span class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#e34d64] px-1 text-[11px] font-bold text-white">1</span></button></div>' +
-      '<h1 class="mt-[15%] text-center text-[44px] font-bold tracking-wide text-[#f0f0f2]">Fairytale</h1><div class="flex-1"></div>' +
-      '<div class="grid grid-cols-2 gap-[13px] px-4">' + [["Learn", learnN, "learn"], ["Review", reviewN, "review"]].map(function (c) { return '<button data-act="start-' + c[2] + '" class="rounded-[16px] bg-[#1c1c20]/75 px-[20px] py-[16px] text-left backdrop-blur-md"><span class="block text-[22px] font-bold text-[#ececef]">' + c[0] + '</span><span class="mt-[2px] block text-[17px] font-semibold text-[#e3a83c]">' + c[1] + "</span></button>"; }).join("") + "</div>" +
-      '<nav class="flex items-center justify-between px-[38px] pb-[26px] pt-[22px]"></nav></div></div>';
-  }
+  /* 主页已删除 —— 模板只保留「学习 / 复习」两条线，进来直接开背。 */
   function sentenceText(card) { var en = String((card.fields.sentence || {}).en || ""); if (S.prefs.clozeEx) { var w = String(card.fields.word || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); en = en.replace(new RegExp(w + "\\w*", "i"), "______"); } return en; }
   function doneView() {
     var q = S.queue, missed = S.missed;
     return '<div class="flex flex-1 flex-col items-center justify-center px-9 pb-12"><svg viewBox="0 0 24 24" class="h-[52px] w-[52px]"><path fill="#1db373" d="M12 1.6l2.1 1.8 2.7-.5 1 2.6 2.6 1-.5 2.7 1.8 2.1-1.8 2.1.5 2.7-2.6 1-1 2.6-2.7-.5-2.1 1.8-2.1-1.8-2.7.5-1-2.6-2.6-1 .5-2.7L1.6 12l1.8-2.1-.5-2.7 2.6-1 1-2.6 2.7.5L12 1.6z"/><path d="M8.4 12.2l2.3 2.3 4.6-4.7" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
       '<h2 class="mt-5 text-[22px] font-bold text-[#f5f5f7]">' + (S.screen === "learn" ? "本组学习完成" : "本轮复习完成") + '</h2><p class="mt-2 text-[13.5px] text-[#7c7c82]">' + q.length + " 词 · 需复习 " + missed.length + " · 出错 " + S.wrongs + "</p>" +
       '<div class="mt-9 w-full space-y-[13px]">' + q.map(function (c) { var bad = missed.indexOf(c.id) >= 0; return '<div class="flex items-center justify-between rounded-[14px] bg-[#222226]/90 px-[18px] py-[13px]"><div class="flex items-center gap-3"><span class="h-[7px] w-[7px] rounded-full ' + (bad ? "bg-[#e34d64]" : "bg-[#2ec4a5]") + '"></span><span class="text-[16px] font-semibold text-[#ececef]">' + esc(c.fields.word) + '</span></div><span class="max-w-[45%] truncate text-[13px] text-[#8c8c92]">' + esc(arr((c.fields.senses || [])[0] && c.fields.senses[0].cn)[0] || "") + "</span></div>"; }).join("") + "</div>" +
-      '<button data-act="home" class="mt-10 flex flex-col items-center gap-[9px]"><span class="text-[18px] font-semibold text-[#ececef]">返回主页</span><span class="h-[4px] w-[22px] rounded-full bg-[#2ec4a5]"></span></button></div>';
+      '<button data-act="home" class="mt-10 flex flex-col items-center gap-[9px]"><span class="text-[18px] font-semibold text-[#ececef]">完成</span><span class="h-[4px] w-[22px] rounded-full bg-[#2ec4a5]"></span></button></div>';
   }
   function overlays() { return ""; }
 
   function paint() {
-    if (S.screen === "home") { root.innerHTML = home(); return; }
     var card = S.card;
     if (!card) { root.innerHTML = '<div class="flex h-full items-center justify-center p-8 text-center text-[15px] text-[#8a8a90]">' + (S.phase === "done" ? "没有可学的卡（已学完 / 已标熟）" : "加载中…") + "</div>"; return; }
     var bg = S.screen === "learn" ? LEARN_BG : BG;
@@ -602,8 +594,7 @@
 
   function srEnd() {
     S.sr = null; S.srItems = [];
-    S.phase = "done";
-    paint();
+    endSession();
   }
 
   function srNext() {
@@ -789,11 +780,16 @@
     S.queue.forEach(function (c) {
       call("review.commit", { id: c.id, rating: S.missed.indexOf(c.id) >= 0 ? "again" : "good" });
     });
-    try { FC.post("web.finish", { graduated: S.queue.length - S.missed.length }); } catch (e) {}
-    // 背完一轮 → 先问要不要拼写（纯加练，不写 FSRS）
+    // 背完一轮 → 先问要不要拼写（纯加练，不写 FSRS）。
+    // web.finish 必须等拼写轮结束再发，否则壳立刻切完成页，拼写轮弹不出来。
     var items = buildSpellItems(S.queue);
     if (items.length) { S.srItems = items; S.srAsk = items.length; paint(); return; }
+    endSession();
+  }
+
+  function endSession() {
     S.phase = "done";
+    try { FC.post("web.finish", { graduated: S.queue.length - S.missed.length }); } catch (e) {}
     paint();
   }
 
@@ -818,14 +814,18 @@
   function handle(act, el, e) {
     var i, m;
     switch (act) {
-      case "home": S.screen = "home"; S.phase = "cards"; S.sentView = null; S.dictWord = null; S.examOpen = S.noteOpen = S.spellOpen = false; paint(); break;
+      case "home": case "exit":
+        // 主页已删：语篇/填空点返回 → 回卡片；卡片点返回 → 退出本次会话
+        if (S.phase === "passage" || S.phase === "cloze") { S.phase = "cards"; paint(); }
+        else { try { FC.post("web.finish", {}); } catch (e) {} }
+        break;
       case "start-learn": startSession("learn"); break;
       case "start-review": startSession("review"); break;
       case "flip-ok": flip(false); break;
       case "flip-miss": flip(true); break;
       case "next": nextCard(false); break;
       case "next-miss": nextCard(true); break;
-      case "hint": S.hinted = true; paint(); break;
+      case "hint": S.hinted = true; speakWordThenSentence(S.card); paint(); break;
       case "known":
         call("state.kvPut", { id: S.card.id, key: "known", value: true });
         S.queue = S.queue.filter(function (c) { return c.id !== S.card.id; });
@@ -861,7 +861,7 @@
         else S.spellState = "wrong";
         paint(); break;
       case "sr-go": srBegin(); break;
-      case "sr-no": S.srAsk = 0; S.phase = "done"; paint(); break;
+      case "sr-no": S.srAsk = 0; endSession(); break;
       case "sr-quit": srEnd(); break;
       case "sr-skip": srAction("skip"); break;
       case "sr-forget": srAction("forget"); break;
@@ -961,7 +961,7 @@
     var c = FC.getCard();
     if (c && c.id) {
       if (c.passage) S.passage = c.passage;
-      if (S.phase === "cards" || S.screen === "home") { S.card = c; if (S.screen === "home") S.screen = "learn"; }
+      if (S.phase === "cards") { S.card = c; }
       paint();
     }
   });
