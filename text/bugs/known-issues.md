@@ -220,6 +220,42 @@ choice / cloze 答错后直接翻篇 —— 既不显示完整的词义，也不
 
 ---
 
+## ✅ 已修 · 2026-09-17 全量代码审阅（BUG-013 ~ BUG-026）
+
+全项目审阅后新发现并修复的 14 条。详见 [`text/worklogs/2026-09-17-深夜.md`](../worklogs/2026-09-17-深夜.md)。
+**注意：Dart 侧改动未编译验证**（本机 SDK 2.17 < 要求 ^3.5.0，镜像不可达），上真机前需实测。
+
+| # | 问题 | 严重度 | 根因一句话 |
+|---|---|---|---|
+| BUG-013 | 首次安装授权后公共目录仍不可用 | 🔴 | `DataDir._resolved` 在 try 之前置位，失败被永久缓存 |
+| BUG-014 | 重测轮自递归无出口 → 栈溢出 | 🔴 | `round++` 不改变池也不改变 `_passedModes`；原兜底只挡「无考法」没挡「考法未启用」，**Dart + workflow.js 双端** |
+| BUG-015 | TTS 闸门被并发 speak 提前放掉 | 🟡 | 单 `Completer` + `??=`，先结束的那次把还在讲的那次的闸也放了 → 反而制造串音 |
+| BUG-016 | `purgeCache` 漏删 `.tmp/` | 🟢 | `dir.list()` 非递归 + 主循环 skip `.tmp` → 临时音频只增不减 |
+| BUG-017 | compact 崩了丢数据 | 🔴 | 先无条件清日志、后写快照；日志是 append-only 的唯一真相 |
+| BUG-018 | 插件合成无超时 / 失败回调被吞 | 🟡 | 宿主不提供 `setTimeout`，卡住时无任何出口；`ws.on('error')` 里 `resp.text()` 先抛异常，`callback.error` 走不到 |
+| BUG-019 | 章节懒加载失效 | 🟡 | `study_plan._groups()` 构造时就取 `c.title/passage`，等于把全书章节全读了 |
+| BUG-020 | 冷启动刷 2000+ 次 prefs | 🟡 | `init()` 的 `fromFile` 分支末尾无条件 `_flushPrefs()` 全量写 |
+| BUG-021 | 每毕业一张卡重写一次 settings.json | 🟡 | `markDone()` 在循环里调，一次 `_persist()` = 全配置文件 + 24 次 prefs |
+| BUG-022 | 每次答卡都 fsync | 🟢 | `_append` 用了 `flush: true`，日志语义上允许丢最后几条 |
+| BUG-023 | `reviewDueCount` 建中间 List | 🟢 | `where().toList().length` 只为数个数 |
+| BUG-024 | `FlashCard` 没有 `==` | 🟡 | `Set.contains` / `remove` 靠引用相等 → 卡清不掉（**喂给 BUG-014 变栈溢出**） |
+| BUG-025 | 非法评分静默兜底成 good | 🔴 | `catch (_) { rating = Rating.good }` —— 把脏消息永久写进 FSRS，不报错不可逆 |
+| BUG-026 | `build()` 里建 WebViewController | 🟡 | `_ensure()` 有 3 个副作用，却放在可能一帧多次调用的地方；另 `messages.listen` 未 cancel |
+
+### 补记 · BUG-002 其实没修完
+
+Dart 端改了 `kForgetRetainExp = 1.5`，**另外两份实现漏了**：
+
+| 端 | 修复前 | 实际语义 |
+|---|---|---|
+| Dart `scheduler.dart` | `s / e^1.5` | 保留 22.3% ✅ |
+| Python `core/fsrs.py` | `W[17] if len(W) > 17 else s/2.0` | `len(W) > 17` 恒 False = 死代码 → 保留 50% ❌ |
+| Web `webpreview/app.js` | `s / e^2` | 保留 13.5% ❌ |
+
+→ Python 加 `FORGET_RETAIN_EXP = 1.5`、Web 改为 `Math.exp(1.5)`，并在 `core/fsrs.py` 的 `__main__` 加**跨端 golden 断言**（S=10 忘记后须得 `10/e^1.5 ≈ 2.2313`），防再次漂移。
+
+---
+
 ## 📋 待修
 
 ### BUG-012 · 自评“记得”直接绕过测验毕业（熟识感幻觉漏洞）
