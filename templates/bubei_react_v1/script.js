@@ -49,6 +49,7 @@
     dictWord: null, dictExpanded: false, dictFavs: {},
     examOpen: false, noteOpen: false, noteDraft: "", spellOpen: false,
     spellInput: "", spellState: "idle",
+    srAsk: 0, srItems: [], sr: null,
     menuOpen: false, settingsOpen: false, orderOpen: false,
     sentView: null, rIdx: 0, revealed: false, picked: null, wrongs: 0,
     passageStep: "read", clozeFilled: [], clozeErr: null
@@ -371,6 +372,8 @@
     if (S.menuOpen) h += ovMenu();
     if (S.settingsOpen) h += ovSettings();
     if (S.orderOpen) h += ovOrder();
+    if (S.sr) h += ovSpellRound();
+    else if (S.srAsk > 0) h += ovSpellAsk();
     return h;
   }
   overlays = renderOverlays;
@@ -538,6 +541,247 @@
       });
     }).catch(function (e) { log("startSession ERR " + (e && e.message ? e.message : e)); });
   }
+  /* ===================== 拼写轮（背完一轮加练） =====================
+     复刻 bubei_dark 的「挖空填字母」：每个字母一格，逐格填。
+     句子拼写（挖空）/ 单词拼写（给中文填英文）两种形态。
+     3 次机会，错词放回队尾，循环到全过或用户点「结束拼写」。
+     纯加练，不写 FSRS。 */
+  var SR_MAX_TRIES = 3;
+
+  function spellCnOf(f) {
+    var parts = [];
+    arr(f && f.senses).forEach(function (s) {
+      var cn = String(arr(s.cn).join("；") || s.meaning || "")
+        .replace(/[（(][^（()）]*[)）]/g, "").trim();
+      if (!cn) return;
+      var pos = String(s.pos || "").trim();
+      parts.push((pos ? pos + " " : "") + cn);
+    });
+    return parts.join("；");
+  }
+
+  /* 组这一轮要拼的条目：有例句 → 句子拼写；没有 → 单词拼写。标熟跳过。 */
+  function buildSpellItems(cards) {
+    var sent = [], single = [];
+    arr(cards).forEach(function (c) {
+      if (!c || !c.id) return;
+      if (S.learned[c.id]) return;
+      var f = c.fields || {};
+      var w = String(f.word || "").trim();
+      if (!w) return;
+      var cn = spellCnOf(f);
+      var se = String((f.sentence || {}).en || "").trim();
+      if (se) sent.push({ kind: "sentence", id: c.id, word: w, cn: cn, sentence: se });
+      else single.push({ kind: "word", id: c.id, word: w, cn: cn });
+    });
+    return sent.concat(single);
+  }
+
+  /* 把例句里的目标词抠成 ______（返回题干 + 要拼的答案） */
+  function srBlankSentence(text, word) {
+    var src = String(text || "");
+    var w = String(word || "").trim();
+    if (!w) return { text: src, answer: "" };
+    var safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var re = new RegExp("\\b" + safe + "\\w*", "i");
+    var hit = src.match(re);
+    if (!hit) return { text: src, answer: w };
+    return {
+      text: src.slice(0, hit.index) + "______" + src.slice(hit.index + hit[0].length),
+      answer: hit[0]
+    };
+  }
+
+  function srBegin() {
+    var pool = arr(S.srItems).slice();
+    S.srAsk = 0;
+    S.sr = { pool: pool, total: pool.length, done: 0, cur: null,
+             answer: "", typed: "", tries: 0, revealed: false, pending: null };
+    srNext();
+  }
+
+  function srEnd() {
+    S.sr = null; S.srItems = [];
+    S.phase = "done";
+    paint();
+  }
+
+  function srNext() {
+    var st = S.sr;
+    if (!st) return;
+    if (!st.pool.length) { srEnd(); return; }
+    var it = st.pool[0];
+    var answer = String(it.word || "");
+    var prompt = "";
+    if (it.kind === "sentence") {
+      var r = srBlankSentence(it.sentence, it.word);
+      prompt = r.text;
+      answer = r.answer || it.word;
+    }
+    st.cur = it; st.answer = String(answer || "").trim();
+    st.typed = ""; st.tries = 0; st.revealed = false; st.pending = null;
+    st.prompt = prompt;
+    paint();
+    srFocus();
+  }
+
+  function srFocus() {
+    var inp = root.querySelector('[data-role="sr"]');
+    if (!inp) return;
+    setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
+  }
+
+  function srSlotsHtml() {
+    var st = S.sr;
+    if (!st) return "";
+    var out = "";
+    for (var i = 0; i < st.answer.length; i++) {
+      var ch = st.typed.charAt(i);
+      out += '<span class="flex h-[40px] w-[24px] items-end justify-center border-b-2 pb-[2px] font-mono text-[24px] leading-none ' +
+        (ch ? "border-[#2ec4a5] text-[#2ec4a5]" : "border-[#4a4a4f] text-transparent") + '">' +
+        esc(ch || "_") + "</span>";
+    }
+    return out;
+  }
+
+  /* 局部刷新格子 —— 输入时不整体 paint，否则输入框重建、焦点丢失 */
+  function srRepaintCells() {
+    var host = root.querySelector('[data-role="sr-slots"]');
+    if (host) host.innerHTML = srSlotsHtml();
+    var inp = root.querySelector('[data-role="sr"]');
+    if (inp && S.sr) inp.value = S.sr.typed;
+  }
+
+  function srOnInput(v) {
+    var st = S.sr;
+    if (!st || st.revealed || st.pending) return;
+    var s = String(v || "").replace(/[^A-Za-z'’-]/g, "");
+    if (s.length > st.answer.length) s = s.slice(0, st.answer.length);
+    st.typed = s;
+    var inp = root.querySelector('[data-role="sr"]');
+    if (inp) inp.value = s;
+    srRepaintCells();
+    if (st.answer.length && s.length >= st.answer.length) srCheck();
+  }
+
+  function srCheck() {
+    var st = S.sr;
+    if (!st || st.revealed || st.pending || !st.typed) return;
+    if (st.typed.toLowerCase() === st.answer.toLowerCase()) {
+      st.revealed = true;
+      st.done += 1;
+      speak(st.answer, TTS_WORD);
+      paint();
+      setTimeout(function () {
+        if (!S.sr || S.sr !== st || !st.revealed) return;
+        st.pool.shift();
+        srNext();
+      }, 650);
+      return;
+    }
+    st.tries += 1;
+    if (st.tries >= SR_MAX_TRIES) {
+      st.pending = "forget";
+      srReveal();
+    } else {
+      st.typed = "";
+      paint();
+      srFocus();
+    }
+  }
+
+  function srReveal() {
+    var st = S.sr;
+    if (!st) return;
+    st.revealed = true;
+    st.typed = st.answer;
+    speak(st.answer, TTS_WORD);
+    paint();
+  }
+
+  function srAction(k) {
+    var st = S.sr;
+    if (!st) return;
+    if (k === "quit") { srEnd(); return; }
+
+    if (st.pending) {
+      if (k !== "next") return;
+      var p = st.pending;
+      st.pending = null;
+      if (p === "skip") { st.pool.shift(); st.done += 1; }
+      else { var it = st.pool.shift(); if (it) st.pool.push(it); }   // 忘记 → 回队尾
+      srNext();
+      return;
+    }
+    if (k === "skip") { st.pending = "skip"; srReveal(); return; }
+    if (k === "forget") { st.pending = "forget"; srReveal(); return; }
+    if (k === "hint") {
+      st.tries += 1;
+      speak(st.answer, TTS_WORD);
+      if (st.tries >= SR_MAX_TRIES) { st.pending = "forget"; srReveal(); }
+      else { paint(); srFocus(); }
+      return;
+    }
+  }
+
+  function ovSpellAsk() {
+    var n = S.srAsk;
+    return '<div class="absolute inset-0 z-[78] flex items-center justify-center bg-black/60 px-8">' +
+      '<div class="w-full rounded-[22px] bg-[#1e2338] px-[22px] pb-[22px] pt-[24px] text-center shadow-[0_18px_60px_rgba(0,0,0,0.55)]">' +
+        '<p class="text-[19px] font-bold text-[#f0f0f2]">这一轮背完了 🎉</p>' +
+        '<p class="mt-[8px] text-[14px] leading-relaxed text-[#8a91a8]">再拼写 ' + n + ' 个词？拼错回队尾重来，不计入复习进度。</p>' +
+        '<div class="mt-[20px] grid grid-cols-2 gap-[12px]">' +
+          '<button data-act="sr-no" class="rounded-[14px] bg-[#26262b] py-[14px] text-[16px] font-semibold text-[#c9c9ce]">先不拼</button>' +
+          '<button data-act="sr-go" class="rounded-[14px] bg-[#2ec4a5] py-[14px] text-[16px] font-semibold text-[#0c2620]">开始拼写</button>' +
+        "</div></div></div>";
+  }
+
+  function ovSpellRound() {
+    var st = S.sr;
+    if (!st || !st.cur) return "";
+    var it = st.cur;
+    var kind = it.kind === "sentence" ? "句子拼写" : "单词拼写";
+    var left = Math.max(0, SR_MAX_TRIES - st.tries);
+
+    var promptHtml = "";
+    if (st.prompt && st.prompt.indexOf("______") >= 0) {
+      promptHtml = esc(st.prompt).replace("______",
+        '<span class="mx-[3px] inline-block min-w-[86px] border-b-2 border-[#e3a83c] align-middle"></span>');
+    }
+
+    var result = "";
+    if (st.revealed) {
+      result = st.pending
+        ? '<p class="mt-[16px] text-[15px] font-medium text-[#e34d64]">✕ 正确拼写：' + esc(st.answer) + "</p>"
+        : '<p class="mt-[16px] text-[15px] font-medium text-[#2ec4a5]">✓ ' + esc(st.answer) + "</p>";
+    }
+
+    var actions = st.pending
+      ? '<button data-act="sr-next" class="col-span-2 rounded-[16px] bg-[#2ec4a5] py-[15px] text-[17px] font-semibold text-[#0c2620]">继续</button>'
+      : '<button data-act="sr-skip" class="rounded-[16px] bg-[#26262b] py-[15px] text-[16px] font-semibold text-[#c9c9ce]">跳过</button>' +
+        '<button data-act="sr-hint" class="rounded-[16px] bg-[#26262b] py-[15px] text-[16px] font-semibold text-[#c9c9ce]">提示</button>' +
+        '<button data-act="sr-forget" class="col-span-2 rounded-[16px] bg-[#26262b] py-[15px] text-[16px] font-semibold text-[#c9c9ce]">忘记了</button>';
+
+    return '<div class="absolute inset-0 z-[76] flex flex-col" style="background:' + BG + '">' +
+      '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2">' +
+        '<span class="text-[15px] font-medium tabular-nums text-[#b9b9bf]">拼写 ' + st.done + " / " + st.total + "</span>" +
+        '<button data-act="sr-quit" class="text-[14px] text-[#a8a8ae]">结束拼写</button>' +
+      "</header>" +
+      '<div class="flex min-h-0 flex-1 flex-col items-center px-[26px]">' +
+        '<span class="mt-[8px] rounded-full bg-[#29292e] px-[12px] py-[4px] text-[12.5px] text-[#a8a8ae]">' + kind + "</span>" +
+        '<p class="mt-[14px] text-center text-[16px] leading-relaxed text-[#d5d5da]">' + esc(it.cn || "") + "</p>" +
+        (promptHtml ? '<p class="mt-[20px] text-center text-[19px] font-bold leading-[1.7] text-[#ececef]">' + promptHtml + "</p>" : "") +
+        '<div class="relative mt-[30px] w-full">' +
+          '<div data-role="sr-slots" class="flex flex-wrap justify-center gap-[7px]">' + srSlotsHtml() + "</div>" +
+          '<input data-role="sr" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="' + esc(st.typed) + '" class="absolute inset-0 h-full w-full cursor-text bg-transparent text-transparent caret-transparent opacity-0 outline-none" />' +
+        "</div>" +
+        result +
+        '<p class="mt-[14px] text-[12.5px] text-[#5a5a60]">剩余机会 ' + left + " / " + SR_MAX_TRIES + "</p>" +
+        '<div class="flex-1"></div>' +
+      "</div>" +
+      '<footer class="grid flex-none grid-cols-2 gap-[12px] px-4 pb-[30px] pt-[10px]">' + actions + "</footer></div>";
+  }
+
   function reportProgress() {
     try { FC.post("web.progress", { phase: S.phase, done: S.idx, total: S.queue.length, graduated: S.queue.length - S.missed.length }); } catch (e) {}
   }
@@ -545,8 +789,11 @@
     S.queue.forEach(function (c) {
       call("review.commit", { id: c.id, rating: S.missed.indexOf(c.id) >= 0 ? "again" : "good" });
     });
-    S.phase = "done";
     try { FC.post("web.finish", { graduated: S.queue.length - S.missed.length }); } catch (e) {}
+    // 背完一轮 → 先问要不要拼写（纯加练，不写 FSRS）
+    var items = buildSpellItems(S.queue);
+    if (items.length) { S.srItems = items; S.srAsk = items.length; paint(); return; }
+    S.phase = "done";
     paint();
   }
 
@@ -613,6 +860,13 @@
         if (String(S.spellInput).trim().toLowerCase() === String((S.card.fields || {}).word || "").toLowerCase()) { S.spellState = "right"; speak((S.card.fields || {}).word); }
         else S.spellState = "wrong";
         paint(); break;
+      case "sr-go": srBegin(); break;
+      case "sr-no": S.srAsk = 0; S.phase = "done"; paint(); break;
+      case "sr-quit": srEnd(); break;
+      case "sr-skip": srAction("skip"); break;
+      case "sr-forget": srAction("forget"); break;
+      case "sr-hint": srAction("hint"); break;
+      case "sr-next": srAction("next"); break;
       case "menu": S.menuOpen = true; paint(); break;
       case "menu-close": S.menuOpen = false; paint(); break;
       case "menu-settings": S.menuOpen = false; S.settingsOpen = true; paint(); break;
@@ -690,11 +944,15 @@
     } else if (role === "spell") {
       S.spellInput = t.value;
       if (S.spellState === "wrong") { S.spellState = "idle"; }
+    } else if (role === "sr") {
+      srOnInput(t.value);
     }
   });
   root.addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && e.target && e.target.getAttribute && e.target.getAttribute("data-role") === "spell") {
-      handle("spell-check", e.target, e);
+    if (e.key === "Enter" && e.target && e.target.getAttribute) {
+      var r0 = e.target.getAttribute("data-role");
+      if (r0 === "spell") handle("spell-check", e.target, e);
+      else if (r0 === "sr" && S.sr && !S.sr.revealed && !S.sr.pending) srCheck();
     }
   });
 
