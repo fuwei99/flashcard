@@ -2,15 +2,16 @@
    不背单词 · 暗黑模板 v2 样式（对标参考图精美复刻）
    ============================================================ */
 :root {
-  --bg: #111618;
-  --bg-card: #1b2327;
-  --bg-card-hover: #222c31;
+  --bg: #0a0c0b;
+  --bg-card: #1c211f;
+  --bg-card2: #1f2422;
+  --bg-card-hover: #242a27;
   --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.16);
 
-  --txt-main: #f3f6f7;
-  --txt-sub: #96a5ab;
-  --txt-dim: #58686e;
+  --txt-main: #dfdfdf;
+  --txt-sub: #8a8c8b;
+  --txt-dim: #6b6f6d;
 
   --teal: #00c795;
   --teal-soft: rgba(0, 199, 149, 0.16);
@@ -353,11 +354,15 @@ html, body {
 
 /* 大卡片块：真题例句 / 短语 / 词根 */
 .fc-card-block {
-  background: var(--bg-card);
+  background: var(--bg-card2);
   border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 18px 20px;
-  margin-bottom: 16px;
+  border-radius: 13px;
+  padding: 16px 15.5px;
+  margin-bottom: 15px;
+}
+/* 真题例句卡压深一档，跟扩展模块分层 */
+.fc-sentence-block {
+  background: var(--bg-card);
 }
 .fc-block-header {
   display: flex;
@@ -1135,21 +1140,29 @@ html, body {
 }
 .fc-block-pair {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+  flex-direction: row;
+  align-items: baseline;
+  gap: 11px;
+  flex-wrap: wrap;
+  padding: 0 0 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
 }
 .fc-block-pair:last-child {
   border-bottom: 0;
   padding-bottom: 0;
 }
+/* 英文左：虚线小下划线；中文右 */
 .fc-pair-l {
-  font-weight: 600;
-  color: var(--txt-main);
+  font-size: 16.5px;
+  font-weight: 400;
+  color: #dfe3e1;
+  border-bottom: 1.5px dashed rgba(255, 255, 255, 0.34);
+  padding-bottom: 1px;
+  line-height: 1.35;
 }
 .fc-pair-r {
-  color: var(--txt-sub);
+  font-size: 15.5px;
+  color: #b9bfbd;
 }
 
 /* table：词形变化 */
@@ -1290,3 +1303,66 @@ html, body {
 }
 .fc-sa-btn:active { background: rgba(255, 255, 255, 0.06); }
 .fc-sa-go { color: #00C08B; font-weight: 600; }
+
+/* ============================================================
+   词义页改版（对标 redesign/meaning-page-replica.html）
+   新增：易混辨析 / 词根词缀 / 笔记 / 其他拓展 + 底部模块导航条
+   ============================================================ */
+
+/* 易混辨析 */
+.fc-diff { display: flex; flex-direction: column; gap: 13px; }
+.fc-dif { display: flex; gap: 11px; align-items: baseline; }
+.fc-difk { font-size: 15.5px; font-weight: 700; color: var(--txt-main);
+           flex: 0 0 auto; min-width: 88px; }
+.fc-difv { font-size: 14.5px; line-height: 1.6; color: #b4bab8; }
+
+/* 词根词缀 */
+.fc-roots { display: flex; flex-direction: column; gap: 11px; }
+.fc-rrow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.fc-rtag { font-size: 11px; color: #a9b2b0; background: rgba(255,255,255,.075);
+           border-radius: 5px; padding: 2.5px 7px; flex: 0 0 auto; line-height: 1.3; }
+.fc-rtext { font-size: 16px; color: #dfe3e1; line-height: 1.45; }
+
+/* 笔记 */
+.fc-note { font-size: 14.5px; line-height: 1.72; color: #b8bfbd; white-space: pre-wrap; }
+
+/* 其他拓展 */
+.fc-ulist { margin: 0; padding: 0; list-style: none;
+            display: flex; flex-direction: column; gap: 10px; }
+.fc-ulist li { font-size: 15.5px; color: #dfe3e1; line-height: 1.5; }
+.fc-uli-cn { display: block; font-style: normal; font-size: 14.5px;
+             color: #b9bfbd; margin-top: 2px; }
+
+/* 底部模块导航条：贴在词义页滚动区底部 */
+.fc-dock {
+  position: sticky;
+  bottom: 10px;
+  z-index: 30;
+  margin: 16px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px 4px 6px;
+  background: rgba(24, 29, 27, 0.94);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.fc-dock::-webkit-scrollbar { display: none; }
+.fc-dock[hidden] { display: none; }
+.fc-dtab {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: #96a09d;
+  padding: 7px 11px;
+  border-radius: 8px;
+  white-space: nowrap;
+  line-height: 1.25;
+  transition: 0.13s;
+  cursor: pointer;
+}
+.fc-dtab.on { background: #2b302e; color: #e6eae8; }
