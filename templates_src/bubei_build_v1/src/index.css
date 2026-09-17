@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* 模板铺满 WebView：壳把 #app 当挂载点，没有手机外壳 */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #121214;
+  overflow: hidden;
+}
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}

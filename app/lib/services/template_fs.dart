@@ -4,7 +4,7 @@
 ///
 /// 边界：所有路径都相对 [DataDir.root()]（= Documents/Flashcard/），
 /// 规范化（吃掉 `.` / `..`）后必须落在 [allowedPrefixes] 白名单里，
-/// 否则直接拒绝。默认只开 `books/`。
+/// 否则直接拒绝。默认全开（allowedPrefixes 为空 = 整个根放行）。
 ///
 /// 方法一览：
 ///   fs.info                        根目录 / 白名单 / 上限
@@ -36,7 +36,7 @@ class TemplateFs {
   final int maxBytes;
 
   TemplateFs({
-    this.allowedPrefixes = const ['books'],
+    this.allowedPrefixes = const [],
     this.maxBytes = 8 * 1024 * 1024,
   });
 
@@ -81,7 +81,7 @@ class TemplateFs {
       final st = await e.stat();
       out.add({
         'name': name,
-        'path': '$rel/$name',
+        'path': rel.isEmpty ? name : '$rel/$name',
         'dir': e is Directory,
         'size': st.size,
         'mtime': st.modified.toIso8601String(),
@@ -255,7 +255,7 @@ class TemplateFs {
         parts.add(seg);
       }
     }
-    if (parts.isEmpty) throw '空路径';
+    // 空路径 = 数据根（Flashcard/ 本身）—— 白名单全开时允许直接操作根目录
     final rel = parts.join('/');
     _guard(rel, raw);
     return rel;

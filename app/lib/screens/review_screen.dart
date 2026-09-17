@@ -24,6 +24,7 @@ import '../services/study_plan.dart';
 import '../services/study_settings.dart';
 import '../services/tts_log.dart';
 import '../services/tts_service.dart';
+import '../services/ui_prefs.dart';
 import '../services/webview_bridge.dart';
 
 class ReviewScreen extends StatefulWidget {
@@ -92,6 +93,10 @@ class _ReviewScreenState extends State<ReviewScreen>
   /// 「要不要拼写」弹窗正在显示 —— 防止并发弹两次
   bool _spellDialogOpen = false;
 
+  /// 原生顶部栏显隐：manifest 给默认，模板可经 ui.setChrome 实时切 + 落盘，
+  /// 下次启动 UiPrefs.load() 读回来直接决定显不显示。
+  late bool _showTopBar;
+
   // ===== 阶段 4：Web 驱动模式 =====
   /// 模板 manifest 声明 web_session=true 时，切牌流程归 workflow.js，
   /// 壳只执行它发来的指令（web.mount / web.spell / web.finish…）。
@@ -111,6 +116,11 @@ class _ReviewScreenState extends State<ReviewScreen>
     WidgetsBinding.instance.addObserver(this);
     // 阶段 4：模板 manifest 声明 web_session=true 时，切牌流程交给 workflow.js
     _webDriven = widget.template.manifest['web_session'] == true;
+    // 顶部栏：manifest 给默认（缺省显示），落盘值优先
+    _showTopBar = widget.template.manifest['top_bar'] != false;
+    UiPrefs.load().then((v) {
+      if (mounted && v != null) setState(() => _showTopBar = v);
+    });
     for (final u in widget.units) {
       for (final c in u.cards) {
         _webIndex[c.id] = c;
@@ -126,6 +136,9 @@ class _ReviewScreenState extends State<ReviewScreen>
     );
     _bridge = WebViewBridge(
         store: widget.store, tts: TtsService(settings: widget.settings));
+    _bridge.onChromeChanged = (top) {
+      if (mounted) setState(() => _showTopBar = top);
+    };
     _bridge.initTts();
     _msgSub = _bridge.messages.listen(_onMsg);
     if (_webDriven) {
@@ -730,7 +743,7 @@ class _ReviewScreenState extends State<ReviewScreen>
       body: SafeArea(
         child: Column(
           children: [
-            _topBar(),
+            if (_showTopBar) _topBar(),
             Expanded(
               child: Stack(
                   children: [
@@ -778,7 +791,7 @@ class _ReviewScreenState extends State<ReviewScreen>
         : '';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(14, 3, 14, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -807,7 +820,7 @@ class _ReviewScreenState extends State<ReviewScreen>
                       fontWeight: FontWeight.w600)),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(

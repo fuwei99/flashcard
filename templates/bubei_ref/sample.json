@@ -1,0 +1,123 @@
+{
+ "antonyms": [
+  "routine",
+  "normality"
+ ],
+ "blocks": [
+  {
+   "items": [
+    "可数名词 事件;事件;事变",
+    "可数名词 [两国间的] 冲突;摩擦"
+   ],
+   "render": "list",
+   "title": "柯林斯释义"
+  },
+  {
+   "render": "text",
+   "text": "与 accident 辨析：incident 可指国际冲突等大事，accident 多指意外事故。",
+   "title": "考点"
+  }
+ ],
+ "collocations": [
+  {
+   "cn": "不幸的事件",
+   "en": "an unfortunate incident"
+  },
+  {
+   "cn": "枪击事件",
+   "en": "a shooting incident"
+  },
+  {
+   "cn": "外交事件",
+   "en": "a diplomatic incident"
+  },
+  {
+   "cn": "平安无事地",
+   "en": "without incident"
+  }
+ ],
+ "derivatives": [
+  {
+   "cn": [
+    "发生率",
+    "发病率"
+   ],
+   "pos": "n.",
+   "word": "incidence"
+  },
+  {
+   "cn": [
+    "附带的",
+    "次要的"
+   ],
+   "pos": "adj.",
+   "word": "incidental"
+  },
+  {
+   "cn": [
+    "顺便提一句"
+   ],
+   "pos": "adv.",
+   "word": "incidentally"
+  }
+ ],
+ "exams": [
+  {
+   "en": "This was a very unfortunate incident.",
+   "level": "考研",
+   "src": "考研一 2015 阅读"
+  },
+  {
+   "en": "The incident was quickly forgotten by the public.",
+   "level": "考研",
+   "src": "考研二 2018 完形"
+  }
+ ],
+ "id": "incident",
+ "phonetic": "/ˈɪnsɪdənt/",
+ "root": {
+  "items": [
+   {
+    "tag": "前缀",
+    "text": "in- = 在…上，向内"
+   },
+   {
+    "tag": "词根",
+    "text": "cid = 落下，降临"
+   },
+   {
+    "tag": "后缀",
+    "text": "-ent = 名词后缀"
+   }
+  ],
+  "summary": "incident = 落到头上的事 ⇨ 发生的事件，(偶发的) 冲突"
+ },
+ "senses": [
+  {
+   "cn": [
+    "事件",
+    "(两国间的) 冲突",
+    "事变"
+   ],
+   "pos": "n.",
+   "primary": true
+  }
+ ],
+ "sentence": {
+  "cn": "这是一次非常不幸的事件。",
+  "en": "This was a very unfortunate incident."
+ },
+ "syllable": "in·ci·dent",
+ "synonyms": [
+  "event",
+  "occurrence",
+  "episode",
+  "happening"
+ ],
+ "tags": [
+  "考研高频词",
+  "2015 Text1 · 事件类"
+ ],
+ "verified": true,
+ "word": "incident"
+}

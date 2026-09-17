@@ -1,0 +1,37 @@
+{
+  "api_version": "1",
+  "id": "bubei_build_v1",
+  "name": "不背单词 · 新版复刻(build)",
+  "author": "江锋",
+  "version": "1.0.0",
+  "description": "从「最新不背单词复刻源码」（React+Vite）build 而来。视觉/交互 1:1：主页 + 学习(认识/不认识) + 复习(认识/模糊/忘记了) + 词义页分段 tab（词组搭配/派生/近义/词根/笔记）+ 例句轮播卡 + 真题浮层 + 点词查词 + 拼写 + 错词四选一。数据直贴 WordCard 契约。",
+  "engine": "language",
+  "render_mode": "placeholder",
+  "web_session": true,
+  "files": {
+    "template": "template.html",
+    "style": "style.css",
+    "script": "script.js"
+  },
+  "tts": {
+    "auto_play": false,
+    "fields": ["word", "sentence"],
+    "lang": "en-US"
+  },
+  "fields": [
+    "word",
+    "syllable",
+    "phonetic",
+    "verified",
+    "senses",
+    "sentence",
+    "collocations",
+    "derivatives",
+    "synonyms",
+    "antonyms",
+    "root",
+    "rootSummary",
+    "exams",
+    "meaningDetails"
+  ]
+}

@@ -1,6 +1,9 @@
 # 参考项目：不进仓库
 /reference/
 
+# 模板构建工作区（node_modules / dist 临时产物）
+/.build/
+
 # Flutter / Dart
 **/build/
 **/.dart_tool/
@@ -35,3 +38,7 @@ core/_selftest.txt
 # Python
 __pycache__/
 *.pyc
+
+# 模板构建源 templates_src：源码入库，node_modules/dist 不进仓库
+/templates_src/*/node_modules/
+/templates_src/*/dist/

@@ -29,6 +29,7 @@ import 'template_fs.dart';
 import 'tts_engine.dart';
 import 'tts_log.dart';
 import 'tts_service.dart';
+import 'ui_prefs.dart';
 
 class BridgeMessage {
   final String type;
@@ -63,6 +64,9 @@ class WebViewBridge {
 
   /// 设置会话计划（由 ReviewScreen 在会话开始时调）。
   void setPlan(Map<String, dynamic>? plan) => _plan = plan;
+
+  /// 原生顶部栏显隐回调 —— 模板调 `ui.setChrome` 时触发，屏幕据此 setState。
+  void Function(bool top)? onChromeChanged;
 
   /// 宿主控制器 —— RPC 回执 / 事件推送要它 runJavaScript。
   WebViewController? _ctrl;
@@ -106,6 +110,17 @@ class WebViewBridge {
       }
       return {'ok': true};
     });
+
+    // 原生顶部栏显隐：模板设置里实时切 + 落盘，下次启动直接读。
+    // 走 UiPrefs（settings/ui.json），不依赖模板 fs 白名单。
+    rpc.register('ui.setChrome', (p) async {
+      final top = p['top'] != false;
+      UiPrefs.setTopBar(top);
+      onChromeChanged?.call(top);
+      return {'ok': true, 'top': top};
+    });
+    rpc.register('ui.getChrome',
+        (p) async => {'ok': true, 'top': UiPrefs.topBar});
 
     // ---- 原子能力（阶段 2）：卡片查询 + 评级提交 ----
     // 这四条是 workflow.js 自己开车的油：card.due / card.new 拿队列 ->
