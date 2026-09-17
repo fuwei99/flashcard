@@ -46,7 +46,7 @@
     prefs: { passage: true, cloze: true, confusion: true, syllable: true, clozeEx: false, topbar: true },
     favs: {}, notes: {}, learned: {}, due: [],
     missed: [], history: [],
-    dictWord: null, dictExpanded: false, dictFavs: {},
+    dictWord: null, dictExpanded: false, dictFavs: {}, dictKey: "", dictSecret: "", dictCfg: null,
     examOpen: false, noteOpen: false, noteDraft: "", spellOpen: false,
     spellInput: "", spellState: "idle",
     srAsk: 0, srItems: [], sr: null,
@@ -337,6 +337,7 @@
     }).join("");
     return '<div data-act="settings-close" class="absolute inset-0 z-[74] flex flex-col justify-end bg-black/55"><div data-stop="1" class="rounded-t-[24px] bg-[#1e2338] px-5 pb-[34px] pt-[18px]">' +
       '<div class="relative mb-[18px]"><p class="text-center text-[17px] font-semibold text-[#ececef]">学习设置</p><button data-act="settings-close" class="absolute right-0 top-1/2 flex h-[30px] w-[30px] -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-[#c9cfdf]">' + ico(I.close, "h-[14px] w-[14px]") + "</button></div>" + html +
+      '<div class="mt-[12px] rounded-[14px] bg-[#26262b] px-[12px] py-[12px]"><div class="flex items-center justify-between"><p class="text-[16px] font-medium text-[#ececef]">有道词典</p><span class="text-[12px] ' + (S.dictCfg && S.dictCfg.configured ? "text-[#2ec4a5]" : "text-[#8a91a8]") + '">' + (S.dictCfg && S.dictCfg.configured ? "已配置" : "未配置") + '</span></div><p class="mt-[3px] text-[12.5px] text-[#8a91a8]">有道智云应用 ID / 密钥，查词走后端签名</p><input data-role="dict-key" placeholder="应用ID appKey" value="' + esc(S.dictKey || "") + '" class="mt-[9px] w-full rounded-[10px] bg-[#1c1c20] px-[11px] py-[9px] text-[14px] text-[#ececef] outline-none placeholder:text-[#5a5a60]" /><input data-role="dict-secret" type="password" placeholder="应用密钥 appSecret" value="' + esc(S.dictSecret || "") + '" class="mt-[7px] w-full rounded-[10px] bg-[#1c1c20] px-[11px] py-[9px] text-[14px] text-[#ececef] outline-none placeholder:text-[#5a5a60]" /><button data-act="dict-save" class="mt-[9px] w-full rounded-[10px] bg-[#f0a824] py-[9px] text-[15px] font-semibold text-black">保存并启用</button></div>' +
       '<button data-act="order-open" class="mt-[8px] flex w-full items-center justify-between rounded-[14px] px-[6px] py-[12px]"><span class="text-[16px] font-medium text-[#ececef]">助记顺序</span><span class="max-w-[60%] truncate text-[13.5px] text-[#8a91a8]">' + S.tabOrder.map(function (t) { return TABS[t]; }).join(" - ") + ' <span class="text-[#5a6178]">›</span></span></button></div></div>';
   }
 
@@ -384,34 +385,6 @@
     return null;
   }
 
-  /* ---- 本地小词库（照 dict.ts 的 LEXICON） ---- */
-  var LEXICON = {
-    event: { word: "event", phonetic: "/ɪˈvent/", level: "考研", senses: [{ pos: "n.", cn: "事件；公开活动；体育项目" }], collocations: [{ en: "a major event", cn: "重大事件" }, { en: "in the event of", cn: "万一，倘若" }], examples: [{ en: "The opening ceremony was a grand event.", cn: "开幕式是一场盛大的活动。", src: "柯林斯" }] },
-    unfortunate: { word: "unfortunate", phonetic: "/ʌnˈfɔːrtʃənət/", level: "考研", senses: [{ pos: "adj.", cn: "不幸的；令人遗憾的；不适当的" }, { pos: "n.", cn: "不幸的人" }], examples: [{ en: "Unfortunate incidents had occurred; mistaken ideas had been current.", cn: "不幸的事件曾发生过。", src: "动物农场" }] },
-    television: { word: "television", phonetic: "/ˈtelɪvɪʒn/", level: "中考", senses: [{ pos: "n.", cn: "电视，电视机" }] },
-    computer: { word: "computer", phonetic: "/kəmˈpjuːtər/", level: "中考", senses: [{ pos: "n.", cn: "计算机，电脑" }] },
-    show: { word: "show", phonetic: "/ʃoʊ/", level: "中考", senses: [{ pos: "n.", cn: "演出，节目；展览" }, { pos: "v.", cn: "给…看，展示；表明" }] },
-    girl: { word: "girl", phonetic: "/ɡɜːrl/", level: "中考", senses: [{ pos: "n.", cn: "女孩，姑娘" }] },
-    fighting: { word: "fighting", phonetic: "/ˈfaɪtɪŋ/", level: "高考", senses: [{ pos: "n.", cn: "战斗，打斗" }, { pos: "adj.", cn: "战斗的" }] },
-    war: { word: "war", phonetic: "/wɔːr/", level: "中考", senses: [{ pos: "n.", cn: "战争；斗争" }], collocations: [{ en: "full-scale war", cn: "全面战争" }] },
-    collect: { word: "collect", phonetic: "/kəˈlekt/", level: "四级", senses: [{ pos: "v.", cn: "收集，采集；领取" }] },
-    signature: { word: "signature", phonetic: "/ˈsɪɡnətʃər/", level: "考研", senses: [{ pos: "n.", cn: "签名，署名" }], examples: [{ en: "He forged my signature.", cn: "他伪造了我的签名。", src: "柯林斯" }] },
-    national: { word: "national", phonetic: "/ˈnæʃnəl/", level: "四级", senses: [{ pos: "adj.", cn: "国家的，全国的" }, { pos: "n.", cn: "国民" }] },
-    internet: { word: "internet", phonetic: "/ˈɪntərnet/", level: "中考", senses: [{ pos: "n.", cn: "互联网，因特网" }] },
-    impact: { word: "impact", phonetic: "/ˈɪmpækt/", level: "考研", senses: [{ pos: "n.", cn: "影响，冲击力" }, { pos: "v.", cn: "对…产生影响" }], collocations: [{ en: "have a profound impact on", cn: "对…产生深远影响" }] },
-    life: { word: "life", phonetic: "/laɪf/", level: "中考", senses: [{ pos: "n.", cn: "生活；生命；一生" }] },
-    measure: { word: "measure", phonetic: "/ˈmeʒər/", level: "考研", senses: [{ pos: "n.", cn: "措施，方法；度量" }, { pos: "v.", cn: "测量，衡量" }], collocations: [{ en: "take measures", cn: "采取措施" }] },
-    housing: { word: "housing", phonetic: "/ˈhaʊzɪŋ/", level: "考研", senses: [{ pos: "n.", cn: "住房，住宅；住房供给" }] },
-    shortage: { word: "shortage", phonetic: "/ˈʃɔːrtɪdʒ/", level: "考研", senses: [{ pos: "n.", cn: "短缺，不足" }], collocations: [{ en: "housing shortage", cn: "住房短缺" }] },
-    behavior: { word: "behavior", phonetic: "/bɪˈheɪvjər/", level: "考研", senses: [{ pos: "n.", cn: "行为，举止" }] },
-    multiple: { word: "multiple", phonetic: "/ˈmʌltɪpl/", level: "考研", senses: [{ pos: "adj.", cn: "多个的，多种的" }, { pos: "n.", cn: "倍数" }] },
-    literacy: { word: "literacy", phonetic: "/ˈlɪtərəsi/", level: "考研", senses: [{ pos: "n.", cn: "读写能力；素养" }] },
-    judgment: { word: "judgment", phonetic: "/ˈdʒʌdʒmənt/", level: "考研", senses: [{ pos: "n.", cn: "判断力；判决" }] },
-    journalist: { word: "journalist", phonetic: "/ˈdʒɜːrnəlɪst/", level: "考研", senses: [{ pos: "n.", cn: "记者，新闻工作者" }] },
-    dream: { word: "dream", phonetic: "/driːm/", level: "中考", senses: [{ pos: "n.", cn: "梦；梦想" }, { pos: "v.", cn: "做梦；梦想" }] },
-    control: { word: "control", phonetic: "/kənˈtroʊl/", level: "四级", senses: [{ pos: "n./v.", cn: "控制，支配" }] },
-    incident: { word: "incident", phonetic: "/ˈɪnsɪdənt/", level: "考研", senses: [{ pos: "n.", cn: "事件；(两国间的) 冲突；事变" }] }
-  };
   function dictCandidates(raw) {
     var w = String(raw || "").toLowerCase().replace(/[^a-z'-]/g, "");
     var out = [w];
@@ -425,18 +398,20 @@
     return out.filter(function (x) { return x && !seen[x] && (seen[x] = 1); });
   }
   var _dictCache = {};
+  /* 查词：① 本轮词书里现成的卡（离线，最快）② 有道（壳侧签名 HTTP） */
   function lookup(w) {
     var key = String(w || "").toLowerCase().replace(/[^a-z'-]/g, "");
     if (!key) return Promise.resolve(null);
     if (_dictCache.hasOwnProperty(key)) return Promise.resolve(_dictCache[key]);
+
+    // ① 词书里已收录的词 —— 直接用卡上的完整数据
     var cands = dictCandidates(key);
-    for (var i = 0; i < cands.length; i++) if (LEXICON[cands[i]]) { _dictCache[key] = LEXICON[cands[i]]; return Promise.resolve(LEXICON[cands[i]]); }
     var pool = [];
     if (S.card) pool.push(S.card);
     S.queue.forEach(function (c) { if (c && c !== S.card) pool.push(c); });
     for (var j = 0; j < pool.length; j++) {
       var f = pool[j].fields || {};
-      if (String(f.word || "").toLowerCase() === key) {
+      if (cands.indexOf(String(f.word || "").toLowerCase()) >= 0) {
         var e = { word: f.word, phonetic: f.phonetic, level: "考研",
           senses: arr(f.senses).map(function (s) { return { pos: s.pos, cn: arr(s.cn).join("；") }; }),
           collocations: arr(f.collocations),
@@ -444,21 +419,13 @@
         _dictCache[key] = e; return Promise.resolve(e);
       }
     }
-    if (typeof fetch !== "function") { _dictCache[key] = null; return Promise.resolve(null); }
-    return fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(key))
-      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
-      .then(function (j) {
-        var d = j[0];
-        var senses = arr(d.meanings).slice(0, 3).map(function (m) {
-          var p = m.partOfSpeech === "noun" ? "n." : m.partOfSpeech === "verb" ? "v." : m.partOfSpeech === "adjective" ? "adj." : m.partOfSpeech === "adverb" ? "adv." : (m.partOfSpeech || "") + ".";
-          return { pos: p, cn: (arr(m.definitions)[0] || {}).definition || "" };
-        });
-        var exs = [];
-        arr(d.meanings).forEach(function (m) { arr(m.definitions).forEach(function (df) { if (df.example && exs.length < 3) exs.push({ en: df.example, src: "Dictionary API" }); }); });
-        var e = { word: d.word, phonetic: d.phonetic || "", senses: senses, examples: exs, fromApi: true };
-        _dictCache[key] = e; return e;
-      })
-      .catch(function () { _dictCache[key] = null; return null; });
+
+    // ② 有道（未配置 / 查不到 → null）
+    return call("dict.lookup", { w: key }).then(function (r) {
+      var e = (r && r.ok && r.entry) ? r.entry : null;
+      _dictCache[key] = e;
+      return e;
+    }).catch(function () { _dictCache[key] = null; return null; });
   }
   function openDict(w) {
     S.dictWord = w; S.dictExpanded = false; S.dictEntry = null; paint();
@@ -872,6 +839,7 @@
       case "menu-settings": S.menuOpen = false; S.settingsOpen = true; paint(); break;
       case "menu-noop": S.menuOpen = false; paint(); break;
       case "settings-close": S.settingsOpen = false; paint(); break;
+      case "dict-save": call("dict.setConfig", { appKey: S.dictKey || "", appSecret: S.dictSecret || "" }).then(function (r) { S.dictCfg = r || null; _dictCache = {}; paint(); }); break;
       case "pref-toggle": var k = el.getAttribute("data-k"); S.prefs[k] = !S.prefs[k]; if (k === "topbar") call("ui.setChrome", { top: !!S.prefs[k] }); paint(); break;
       case "order-open": S.settingsOpen = false; S.orderOpen = true; paint(); break;
       case "order-close": S.orderOpen = false; paint(); break;
@@ -946,6 +914,10 @@
       if (S.spellState === "wrong") { S.spellState = "idle"; }
     } else if (role === "sr") {
       srOnInput(t.value);
+    } else if (role === "dict-key") {
+      S.dictKey = t.value;
+    } else if (role === "dict-secret") {
+      S.dictSecret = t.value;
     }
   });
   root.addEventListener("keydown", function (e) {
@@ -997,6 +969,7 @@
     var c0 = FC.getCard();
     log("boot cardId=[" + ((c0 && c0.id) || "") + "]");
     /* 顶部栏偏好：问壳要盘上值，回填设置开关状态 */
+    call("dict.getConfig", {}).then(function (r) { S.dictCfg = r || null; });
     call("ui.getChrome", {}).then(function (r) {
       if (r && r.top != null) { S.prefs.topbar = !!r.top; paint(); }
     }).catch(function () {});
