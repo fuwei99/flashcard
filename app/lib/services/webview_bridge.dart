@@ -161,7 +161,7 @@ class WebViewBridge {
 
     // 会话断点（workflow.js 用）
     rpc.register('session.save', (p) async {
-      sessions.save((p['workflow'] ?? '').toString(), p['cursor']);
+      sessions.save((p['workflow'] ?? '').toString(), p['cursor'], p['session']);
       return {'ok': true};
     });
     rpc.register('session.load', (p) async => sessions.data);

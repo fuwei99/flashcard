@@ -118,12 +118,39 @@
   var _cursor = null;
   var _timer = null;
 
+  /// 学习会话快照：未 graduate 的重考池 + 每张卡的评分依据。
+  /// 重启后从这原地续上，不会「学了一半杀后台 = 白学」。
+  function sessionSnapshot() {
+    if (!S) return null;
+    var grad = [], prov = [];
+    for (var g in S.graduated) { if (S.graduated[g]) grad.push(g); }
+    for (var p in S.provisional) { if (S.provisional[p]) prov.push(p); }
+    return {
+      unitIdx: S.unitIdx,
+      phase: S.phase,
+      round: S.round,
+      retestPool: S.retestPool.slice(),
+      effort: S.effort,
+      learnRating: S.learnRating,
+      passageTag: S.passageTag,
+      passedModes: S.passedModes,
+      retestFailed: S.retestFailed,
+      wrongCount: S.wrongCount,
+      graduated: grad,
+      provisional: prov
+    };
+  }
+
   function saveNow(cursor) {
     if (cursor) _cursor = cursor;
-    if (!_cursor || !FC.call) return;
+    if (!FC.call) return;
+    var snap = _cursor;
+    var session = sessionSnapshot();
+    if (!snap && !session) return;
     try {
-      FC.call("session.save", { workflow: WF_NAME, cursor: _cursor })
-        .catch(function () {});
+      FC.call("session.save", {
+        workflow: WF_NAME, cursor: snap, session: session
+      }).catch(function () {});
     } catch (e) {}
   }
   function saveSoon(cursor) {
@@ -133,9 +160,18 @@
   }
   function clearSaved() {
     _cursor = null;
-    if (FC.call) {
-      try { FC.call("session.clear", {}).catch(function () {}); } catch (e) {}
+    if (!FC.call) return;
+    // 主学习会话还在跑（拼写轮开始/结束都会调这）-> 只清拼写 cursor，
+    // 保留学习快照；否则拼写轮一结束杀后台，整场学习进度也被清了。
+    if (S && S.phase && S.phase !== 'done') {
+      try {
+        FC.call("session.save", {
+          workflow: WF_NAME, cursor: null, session: sessionSnapshot()
+        }).catch(function () {});
+      } catch (e) {}
+      return;
     }
+    try { FC.call("session.clear", {}).catch(function () {}); } catch (e) {}
   }
 
   WF.name = WF_NAME;
@@ -672,7 +708,13 @@
   }
 
   function enterLearn() {
-    if (!S.queue.length) { nextUnit(); return; }
+    if (!S.queue.length) {
+      // 自评队列空了：语篇 failed 的词可能已经在重考池，别直接跳单元
+      if (S.retestPool.length && S.retestModes.length) {
+        S.round = 2; S.modeIdx = 0; startMode(); return;
+      }
+      nextUnit(); return;
+    }
     S.phase = 'learn';
     S.roundTotal = S.queue.length;
   }
@@ -778,11 +820,19 @@
     if (!S.queue.length) return;
     var step = S.queue.shift();
     var id = step.cardId;
+    var tag = S.passageTag[id] || 'untested';
+    S.learnRating[id] = rating;
     if (rating === 'good' || !modesOf(id).length) {
       S.graduated[id] = true;
+    } else if (rating === 'hard' && tag === 'tested') {
+      // 语篇客观检验过（tested）+ 自评模糊：信客观，不送考，直接落 hard
+      S.graduated[id] = true;
     } else {
+      // 其余 hard / again 一律送考（untested 没证据；again 最严重）
+      // 进池先 commit 保底 hard：中途退出也不丢卡，明天一定回复习队列
       if (S.retestPool.indexOf(id) < 0) S.retestPool.push(id);
-      bump(id, rating === 'again' ? 2 : 1);
+      bump(id, 1);
+      commitProvisional(id);
     }
     advance();
   }
@@ -795,9 +845,11 @@
       (S.passedModes[id] = S.passedModes[id] || {})[mode] = true;
       if (allPassed(id)) { removePool(id); S.graduated[id] = true; }
     } else {
+      // 重考有错：这张卡最终按 again 落盘（提前落的 hard 保底会被覆盖）
+      S.retestFailed[id] = true;
       var n = (S.wrongCount[id] || 0) + 1;
       S.wrongCount[id] = n;
-      bump(id, n >= 2 ? 2 : 1);
+      bump(id, 2);
     }
     advance();
   }
@@ -808,15 +860,68 @@
     else enterLearn();
   }
 
-  function submitPassageCloze(ok) { if (ok) enterLearn(); }
+  function submitPassageCloze(ok, meta) {
+    if (!ok) return;
+    var tag = (meta && meta.passageTag) || {};
+    S.passageTag = tag;
+    // 语篇错 >= 3 的词：跳过自评，直接进重考池（bump 1 保底 hard）
+    var failed = [];
+    S.queue = S.queue.filter(function (step) {
+      var m = cardMeta(step.cardId);
+      var w = m && m.word ? String(m.word).trim().toLowerCase() : '';
+      if (w && tag[w] === 'failed') { failed.push(step.cardId); return false; }
+      return true;
+    });
+    failed.forEach(function (id) {
+      S.learnRating[id] = 'hard';
+      if (S.retestPool.indexOf(id) < 0) S.retestPool.push(id);
+      bump(id, 1);
+      commitProvisional(id);
+    });
+    enterLearn();
+  }
+
+  /// 最终评分：语篇证据 + 自评 + 重考结果三合一
+  ///   failed               -> 重考全过 hard / 有错 again
+  ///   good                 -> good
+  ///   hard + tested        -> hard（语篇已客观验证，不送考）
+  ///   hard/again + untested、again + tested -> 送考：全过 hard / 有错 again
+  function finalRating(id) {
+    var tag = S.passageTag[id] || 'untested';
+    if (tag === 'failed') return S.retestFailed[id] ? 'again' : 'hard';
+    var learned = S.learnRating[id];
+    if (learned === 'good') return 'good';
+    if (learned === 'hard' && tag === 'tested') return 'hard';
+    return S.retestFailed[id] ? 'again' : 'hard';
+  }
+
+  /// 提前落盘：进重考池的卡先 commit 一个保底 hard，保证卡不是 new、
+  /// 明天一定回复习队列。最终评分与保底一致时不再重复 commit
+  /// （避免 FSRS 对同一张卡重复递推）。
+  function commitProvisional(id) {
+    if (S.provisional[id]) return;
+    S.provisional[id] = true;
+    S.provisionalRating[id] = 'hard';
+    log("commit(provisional) " + id + " rating=hard");
+    try {
+      FC.call('review.commit', { id: id, rating: 'hard' }).catch(function () {});
+    } catch (e) {}
+  }
 
   function flushGraduated() {
     Object.keys(S.graduated).forEach(function (id) {
       if (_committed[id]) return;
+      var r = finalRating(id);
+      // 提前落的保底和最终一致 -> 不再重复 commit
+      if (S.provisional[id] && S.provisionalRating[id] === r) {
+        _committed[id] = true;
+        log("commit(skip, provisional) " + id + " rating=" + r);
+        return;
+      }
       _committed[id] = true;
-      log("commit " + id + " rating=" + ratingFor(id));
+      log("commit " + id + " rating=" + r);
       try {
-        FC.call('review.commit', { id: id, rating: ratingFor(id) })
+        FC.call('review.commit', { id: id, rating: r })
           .catch(function () {});
       } catch (e) {}
     });
@@ -849,6 +954,7 @@
         " q=" + S.queue.length + " spell=" + S.spellCards.length);
     prefetchAhead();   // 顺带把后面几张的音频先落盘
     if (S.phase === 'done') {
+      clearSaved();
       sPost('web.finish', { graduated: Object.keys(S.graduated).length });
       return;
     }
@@ -882,14 +988,14 @@
     });
   }
 
-  function onAnswer(rating) {
+  function onAnswer(rating, meta) {
     if (!S) return;
     log("answer " + rating + " phase=" + S.phase + " q=" + S.queue.length);
     if (S.phase === 'learn') submitLearn(rating);
     else if (S.phase === 'choice' || S.phase === 'cloze') {
       submitRetest(S.phase, rating !== 'again');
     } else if (S.phase === 'passage') submitPassage();
-    else if (S.phase === 'passageCloze') submitPassageCloze(rating !== 'again');
+    else if (S.phase === 'passageCloze') submitPassageCloze(rating !== 'again', meta);
     else return;
     flushGraduated();
     reportProgress();
@@ -922,7 +1028,49 @@
     render();
   }
 
-  function startSession(plan) {
+  /// 从上次未完成的快照续上：恢复池 + 各卡评分依据，直接进重考。
+  /// 返回 false = 快照不可用，退回从头。
+  function restoreSession(sv) {
+    var ui = sv.unitIdx || 0;
+    if (ui < 0 || ui >= S.units.length) return false;
+    S.unitIdx = ui;
+    S.retestPool = (sv.retestPool || []).filter(function (id) {
+      return !!cardMeta(id);
+    });
+    S.effort = sv.effort || {};
+    S.learnRating = sv.learnRating || {};
+    S.passageTag = sv.passageTag || {};
+    S.passedModes = sv.passedModes || {};
+    S.retestFailed = sv.retestFailed || {};
+    S.wrongCount = sv.wrongCount || {};
+    S.graduated = {};
+    (sv.graduated || []).forEach(function (id) { S.graduated[id] = true; });
+    S.provisional = {};
+    S.provisionalRating = {};
+    (sv.provisional || []).forEach(function (id) {
+      S.provisional[id] = true;
+      S.provisionalRating[id] = 'hard';
+    });
+    S.retestPool = S.retestPool.filter(function (id) { return !S.graduated[id]; });
+    S.round = Math.max(2, sv.round || 2);
+    S.modeIdx = 0;
+    if (S.retestPool.length && S.retestModes.length) {
+      startMode();
+      return true;
+    }
+    // 池空：当前单元剩下的卡重新进自评
+    var u = S.units[S.unitIdx];
+    S.queue = ((u && u.cards) || []).filter(function (c) {
+      return !S.graduated[c.id];
+    }).map(function (c) { return { cardId: c.id, mode: 'read', round: 1 }; });
+    if (S.queue.length) {
+      S.phase = 'learn'; S.roundTotal = S.queue.length;
+      return true;
+    }
+    return false;
+  }
+
+  function startSession(plan, saved) {
     _committed = {};
     _pfDone = {};
     log("start units=" + (plan.units || []).length);
@@ -935,6 +1083,10 @@
       phase: 'done',
       queue: [], retestPool: [], graduated: {}, passedModes: {},
       effort: {}, wrongCount: {},
+      // 语篇接 effort：每个词的语篇检验状态 + 自评档 + 重考失败标记
+      passageTag: {}, learnRating: {}, retestFailed: {},
+      // 提前落盘：进重考池时先 commit 的保底评分（防中途退出丢卡）
+      provisional: {}, provisionalRating: {},
       round: 1, modeIdx: 0, roundTotal: 0,
       leadingReviewCount: 0,
       reviewSpellDone: false, finalSpellDone: false,
@@ -947,9 +1099,19 @@
     if (!S.units.length) { S.phase = 'done'; render(); return; }
 
     // 接管：评分 / 拼写回报都归本层
-    FC.answer = function (r) { onAnswer(r); };
+    FC.answer = function (r, meta) { onAnswer(r, meta); };
     FC.spellDone = function () { endSpell(); };
     FC.spellProgress = function (d) { if (S) { S.spellDone = d || 0; reportProgress(); } };
+
+    // 有未完成的学习快照 -> 原地续上（不从头学）
+    if (saved && saved.session && saved.session.phase &&
+        saved.session.phase !== 'done' && saved.workflow === WF_NAME) {
+      if (restoreSession(saved.session)) {
+        reportProgress();
+        render();
+        return;
+      }
+    }
 
     startUnit();
     reportProgress();
@@ -960,8 +1122,15 @@
     FC.on('web.start', function () {
       if (!FC.call) return;
       log("web.start -> 拉计划");
-      FC.call('session.plan', {}).then(function (plan) {
-        if (plan && plan.units && plan.units.length !== undefined) startSession(plan);
+      var planP = FC.call('session.plan', {});
+      var savedP = null;
+      try { savedP = FC.call('session.load', {}); } catch (e) { savedP = null; }
+      Promise.all([
+        planP,
+        savedP ? savedP.catch(function () { return null; }) : Promise.resolve(null)
+      ]).then(function (rs) {
+        var plan = rs[0], saved = rs[1];
+        if (plan && plan.units && plan.units.length !== undefined) startSession(plan, saved);
         else log("web.start：没有计划（非 Web 驱动？）");
       }).catch(function () {});
     });

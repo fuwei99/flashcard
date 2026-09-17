@@ -822,8 +822,10 @@
         b.addEventListener("click", function () { onTapBlank(idx); });
         body.appendChild(b);
         blanks.push({
-          el: b, answer: seg.w, pos: seg.pos || "",
-          meaning: seg.meaning || "", plain: seg.plain || "", filled: null
+          el: b, answer: seg.w, lemma: seg.lemma || seg.w,
+          pos: seg.pos || "",
+          meaning: seg.meaning || "", plain: seg.plain || "",
+          filled: null, wrong: 0, failed: false
         });
         bank.push({ surface: seg.w, used: false, el: null });
       } else {
@@ -915,6 +917,9 @@
       setActiveBlank(firstEmptyBlank());
       updateClozeContinue();
     } else {
+      // 语篇接 effort：同一个空累计错 3 次 -> 标 failed，后面跳过自评直接送考
+      blank.wrong = (blank.wrong || 0) + 1;
+      if (blank.wrong >= 3) blank.failed = true;
       if (tile.el) {
         tile.el.classList.add("is-wrong");
         setTimeout(function () { if (tile.el) tile.el.classList.remove("is-wrong"); }, 450);
@@ -924,6 +929,24 @@
         setTimeout(function () { if (blank.el) blank.el.classList.remove("is-wrong"); }, 450);
       }
     }
+  }
+
+  /// 导出语篇每个目标词的检验状态：failed / tested / untested
+  /// key = lemma 小写，和 plan 里 card.word 归一化后一一对应
+  function exportPassageTag() {
+    var tag = {};
+    blanks.forEach(function (b) {
+      var k = String(b.lemma || b.answer || "").trim().toLowerCase();
+      if (!k) return;
+      tag[k] = b.failed ? "failed" : (b.filled !== null ? "tested" : "untested");
+    });
+    return tag;
+  }
+
+  /// 只有语篇选词阶段才带 tag；其它阶段（词义/通读）返回 null
+  function answerMeta() {
+    if (mode !== "passage_cloze") return null;
+    return { passageTag: exportPassageTag() };
   }
 
   function updateClozeContinue() {
@@ -1210,7 +1233,7 @@
         if (topBtn.hasAttribute("disabled")) return;
         topBtn.setAttribute("disabled", "disabled");
         if (FC.ttsStop) FC.ttsStop();
-        FC.answer("good");
+        FC.answer("good", answerMeta());
       }
       return;
     }
@@ -1279,7 +1302,7 @@
     if (act === "start-drill") {
       if (actionTarget.hasAttribute("disabled")) return;
       actionTarget.setAttribute("disabled", "disabled");
-      FC.answer("good");
+      FC.answer("good", answerMeta());
       return;
     }
 
@@ -1319,7 +1342,7 @@
         toMeaning("again");
         return;
       }
-      FC.answer(pendingAnswer);
+      FC.answer(pendingAnswer, answerMeta());
       return;
     }
   });
@@ -1338,7 +1361,7 @@
         var cb = root.querySelector(".fc-btn-continue");
         if (cb && !cb.hasAttribute("disabled")) {
           cb.setAttribute("disabled", "disabled");
-          FC.answer(pendingAnswer);
+          FC.answer(pendingAnswer, answerMeta());
         }
       }
     }

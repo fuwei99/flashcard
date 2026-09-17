@@ -26,10 +26,13 @@ class SessionStore {
     if (doc != null) _data = doc;
   }
 
-  void save(String workflow, dynamic cursor) {
+  /// [session] 是 workflow.js 的学习会话快照（未毕业的重考池 + 每张卡的
+  /// 评分依据）。带上它，杀后台重进能原地续上，不用从头学。
+  void save(String workflow, dynamic cursor, [dynamic session]) {
     _data = {
       'workflow': workflow,
       'cursor': cursor,
+      if (session != null) 'session': session,
       'updated_at': DateTime.now().toIso8601String(),
     };
     DataDir.writeJsonSync(_fileName, _data);
