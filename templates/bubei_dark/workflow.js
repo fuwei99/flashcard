@@ -41,6 +41,10 @@
   var PF_AHEAD = 12;   // 每次往后看几张
   var _pfDone = {};    // 本次会话已排过的 cardId
 
+  // 重测轮上限：一个单元内最多重来这么多轮，到顶就把剩下的卡放行。
+  // 防死循环的最后一道保险（与 Dart 端 study_session.dart 的 kMaxRetestRound 对齐）。
+  var MAX_RETEST_ROUND = 10;
+
   /// 把「播放配置」改成「只要落盘」：不出声 + 强制存 + 带 TTL
   function pfOpts(base, lang) {
     var o = {};
@@ -718,8 +722,17 @@
   }
 
   function startMode() {
+    // 兜底一：池里「考不了任何**启用中**的考法」的卡直接毕业。两种都算：
+    //   1. modesOf(id) 为空（既没例句也没词义）
+    //   2. 有考法，但用户一个都没开 —— 例如卡只有例句（能考 cloze），
+    //      而用户只开了 choice。这种卡永远进不了 pending，
+    //      会一路 round++ 自递归到栈溢出。以前只挡了第 1 种。
     S.retestPool.slice().forEach(function (id) {
-      if (!modesOf(id).length) { removePool(id); S.graduated[id] = true; }
+      var ms = modesOf(id);
+      var playable = ms.filter(function (m) {
+        return S.retestModes.indexOf(m) >= 0;
+      });
+      if (!playable.length) { removePool(id); S.graduated[id] = true; }
     });
     while (S.modeIdx < S.retestModes.length) {
       var m = S.retestModes[S.modeIdx];
@@ -737,8 +750,18 @@
       S.roundTotal = S.queue.length;
       return;
     }
-    if (!S.retestPool.length) { nextUnit(); }
-    else { S.round++; S.modeIdx = 0; startMode(); }
+    if (!S.retestPool.length) { nextUnit(); return; }
+
+    // 兜底二：轮数封顶。S.round++ 既不清池也不改 passedModes，
+    // 一旦进入「状态不再变化」的组合，自递归就是无限递归（栈溢出）。
+    // 宁可放行这些卡，也不能让用户卡在死循环里出不来。
+    if (S.round >= MAX_RETEST_ROUND) {
+      S.retestPool.slice().forEach(function (id) { S.graduated[id] = true; });
+      S.retestPool = [];
+      nextUnit();
+      return;
+    }
+    S.round++; S.modeIdx = 0; startMode();
   }
 
   function advance() {

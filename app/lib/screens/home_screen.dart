@@ -40,9 +40,16 @@ class HomeScreenState extends State<HomeScreen> {
     refresh();
   }
 
+  /// 刷新世代号：只有最后一次 refresh 的结果算数。
+  ///
+  /// initState / 切 Tab / 热重载 / 页面返回都会触发刷新，这些调用是并发的，
+  /// 完成顺序不保证 —— 先发的那次如果后到，会把 _books 覆盖成旧数据。
+  int _refreshSeq = 0;
+
   Future<void> refresh() async {
+    final mySeq = ++_refreshSeq;
     final all = await widget.repo.loadAllBooks();
-    if (!mounted) return;
+    if (!mounted || mySeq != _refreshSeq) return; // 期间又刷新过，这次作废
     setState(() => _books = all);
   }
 

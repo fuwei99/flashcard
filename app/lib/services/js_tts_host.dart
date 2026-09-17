@@ -25,10 +25,27 @@ import 'package:flutter_js/flutter_js.dart';
 
 import 'tts_log.dart';
 
+/// 单次合成的会话。
+///
+/// [out] 必须注册 onCancel：下游（播放端 / just_audio 探测）随时可能取消订阅，
+/// 以前没人管这件事 —— 取消后 _sessions 里的条目永远留着，插件还在往
+/// 一个没有监听者的 controller 里灌 base64（无背压、无界缓冲），
+/// _sessions 单调增长，取消过的合成还会继续占用插件那条单会话连接。
 class _Session {
-  final StreamController<List<int>> out = StreamController<List<int>>();
-  _Session();
+  final StreamController<List<int>> out;
+
+  /// 超时保险：到点还没出音频也没报错，就强制收摊
+  Timer? timer;
+
+  _Session({required void Function() onCancel})
+      : out = StreamController<List<int>>(onCancel: onCancel);
 }
+
+/// 合成超时。
+/// 宿主没给插件提供 setTimeout（API 表里也没有），所以超时只能由 Dart 侧兜：
+/// 服务端不回帧时 nextStep() 就永远停在那一步，上层等不到 write 也等不到 error，
+/// 朗读态没有任何出口。
+const Duration kSynthesizeTimeout = Duration(seconds: 20);
 
 class JsTtsHost {
   final JavascriptRuntime _rt;
@@ -79,8 +96,22 @@ class JsTtsHost {
     Map<String, String> extra = const {},
   }) {
     final id = 's${_seq++}';
-    final s = _Session();
+    final s = _Session(onCancel: () => _abandon(id));
     _sessions[id] = s;
+    // 超时保险：插件自己没有定时器，卡在「连上了但服务端不回帧」时
+    // 没有任何一方会来结束这条流。到点强制收摊，让上层拿到 error。
+    s.timer = Timer(kSynthesizeTimeout, () {
+      final cur = _sessions.remove(id);
+      if (cur == null) return; // 已正常结束（close / error 里会 remove）
+      _lastError = 'timeout';
+      TtsLog.write('plugin',
+          'ERROR 超时：${kSynthesizeTimeout.inSeconds}s 内插件既没出音频也没报错，强制结束 id=$id');
+      cancelCurrent();
+      if (!cur.out.isClosed) {
+        cur.out.addError('TTS 超时（${kSynthesizeTimeout.inSeconds}s 无响应）');
+        cur.out.close();
+      }
+    });
     // TTS Server 的 rate/pitch 是 0~100（50 = 正常）
     final req = <String, dynamic>{
       'text': text,
@@ -98,6 +129,15 @@ class JsTtsHost {
       TtsLog.write('plugin', 'ERROR startTts: $e');
     }
     return s.out.stream;
+  }
+
+  /// 下游取消订阅 / 会话作废时的收尾：撤掉超时、通知插件停手。
+  void _abandon(String id) {
+    final s = _sessions.remove(id);
+    s?.timer?.cancel();
+    if (s == null) return;
+    TtsLog.write('plugin', '订阅已取消，收掉会话 id=$id');
+    cancelCurrent();
   }
 
   void _installBridges() {
@@ -176,6 +216,7 @@ class JsTtsHost {
     _rt.onMessage('ttsrv.audio.close', (args) {
       final m = args as Map;
       final s = _sessions.remove('${m['id']}');
+      s?.timer?.cancel(); // 正常收尾，超时保险撤掉
       if (s != null && !s.out.isClosed) s.out.close();
       return '';
     });
@@ -183,6 +224,7 @@ class JsTtsHost {
     _rt.onMessage('ttsrv.audio.error', (args) {
       final m = args as Map;
       final s = _sessions.remove('${m['id']}');
+      s?.timer?.cancel();
       final msg = '${m['m'] ?? 'plugin error'}';
       _lastError = msg;
       TtsLog.write('plugin', 'audio error: $msg');
@@ -239,6 +281,7 @@ class JsTtsHost {
           "if (typeof PluginJS !== 'undefined' && PluginJS.onStop) { try { PluginJS.onStop(); } catch (e) {} }");
     } catch (_) {}
     for (final s in _sessions.values) {
+      s.timer?.cancel();
       if (!s.out.isClosed) s.out.close();
     }
     _sessions.clear();
@@ -252,6 +295,7 @@ class JsTtsHost {
     }
     _sockets.clear();
     for (final s in _sessions.values) {
+      s.timer?.cancel();
       if (!s.out.isClosed) s.out.close();
     }
     _sessions.clear();

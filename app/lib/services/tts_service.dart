@@ -53,11 +53,30 @@ class TtsService {
   bool _cacheDraining = false;
 
   /// 朗读闸门：非 null = 有朗读在途，预取让路
+  ///
+  /// **带引用计数**：并发的 speak / speakSeq 会各开一次闸门，必须等**全部**
+  /// 结束才算放闸。以前是单个 Completer + `??=`，先结束的那次会顺手把
+  /// 还在讲的那次的闸门也放掉 —— 预取立刻恢复、跟正在播放的合成互相 cancel，
+  /// 反而制造了这个闸门本来要防的串音。
   Completer<void>? _speakGate;
+  int _speakGateCount = 0;
 
-  void _openGate() => _speakGate ??= Completer<void>();
+  void _openGate() {
+    _speakGateCount++;
+    _speakGate ??= Completer<void>();
+  }
 
   void _closeGate() {
+    if (_speakGateCount > 0) _speakGateCount--;
+    if (_speakGateCount > 0) return; // 还有别处在讲，闸不能放
+    final g = _speakGate;
+    _speakGate = null;
+    if (g != null && !g.isCompleted) g.complete();
+  }
+
+  /// 强制放闸（停播 / dispose 用）：不等引用计数归零
+  void _forceCloseGate() {
+    _speakGateCount = 0;
     final g = _speakGate;
     _speakGate = null;
     if (g != null && !g.isCompleted) g.complete();
@@ -118,6 +137,9 @@ class TtsService {
     } catch (e, st) {
       await TtsLog.write('init', 'ERROR: $e\n$st');
     }
+    // 启动顺手清一次过期缓存（不阻塞 init）。
+    // 以前只有模板 JS 主动调 tts.purge 才会清，模板作者忘了调就永远没人清。
+    unawaited(purgeCache(olderThanDays: 7));
   }
 
   /// 取引擎：pluginId 为 null 时用当前选中插件；否则用指定插件
@@ -533,6 +555,28 @@ class TtsService {
         }
       } catch (_) {}
     }
+    // .tmp 是 _writeTmp 落临时音频的子目录（流式失败兜底、预取命中播放都走它）。
+    // 以前它是清理盲区：list() 非递归 + 主循环显式 skip .tmp 后缀，
+    // 两道过滤叠起来导致这些文件永远删不掉，用得越久占得越多。
+    // 这里单独扫一遍：临时文件活不过一个会话，默认 1 天前的直接删。
+    final tmpDir = Directory('${dir.path}/.tmp');
+    if (await tmpDir.exists()) {
+      final cutoff =
+          now.subtract(Duration(days: olderThanDays != null && olderThanDays > 0 ? olderThanDays : 1));
+      try {
+        await for (final e in tmpDir.list()) {
+          if (e is! File) continue;
+          try {
+            final st = await e.stat();
+            if (!st.modified.isBefore(cutoff)) continue;
+            freed += st.size;
+            await e.delete();
+            removed++;
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
     await TtsLog.write('cache',
         'purge removed=$removed freed=${freed}B olderThan=$olderThanDays');
     return {'removed': removed, 'freedBytes': freed};
@@ -757,6 +801,11 @@ class TtsService {
 
   Future<void> dispose() async {
     _gen++;
+    // 放闸 + 清掉待落盘队列：否则 _drainCache 那条协程会一直挂在
+    // `await _speakGate.future` 上，且会在 dispose 之后再去 _ensureEngine
+    // 建新引擎（_engines 已 clear，没人再回收它）。
+    _forceCloseGate();
+    _cacheQ.clear();
     try {
       await _lastSource?.dispose();
     } catch (_) {}

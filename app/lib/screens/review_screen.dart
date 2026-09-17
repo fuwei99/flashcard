@@ -8,6 +8,8 @@
 /// 并用 blankLemmas 限定「只挖今天要复习的那几个词」。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -80,6 +82,10 @@ class _ReviewScreenState extends State<ReviewScreen>
   /// 正在处理一条 answer —— 防止两次点击并发推进状态（会一次跳两页）
   bool _handling = false;
 
+  /// 桥消息的订阅句柄 —— 必须在 dispose 里 cancel，
+  /// 否则回调闭包一直挂在 bridge 的广播流上。
+  StreamSubscription<BridgeMessage>? _msgSub;
+
   /// mount 世代号：只有最后一次 mount 算数，过期的那次只记日志
   int _mountGen = 0;
 
@@ -121,7 +127,7 @@ class _ReviewScreenState extends State<ReviewScreen>
     _bridge = WebViewBridge(
         store: widget.store, tts: TtsService(settings: widget.settings));
     _bridge.initTts();
-    _bridge.messages.listen(_onMsg);
+    _msgSub = _bridge.messages.listen(_onMsg);
     if (_webDriven) {
       _bridge.setPlan(SessionPlan.build(
         units: widget.units,
@@ -133,6 +139,8 @@ class _ReviewScreenState extends State<ReviewScreen>
         passageJson: _bridge.passageJson,
       ));
     }
+    // 控制器在这里建一次（不能在 build 里建，见 _ensure 注释）
+    _ensure();
   }
 
   Future<void> _onMsg(BridgeMessage m) async {
@@ -169,13 +177,18 @@ class _ReviewScreenState extends State<ReviewScreen>
     _handling = true;
     final t0 = DateTime.now();
     try {
-      // fromKey 对未知评分会 throw，且 _onMsg 是 async 没有捕获 —— 兜底成 good，
-      // 避免一条脏消息把整个会话打断（例如 data-rating="next" 被误回传）。
+      // fromKey 对未知评分会 throw。以前 catch 掉兜底成 good ——
+      // 于是任何脏消息（例如把 data-rating="next" 回传上来）都被当成
+      // 「记得」写进 FSRS，永久抬高这张卡的稳定性，而且看不出来。
+      // 现在直接丢弃这条消息：不推进状态、不落盘，比记一个错评分安全得多。
+      final ratingKey = (m.data['rating'] ?? '').toString();
       Rating rating;
       try {
-        rating = Rating.fromKey((m.data['rating'] ?? 'good').toString());
+        rating = Rating.fromKey(ratingKey);
       } catch (_) {
-        rating = Rating.good;
+        await SwitchLog.write(
+            'switch', 'DROP 非法评分 "$ratingKey"（不再按 good 处理）');
+        return;
       }
 
       final beforeCard = step.card?.id ?? '-';
@@ -208,10 +221,16 @@ class _ReviewScreenState extends State<ReviewScreen>
       // 本轮刚毕业 → 这一刻才算「已背」：落盘 + 记今日进度。
       final s = widget.settings;
       final wasPassed = widget.isCard ? s.cardPassed : s.wordPassed;
+      // 一轮 answer 可能同时毕业多张卡（learn 直接过 + 重测全过）。
+      // 合并成一次 markDoneBy —— 一张一次会重写 settings.json 同样多遍。
+      var justGraduated = 0;
       for (final cid in _session.graduated) {
         if (_written.contains(cid)) continue;
         _write(cid, _session.ratingFor(cid));
-        await s.markDone(card: widget.isCard);
+        justGraduated++;
+      }
+      if (justGraduated > 0) {
+        await s.markDoneBy(justGraduated, card: widget.isCard);
       }
       // 刷新给外部监工（AI）看的 status.json —— 限流，别每张卡都重算全书
       if (_session.graduated.isNotEmpty) {
@@ -714,8 +733,12 @@ class _ReviewScreenState extends State<ReviewScreen>
             _topBar(),
             Expanded(
               child: Stack(
-                children: [
-                  if (_ensure() case final c?) WebViewWidget(controller: c),
+                  children: [
+                    // 这里**不能**调 _ensure()：build 必须是纯函数，
+                    // 而 _ensure 会 new WebViewController + 注册 Channel +
+                    // loadHtmlString，三个副作用塞在可能被一帧多次调用的地方。
+                    // 控制器改在 initState 里建好（见下方 _ensure 注释）。
+                    if (_controller case final c?) WebViewWidget(controller: c),
                   if (_loading)
                     const Center(
                       child: CircularProgressIndicator(
@@ -812,10 +835,16 @@ class _ReviewScreenState extends State<ReviewScreen>
     );
   }
 
-  WebViewController? _ensure() {
-    if (_controller != null) return _controller!;
+  /// 建控制器 + 装载骨架页。
+  ///
+  /// 只在 [initState] 里调用一次 —— 以前是在 build() 里调的（`if (_ensure() case ...)`），
+  /// 靠 `_controller != null` 的缓存侥幸没事，但 build 可能被一帧内多次调用，
+  /// 一旦缓存失效就会重复 new 控制器、重复 loadHtmlString（还会让同一个
+  /// controller 被多个 WebViewWidget 持有而报错）。
+  void _ensure() {
+    if (_controller != null) return;
     final step = _session.current;
-    if (step == null && !_webDriven) return null;
+    if (step == null && !_webDriven) return;
     final c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF141D1F))
@@ -855,7 +884,6 @@ class _ReviewScreenState extends State<ReviewScreen>
             },
     );
     c.loadHtmlString(html);
-    return c;
   }
 
   Widget _finished() {
@@ -904,6 +932,8 @@ class _ReviewScreenState extends State<ReviewScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _msgSub?.cancel();
+    _msgSub = null;
     // 退出会话：写一份完整的 status 快照（尽力而为，不阻塞返回）
     StatusWriter.I.write();
     _bridge.dispose();

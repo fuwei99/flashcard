@@ -47,6 +47,10 @@ enum StudyMode {
       .firstWhere((m) => m.key == k, orElse: () => StudyMode.read);
 }
 
+/// 重测轮上限：一个单元内最多重来这么多轮，到顶就把剩下的卡放行。
+/// 这是防死循环的最后一道保险（前面还有「考不了任何启用考法就毕业」）。
+const int kMaxRetestRound = 10;
+
 /// 队列里的一个步骤：某张卡 + 某个考法 + 第几轮。
 /// 语篇两阶段没有具体卡片，card 为 null。
 class StudyStep {
@@ -467,10 +471,15 @@ class StudySession {
   /// 从当前 _modeIdx 起，找第一个「还有没过卡」的启用考法，组一轮队列。
   /// 全部考法都走完：池空 -> 下一个单元；还有卡没过 -> round++ 重来。
   void _startMode() {
-    // 兜底：池里若只剩「没有任何可用考法」的卡，直接让它们毕业，
-    // 避免 while 循环空转（理论上 submitLearn 已挡，这里再保一道）。
-    final stuck =
-        _retestPool.where((c) => _modesFor(c).isEmpty).toList();
+    // 兜底一：池里「考不了任何**启用中**的考法」的卡直接毕业。两种都算：
+    //   1. _modesFor 为空（既没例句也没词义，一张考法都没有）
+    //   2. 有考法，但用户一个都没开 —— 例如卡只有例句（能考 cloze），
+    //      而用户只开了 choice。这种卡永远进不了 pending，
+    //      会一路 round++ 自递归到栈溢出。以前只挡了第 1 种。
+    final stuck = _retestPool.where((c) {
+      final modes = _modesFor(c);
+      return modes.isEmpty || modes.every((m) => !retestModes.contains(m));
+    }).toList();
     for (final c in stuck) {
       _retestPool.remove(c);
       graduated.add(c.id);
@@ -499,10 +508,23 @@ class StudySession {
 
     if (_retestPool.isEmpty) {
       _nextUnit();
-    } else {
-      round++;
-      _modeIdx = 0;
-      _startMode();
+      return;
     }
+
+    // 兜底二：轮数封顶。round++ 不改变 _retestPool 也不改变 _passedModes，
+    // 一旦进了「状态不再变化」的组合，自递归就是无限递归。
+    // 宁可放行这些卡，也不能让用户卡在死循环里出不来。
+    if (round >= kMaxRetestRound) {
+      for (final c in _retestPool) {
+        graduated.add(c.id);
+      }
+      _retestPool.clear();
+      _nextUnit();
+      return;
+    }
+
+    round++;
+    _modeIdx = 0;
+    _startMode();
   }
 }

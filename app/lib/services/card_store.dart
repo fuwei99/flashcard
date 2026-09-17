@@ -71,7 +71,10 @@ class CardStore {
     }
 
     if (fromFile) {
-      _flushPrefs();
+      // 这里**不**再 _flushPrefs()：公共文件才是主存，prefs 只是它不可用时的
+      // 兜底备份。以前每次冷启动都把全部状态 encode 一遍写进 prefs，
+      // 1 万张卡就是 1MB 级写入 —— 正是 append-only 优化想干掉的东西。
+      // 备份的同步交给 compact（本身就会刷），启动时不再额外写。
       // 日志太长就压一次
       if (_journalLines > _compactThreshold) _compact();
       return;
@@ -81,6 +84,22 @@ class CardStore {
     _loadPrefs();
     _compact();
     _flushPrefs();
+  }
+
+  /// 公共目录从「不可用」翻成「可用」后重新挂上文件（授权回调里调）。
+  ///
+  /// 首次安装时 init() 那次探测必然失败（还没权限），数据全在 prefs 里。
+  /// 用户点了授权之后调用这里，把内存里的数据搬进公共文件，
+  /// 之后 Agent / 文件管理器就都能读到了。已经挂在文件上的直接跳过。
+  Future<void> rebind() async {
+    if (_snap != null) return;
+    await DataDir.root();
+    final root = DataDir.cachedRoot;
+    if (root == null) return;
+    _snap = File('${root.path}/$_snapFile');
+    _journal = File('${root.path}/$_journalFile');
+    // 内存里的数据才是刚跑出来的权威值：写成快照 + 刷 prefs 兜底
+    _compact();
   }
 
   // ---------- 读 / 写 ----------
@@ -188,7 +207,26 @@ class CardStore {
   }
 
   /// 到期复习数量
-  int reviewDueCount(List<String> allIds) => reviewDue(allIds).length;
+  ///
+  /// 直接计数，不构造中间 List —— 以前是 `reviewDue(allIds).length`，
+  /// 6500 词的书每次调用都要 new 一个 List 装全部到期 id 只为取个 length，
+  /// 而首页每次刷新会调好几次。
+  int reviewDueCount(List<String> allIds) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var n = 0;
+    for (final id in allIds) {
+      if (isKnown(id)) continue; // 标熟 = 永久出队
+      final st = _states[id];
+      if (st != null &&
+          !st.isNew &&
+          st.due != null &&
+          !st.due!.isAfter(today)) {
+        n++;
+      }
+    }
+    return n;
+  }
 
   // ---------- 导入 / 导出 ----------
 
@@ -257,10 +295,14 @@ class CardStore {
       if (st != null) rec['st'] = st.toJson();
       if (kv != null) rec['kv'] = kv;
       if (rev != null) rec['rev'] = rev;
+      // flush:false —— 答一张卡就 fsync 一次，在主线程上是几十毫秒级的开销，
+      // 越背越卡。append 写入 OS 页缓存后进程崩溃并不丢（OS 保证已写数据），
+      // 只有整机掉电才可能丢最后几行；真正的一致性由 compact 的
+      // 「写临时文件 + rename」快照兜底（DataDir.writeJsonSync 那边是 fsync 的）。
       j.writeAsStringSync(
         '${json.encode(rec)}\n',
         mode: FileMode.append,
-        flush: true,
+        flush: false,
       );
       _journalLines++;
       if (_journalLines > _compactThreshold) _compact();
@@ -294,19 +336,31 @@ class CardStore {
   }
 
   /// 把当前状态写成快照，并清空日志
+  ///
+  /// **顺序不能反**：快照确认写成功，才允许清日志。
+  /// 以前是无条件先写后清，快照一旦写失败（磁盘满 / 权限刚丢），
+  /// 就变成「快照还是旧的 + 日志已被抹掉」——这段时间复习的全没了，
+  /// 而且不报错，用户下次打开才发现进度倒退。
   void _compact() {
-    _writeSnap();
+    if (!_writeSnap()) {
+      // 快照没落上：日志原样留着（下次启动重放），只是不重置行数计数，
+      // 这样下一次写操作还会再试一次 compact。
+      return;
+    }
     try {
       final j = _journal;
       if (j != null && j.existsSync()) j.writeAsStringSync('', flush: true);
     } catch (_) {}
     _journalLines = 0;
-    // 压完顺手把 prefs 兜底也刷一遍，保证两处一致
+    // 压完顺手把 prefs 兜底也刷一遍，保证两处一致。
+    // 只在**有文件兜底**时才需要这次同步 —— 纯 prefs 模式下 _append
+    // 每次都刷过了，没必要再刷一遍。
     _flushPrefs();
   }
 
-  void _writeSnap() {
-    DataDir.writeJsonSync(_snapFile, _doc());
+  /// 写快照；返回是否成功
+  bool _writeSnap() {
+    return DataDir.writeJsonSync(_snapFile, _doc());
   }
 
   // ---------- prefs 兜底 ----------

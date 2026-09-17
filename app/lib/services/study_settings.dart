@@ -203,6 +203,20 @@ class StudySettings {
     _persist();
   }
 
+  /// 公共目录变可用后，把设置落到公共文件（授权回调里调）。
+  /// 逻辑与 init() 的文件分支一致：公共文件优先（可能是 Agent 放的），
+  /// 没有就以当前内存值为准写一份。
+  Future<void> rebind() async {
+    await DataDir.root();
+    if (DataDir.cachedRoot == null) return;
+    final doc = DataDir.readJsonSync(_fileName);
+    if (doc != null) {
+      _applyJson(doc);
+      _rolloverIfNewDay();
+    }
+    _persist();
+  }
+
   // ---------- 序列化 ----------
 
   Map<String, dynamic> toJson() => {
@@ -460,6 +474,29 @@ class StudySettings {
   /// 通用记一笔：card=false 记单词（默认），card=true 记卡牌
   Future<void> markDone({bool card = false}) =>
       card ? markCardDone() : markWordDone();
+
+  /// 一次记 [n] 笔（n<=0 直接返回）。
+  ///
+  /// 为什么要有这个：_persist() 会重写整个 settings.json + 24 次 prefs 写，
+  /// 而一轮 answer 可能同时毕业好几张卡。以前是毕业几张就 _persist 几次
+  /// （背 20 个词 = 20 次全配置文件重写），这里合并成一次。
+  Future<void> markDoneBy(int n, {bool card = false}) async {
+    if (n <= 0) return;
+    _rolloverIfNewDay();
+    final d = dateStr(DateTime.now());
+    if (card) {
+      todayCardDone += n;
+      totalCardDone += n;
+      histCard[d] = (histCard[d] ?? 0) + n;
+    } else {
+      todayWordDone += n;
+      totalWordDone += n;
+      histWord[d] = (histWord[d] ?? 0) + n;
+    }
+    _trimHistory();
+    _touchStudyDay();
+    _persist();
+  }
 
   /// 当天首次学习 -> 打卡：连续 +1（隔天 >1 天则从 1 重来）
   void _touchStudyDay() {

@@ -206,6 +206,25 @@ class FlashCard {
 
   /// 序列化：id 单列，其余字段平铺
   Map<String, dynamic> toJson() => {'id': id, ...fields};
+
+  /// 按 id 判等（同一张卡从不同 Book 实例读出来、或从不同代码路径拿到，
+  /// 也必须是同一张）。
+  ///
+  /// 以前没有这个，全靠对象同一性 —— 目前没出事纯属侥幸：
+  /// `StudySession._retestPool.remove(card)` 依赖「传进来的和放进去的是
+  /// 同一批实例」。但 Chapter 是首次访问才解析的，只要 refresh 造出新的
+  /// Book，同一张卡就是两个对象，那时 remove / contains / Set 去重会
+  /// **静默失效**（不报错，只是删不掉）。按 id 判等堵死这个陷阱。
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FlashCard && id == other.id && templateId == other.templateId);
+
+  @override
+  int get hashCode => Object.hash(id, templateId);
+
+  @override
+  String toString() => 'FlashCard($id)';
 }
 
 /// 一个卡组 = 若干卡片 + 绑定的模板 + 字段顺序

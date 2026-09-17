@@ -28,13 +28,24 @@ import 'card_store.dart';
 const int kGroupSize = 20;
 
 /// 一个分组 = 一章（或一本没有章节的书）
+///
+/// title / passage 一律**懒取**：新格式（目录里的 ch_*.json 才是真源）在
+/// index.json 里没有章节种子时，`Chapter.title` / `Chapter.passage` 会立刻
+/// 把整章文件读进来。以前 _groups() 建组时就顺手取了这两个值，
+/// 等于给每一本书的每一章都做一次同步 IO —— 文档里承诺的
+/// 「只读当天要用的那几章」就成了空话。现在只有真被选中的章才会碰到它们。
 class _Group {
   final Chapter? chapter;
-  final Passage? passage;
   final List<FlashCard> inlineCards;
-  final String title;
+  final String? _title;
 
-  const _Group(this.chapter, this.passage, this.inlineCards, this.title);
+  const _Group(this.chapter, this.inlineCards, this._title);
+
+  /// 语篇（懒）—— 只有这一章被排进计划才会真正读盘
+  Passage? get passage => chapter?.passage;
+
+  /// 标题（懒）—— 只有要展示 / 要建单元时才取
+  String get title => _title ?? chapter?.title ?? '';
 
   /// **不触发载入**的卡片 id
   List<String> get ids =>
@@ -56,11 +67,12 @@ class _DueRef {
 class StudyPlanner {
   static List<_Group> _groups(Book b) {
     if (b.hasChapters) {
-      return [
-        for (final c in b.chapters) _Group(c, c.passage, const [], c.title),
-      ];
+      // 注意：这里**不能**取 c.title / c.passage。新格式下这两个 getter
+      // 在没有 index 种子时会直接读 ch_*.json，一旦在这里取，
+      // 「先只用 id 判断、不读章节文件」的整套懒加载就失效了。
+      return [for (final c in b.chapters) _Group(c, const [], null)];
     }
-    return [_Group(null, b.passage, b.looseCards, b.title)];
+    return [_Group(null, b.looseCards, b.title)];
   }
 
   static String _lemmaOf(FlashCard c) =>
@@ -138,15 +150,20 @@ class StudyPlanner {
       if (cards.isEmpty) continue;
 
       final idSet = picked.toSet();
-      final due = cards.where((c) => idSet.contains(c.id)).toList()
-        ..sort((a, b2) {
-          final da = store.stateOf(a.id).due;
-          final db = store.stateOf(b2.id).due;
-          if (da == null && db == null) return 0;
-          if (da == null) return -1;
-          if (db == null) return 1;
-          return da.compareTo(db);
-        });
+      final due = cards.where((c) => idSet.contains(c.id)).toList();
+      // 排序 key 先算好：comparator 会被调 O(n·log n) 次，
+      // 每次再查两次 Map 就太浪费了。
+      final dueOf = <String, DateTime?>{
+        for (final c in due) c.id: store.stateOf(c.id).due,
+      };
+      due.sort((a, b2) {
+        final da = dueOf[a.id];
+        final db = dueOf[b2.id];
+        if (da == null && db == null) return 0;
+        if (da == null) return -1;
+        if (db == null) return 1;
+        return da.compareTo(db);
+      });
 
       // 语篇只挖「该章今天到期、且语篇里确实出现」的词
       final blanks =

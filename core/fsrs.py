@@ -43,6 +43,13 @@ MAX_INTERVAL = 365         # 最大间隔封顶（天）。没有这根保险丝
 LEARNING_INTERVAL = 1      # 学习/重学阶段间隔（天）：今天刚学或忘掉的卡，
                            # 明天必须复习。这是硬规则，不交给 FSRS 拍脑袋。
 
+# 遗忘惩罚强度：忘记后稳定性最多保留原值的 1/e^1.5 ≈ 22.3%。
+# 手调参数（不是 FSRS 论文值）：原代码写死的 2.0 太狠（只剩 13.5%），
+# 1.5 明显下调但不至于一次忘记打回原形。
+# **改这里必须同时改 Dart 端 app/lib/services/scheduler.dart 的
+# kForgetRetainExp**，两端必须一致，否则拟合出来的参数在真机上不成立。
+FORGET_RETAIN_EXP = 1.5
+
 
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
@@ -93,7 +100,12 @@ def stability_after_recall(d: float, s: float, r: float, rating: int) -> float:
 
 
 def stability_after_forget(d: float, s: float, r: float) -> float:
-    s_min = s / math.exp(W[17]) if len(W) > 17 else s / 2.0
+    # 必须与 Dart scheduler.dart 的 kForgetRetainExp 保持一致。
+    # 旧代码写的是 W[17]，但 W 只有 17 项（索引 0..16），`len(W) > 17` 恒为
+    # False —— 那个分支是死代码，实际一直走 `s / 2.0`（保留 50%），
+    # 而 Dart 端是 1/e^1.5（保留 22.3%）。两端差一倍多，
+    # 用这份代码拟合出来的参数跟真机跑的根本不是同一个算法。
+    s_min = s / math.exp(FORGET_RETAIN_EXP)
     ns = W[11] * (d ** -W[12]) * ((s + 1) ** W[13] - 1) * math.exp((1 - r) * W[14])
     return max(0.1, min(ns, s_min))
 
@@ -187,3 +199,20 @@ if __name__ == "__main__":
         c = review(c, "good", d)
         print(f"第{i+1}次 good: S={c.stability:.2f} 到期={c.due}")
         d = date.fromisoformat(c.due)
+
+    # ---- 跨端一致性自检 ----
+    # 忘记路径曾经在两端算出两个值：Python 走死代码分支的 s/2.0（保留 50%），
+    # Dart 走 s/e^1.5（保留 22.3%）。用这份代码拟合出的参数，
+    # 在真机上跑的根本不是同一个算法。这里钉一个 golden 值，
+    # 改权重 / 改公式时若对不上，说明又跟 scheduler.dart 走偏了。
+    c = CardState(state="review", stability=10.0, difficulty=5.0,
+                  last_review="2026-09-01")
+    c = review(c, "again", date(2026, 9, 17))
+    expect = 10.0 / math.exp(FORGET_RETAIN_EXP)
+    assert abs(c.stability - expect) < 1e-9, (
+        f"遗忘惩罚与 Dart 端不一致：{c.stability} != {expect}。"
+        f"检查 core/fsrs.py 的 FORGET_RETAIN_EXP 与 "
+        f"app/lib/services/scheduler.dart 的 kForgetRetainExp 是否还相等。"
+    )
+    print(f"自检通过：忘记后 S={c.stability:.4f} = 10/e^{FORGET_RETAIN_EXP}"
+          f"（与 Dart 端一致）")

@@ -130,14 +130,25 @@ class WebViewBridge {
     });
 
     // 交评级：跑 FSRS + 落盘，回新状态。这是唯一会动调度数据的入口。
+    //
+    // 评分必须**显式且合法**。以前是 `catch (_) { rating = Rating.good }`，
+    // 任何拼错的 / 老模板传的 / 消息串了的评分都被当成「记得」写进 FSRS ——
+    // 这在调度系统里是最危险的一类兜底：它不报错，只是悄悄把这张卡的
+    // 稳定性往上抬、把到期日往后推，而且不可逆。现在直接失败回传错误，
+    // 让调用方（workflow.js）自己决定怎么提示。
     rpc.register('review.commit', (p) async {
       final id = (p['id'] ?? '').toString();
       if (id.isEmpty) return {'ok': false, 'error': 'missing id'};
+      final key = (p['rating'] ?? '').toString();
       Rating rating;
       try {
-        rating = Rating.fromKey((p['rating'] ?? 'good').toString());
+        rating = Rating.fromKey(key);
       } catch (_) {
-        rating = Rating.good;
+        return {
+          'ok': false,
+          'id': id,
+          'error': '非法评分: "$key"（只接受 again/hard/good 或 忘记/模糊/记得）',
+        };
       }
       final prev = store.stateOf(id);
       final st = review(prev, rating);

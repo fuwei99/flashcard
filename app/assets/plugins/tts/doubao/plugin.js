@@ -286,6 +286,25 @@ let PluginJS = {
 }
 
 function getAudio(myTask) {
+    // 本次合成的收尾只允许发生一次：close 和 error 二选一，且只发一次。
+    // ws.cancel() 会再触发一次 close（code 往往不是 1000），以前那一次
+    // 会紧跟在正常 close 之后再报一个 error，上层收到「先完再错」的怪顺序。
+    let ended = false
+    function doClose() {
+        if (ended || myTask !== curTask) return
+        ended = true
+        callback.close()
+    }
+    function doError(msg) {
+        if (ended || myTask !== curTask) return
+        ended = true
+        if (ws != null) {
+            try { ws.cancel(); } catch (e) { }
+        }
+        ws = null
+        callback.error(msg)
+    }
+
     if (ws == null) {
         logger.i("init Websocket")
         let url = `wss://frontier-audio-web-ws.doubao.com/api/v2/sami/voicegenie?` + commonParams()
@@ -299,18 +318,32 @@ function getAudio(myTask) {
         ws.on('close', function (code, reason) {
             if (myTask !== curTask) return
             ws = null
+            // 正常结束时（TTSEnded）已经回调过 close 了；后面 ws.cancel()
+            // 触发的这一次 close 不能再报一次 error，否则上层会收到
+            // 「先 close 再 error」的怪顺序。ended 标志统一挡掉。
             if (code == 1000) {
-                callback.close()
+                doClose()
             } else {
-                callback.error(reason)
+                doError(reason)
             }
         })
 
         ws.on('error', function (err, resp) {
             if (myTask !== curTask) return
             ws = null
-            console.error(resp.text())
-            callback.error(err)
+            // resp 不保证是 Response —— 宿主 error 事件传的是 (msg, null)，
+            // 也就是这里的 resp 恒为 null。以前直接 console.error(resp.text())
+            // 会先抛异常，把紧随其后的 callback.error 一起带走：
+            // 上层永远收不到失败回调，朗读态没有出口。
+            let detail = ""
+            try {
+                if (resp && typeof resp.text === "function") detail = String(resp.text())
+                else if (resp) detail = String(resp)
+            } catch (e) {
+                detail = ""
+            }
+            logger.e("ws error: " + err + (detail ? " | " + detail : ""))
+            doError(err || detail || "websocket error")
         })
 
         ws.on('binary', function (buffer) {
@@ -347,17 +380,19 @@ function getAudio(myTask) {
                     }
                 } else if (event === "TTSEnded" || event === "TTSSentenceEnd") {
                     logger.i("TTS finished cleanly: " + event);
-                    if (ws != null) { ws.cancel(); ws = null; }
-                    callback.close();
+                    if (ws != null) {
+                        try { ws.cancel(); } catch (e) { }
+                    }
+                    ws = null;
+                    doClose();
                 } else if (event === "SessionFailed" || (statusCode && statusCode !== 20000000)) {
                     let errMsgBytes = fields[6];
                     let errMsg = errMsgBytes ? bytesToString(errMsgBytes) : "Unknown error";
-                    callback.error("SAMI Error (" + statusCode + "): " + errMsg);
-                    if (ws != null) { ws.cancel(); ws = null; }
+                    doError("SAMI Error (" + statusCode + "): " + errMsg);
                 }
             } catch (e) {
                 logger.e("Error parsing binary frame: " + e);
-                if (myTask === curTask) callback.error(e);
+                doError(e);
             }
         })
 
@@ -430,7 +465,7 @@ function getAudio(myTask) {
             }
         }
         if (!ok) {
-            callback.error("send binary message failed")
+            doError("send binary message failed")
         }
     }
 }

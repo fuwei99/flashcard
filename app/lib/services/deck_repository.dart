@@ -386,7 +386,28 @@ class DeckRepository {
 
   /// 书架上的所有书 = 内置 + 导入。
   /// 公共 books 目录里只要已经有内容，就认为书是用户自己在管，不再导入内置词书。
+  /// 同一次加载的在途 Future。
+  ///
+  /// 回前台 / 切 Tab / 热重载会在很短时间内触发好几次 loadAllBooks，
+  /// 每次都是「扫一遍 books/ 目录 + 读所有 index.json」。
+  /// 这里把并发的调用合并成一次：大家共享同一个 Future（也共享同一批
+  /// Book 实例 —— 顺带保证各处拿到的是同一批 FlashCard 对象）。
+  /// **只合并在途的，不缓存结果**：热重载靠重读文件发现改动，缓存会骗人。
+  Future<List<Book>>? _loadingBooks;
+
   Future<List<Book>> loadAllBooks() async {
+    final inflight = _loadingBooks;
+    if (inflight != null) return inflight;
+    final f = _loadAllBooksOnce();
+    _loadingBooks = f;
+    try {
+      return await f;
+    } finally {
+      _loadingBooks = null;
+    }
+  }
+
+  Future<List<Book>> _loadAllBooksOnce() async {
     final out = <Book>[];
     if (!await _hasPublicBooks()) {
       for (final p in _assetBooks) {

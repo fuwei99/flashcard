@@ -25,10 +25,25 @@ class DataDir {
   static Directory? _root;
   static bool _resolved = false;
 
+  /// 丢弃已缓存的解析结果，下次 [root()] 重新探测一次。
+  ///
+  /// 必须留这个口子：首次安装时 App 还没拿到「所有文件访问权限」，
+  /// [root()] 必然失败，而失败结果会被缓存 —— 用户在弹窗里点了授权之后
+  /// 如果没人来清缓存，就只能杀进程重启才生效。
+  static void invalidate() {
+    _resolved = false;
+    _root = null;
+  }
+
+  /// 重新探测一次（授权回调里用）；返回这次是否可用
+  static Future<Directory?> recheck() async {
+    invalidate();
+    return root();
+  }
+
   /// 解析并缓存根目录；不可用返回 null（只解析一次）
   static Future<Directory?> root() async {
     if (_resolved) return _root;
-    _resolved = true;
     try {
       final d = Directory(publicPath);
       if (!await d.exists()) await d.create(recursive: true);
@@ -37,8 +52,11 @@ class DataDir {
       await probe.writeAsString('ok', flush: true);
       await probe.delete();
       _root = d;
+      _resolved = true;
       await _migrateLegacy(d);
     } catch (_) {
+      // 探测失败**不**置 _resolved —— 权限随时可能被授予，下次再试。
+      // 以前这个值在 try 之前就置 true，导致首次安装的失败被永久缓存。
       _root = null;
     }
     return _root;

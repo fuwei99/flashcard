@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'models/deck.dart';
 import 'screens/main_scaffold.dart';
 import 'services/card_store.dart';
+import 'services/data_dir.dart';
 import 'services/deck_repository.dart';
 import 'services/plugin.dart';
 import 'services/hot_reload.dart';
@@ -128,6 +129,25 @@ class _BootstrapState extends State<_Bootstrap> {
         // 老系统回退到普通存储权限
         await Permission.storage.request();
       }
+    } catch (_) {}
+    await _rebindAfterPermission();
+  }
+
+  /// 授权弹窗走完后重新探测一次公共目录。
+  ///
+  /// 首次安装时 _boot 里那次探测必然失败（此时还没权限），以前失败结果会被
+  /// 永久缓存 —— 用户点了「允许」也要重启 App 才生效。这里补一次。
+  Future<void> _rebindAfterPermission() async {
+    try {
+      if (DataDir.available) return;
+      if (await DataDir.recheck() == null) return;
+      await _store.rebind();
+      await _settings.rebind();
+      // 公共目录刚可用：模板 / 说明文档 / 热重载基线在 _boot 时没铺成，补上
+      await _repo.seedPublicTemplates();
+      await _repo.seedReadme();
+      await HotReload.resync();
+      StatusWriter.I.writeThrottled();
     } catch (_) {}
   }
 

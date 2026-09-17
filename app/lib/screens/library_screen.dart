@@ -57,12 +57,17 @@ class LibraryScreenState extends State<LibraryScreen> {
     refresh();
   }
 
+  /// 刷新世代号：只有最后一次 refresh 的结果算数（并发调用完成顺序不保证，
+  /// 否则先发后到会把列表覆盖成旧数据）。与 home_screen 同一套处理。
+  int _refreshSeq = 0;
+
   Future<void> refresh() async {
+    final mySeq = ++_refreshSeq;
     final all = await widget.repo.loadAllBooks();
     final filtered = all
         .where((b) => kindOfBook(b, widget.templates) == widget.kind)
         .toList();
-    if (!mounted) return;
+    if (!mounted || mySeq != _refreshSeq) return;
     setState(() => _books = filtered);
   }
 

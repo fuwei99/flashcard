@@ -35,7 +35,9 @@
     return Math.max(0.1, s*(1+inc));
   }
   function stabForget(d,s,r){
-    var smin = s/Math.exp(2);
+    // 与 Dart scheduler.dart 的 kForgetRetainExp、Python fsrs.py 的
+    // FORGET_RETAIN_EXP 三端保持一致（以前这里是 2，另外两端是 1.5）
+    var smin = s/Math.exp(1.5);
     var ns = W[11]*Math.pow(d,-W[12])*(Math.pow(s+1,W[13])-1)*Math.exp((1-r)*W[14]);
     return Math.max(0.1, Math.min(ns, smin));
   }
