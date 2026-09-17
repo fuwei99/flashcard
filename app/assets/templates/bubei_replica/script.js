@@ -1,0 +1,1623 @@
+/* ============================================================
+   不背单词 · 暗黑极简模板 · 交互脚本（v2 大改版）
+   ------------------------------------------------------------
+   对标设计：
+     1. Choice 考法对标图 1：大卡片、正误红绿高亮、揭晓英文单词、继续按钮
+     2. 词义页对标图 2：无限长页滚动、真题例句大卡片
+     3. 自动发音：进入卡片自动调用系统 TTS 发音当前单词
+     4. SPA 架构：mount() 完整挂载数据，带 250ms 连点防抖门锁
+   ============================================================ */
+(function () {
+  "use strict";
+
+  var FC = window.Flashcard || null;
+  if (!FC) {
+    FC = window.Flashcard = {
+      getCard: function () { return window.__FLASHCARD_CARD__ || {}; },
+      answer: function (r) { console.log("[mock] answer:", r); },
+      tts: function (t, o) {
+        if (!("speechSynthesis" in window)) return;
+        var lang = (o && typeof o === "object") ? (o.lang || "en-US") : (o || "en-US");
+        var rate = (o && typeof o === "object" && o.rate) ? (0.95 * o.rate) : 0.95;
+        speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance(t);
+        u.lang = lang; u.rate = rate; speechSynthesis.speak(u);
+      },
+      getState: function () {}, setState: function () {},
+      undo: function () {}, next: function () {}, prev: function () {},
+      ttsSeq: function (list) {
+        if (!("speechSynthesis" in window) || !list || !list.length) return;
+        speechSynthesis.cancel();
+        (function next(i) {
+          if (i >= list.length) return;
+          var it = list[i] || {};
+          var u = new SpeechSynthesisUtterance(String(it.text || ""));
+          u.lang = it.lang || "en-US"; u.rate = 0.95;
+          u.onend = function () { next(i + 1); };
+          speechSynthesis.speak(u);
+        })(0);
+      },
+      ready: function () {}, mountCard: function () {}, onMount: function () {},
+      ttsStop: function () {},
+      startSpellRound: function () {}, spellDone: function () {},
+      spellProgress: function () {}
+    };
+  }
+
+  var root = document.querySelector(".fc-root");
+  if (!root) return;
+
+  var card = {};
+  var fields = {};
+  var sess = {};
+  var mode = "read";
+  var choices = [];
+  var preRating = "good";
+  var pendingAnswer = null; // 'good' | 'again'
+  var clickLock = false;
+  var autoTtsTimer = null;  // 正面自动发音的定时器，进词义页时要清掉
+  var passageTipTimer = null; // 语篇通读释义浮层定时器
+  var blanks = [];            // 语篇选词：空格
+  var bank = [];              // 语篇选词：词库
+  var activeBlank = -1;       // 语篇选词：光标所在空格
+  var wrongToMeaning = false; // 答错后：先看错误项释义，点「继续」才进词义页
+  var known = false;          // 当前卡是否已标熟（永久出队，可撤销）
+  var spellPrevMode = "read"; // 进拼写前是什么 mode，返回时还原
+  var spellPrevState = "front";
+  var spellChecked = false;   // 本次拼写是否已经检查过
+
+  // ---------- TTS 路由（改这里就能换：词 / 句 / 文章各走各的）----------
+  var TTS_WORD     = { plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true };   // 单词：豆包·温柔桃子，落盘
+  var TTS_SENTENCE = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts",  cache: false };  // 例句：豆包·磁性君语，不落盘
+  var TTS_PASSAGE  = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: false };  // 文章：豆包·磁性俊宇，1.2x / 音高 0.9，不落盘 —— 长文本走流式，别全收完才播
+
+  // ---------- 朗读纯文本 ----------
+  function speak(text, lang, opts) {
+    var say = String(text || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!say) return;
+    var o = Object.assign({ lang: lang || "en-US" }, opts || {});
+    FC.tts(say, o);
+  }
+
+  // ---------- 语篇专用朗读（防重复触发）----------
+  // 进页自动播（延迟 260ms）和用户着急手动点，两路都会调到这，
+  // 壳那边就是 gen 连跳、豆包 ws 重开，白等两秒。
+  // 壳层去重会引新 bug，所以在这一层吃掉：同一段文本 3 秒内只发一次。
+  var _lastPassage = "";     // 上次发出的语篇正文
+  var _lastPassageAt = 0;    // 发出时刻
+  var PASSAGE_DEDUPE_MS = 3000;
+  function speakPassage() {
+    var say = String(passageText() || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!say) return;
+    var now = Date.now();
+    if (say === _lastPassage && now - _lastPassageAt < PASSAGE_DEDUPE_MS) return;
+    _lastPassage = say;
+    _lastPassageAt = now;
+    speak(say, "en-US", TTS_PASSAGE);
+  }
+
+  // ---------- 词义页：义项列表 ----------
+  // 一词多义 / 一词多性在这里逐条渲染。
+  // 老数据（只有 pos + meaning 两个字符串）被折成一条，不改 json 也能看。
+  function sensesOf() {
+    var raw = fields.senses;
+    var out = [];
+    if (Array.isArray(raw)) {
+      raw.forEach(function (s) {
+        if (s && typeof s === "object") {
+          var cn = String(s.cn || s.meaning || "").trim();
+          if (!cn) return;
+          out.push({
+            pos: String(s.pos || "").trim(),
+            cn: cn,
+            phonetic: String(s.phonetic_us || s.phonetic || "").trim()
+          });
+        } else if (typeof s === "string" && s.trim()) {
+          out.push({ pos: "", cn: s.trim(), phonetic: "" });
+        }
+      });
+    }
+    if (!out.length) {
+      var cn0 = String(fields.meaning || "").trim();
+      if (cn0) {
+        out.push({ pos: String(fields.pos || "").trim(), cn: cn0, phonetic: "" });
+      }
+    }
+    return out;
+  }
+
+  function renderSenses() {
+    var box = root.querySelector(".fc-back .fc-senses");
+    if (!box) return;
+    box.innerHTML = "";
+    var list = sensesOf();
+    list.forEach(function (s) {
+      var row = document.createElement("div");
+      row.className = "fc-sense";
+      if (s.pos) {
+        var p = document.createElement("span");
+        p.className = "fc-pos";
+        p.textContent = s.pos;
+        row.appendChild(p);
+      }
+      var t = document.createElement("span");
+      t.className = "fc-mean-text";
+      t.textContent = s.cn;
+      row.appendChild(t);
+      // 多音词：义项自带音标就顺带显示
+      if (s.phonetic) {
+        var ph = document.createElement("span");
+        ph.className = "fc-sense-phonetic";
+        ph.textContent = "/" + s.phonetic.replace(/^\/|\/$/g, "") + "/";
+        row.appendChild(ph);
+      }
+      box.appendChild(row);
+    });
+    box.style.display = list.length ? "" : "none";
+  }
+
+  // ---------- 词义页：真题例句（固定字段，cloze 也读它） ----------
+  function renderSentence() {
+    var sentBlock = root.querySelector(".fc-sentence-block");
+    var enEl = root.querySelector(".fc-en-sentence");
+    var cnEl = root.querySelector(".fc-cn-sentence");
+    if (String(fields.sentence_en || "").trim()) {
+      if (enEl) enEl.innerHTML = fields.sentence_en;
+      if (cnEl) cnEl.textContent = fields.sentence_cn || "";
+      if (sentBlock) sentBlock.style.display = "block";
+    } else {
+      if (sentBlock) sentBlock.style.display = "none";
+    }
+  }
+
+  // ---------- 词义页：扩展块 ----------
+  // 模板**不认识任何业务字段**，只按 block 的 type 渲染。
+  // 以后要加「近义词 / 反义词 / 词形变化 / 易混词」，
+  // 只在 json 里加一个 block 就行 —— 不用动这里，更不用重编 APK。
+  var BLOCK_BODY = {
+    // 富文本（词根词源、辨析说明）
+    html: function (b) { return String(b.html || b.text || ""); },
+    // 纯段落（转义）
+    text: function (b) { return escHtml(b.text || b.html || ""); },
+    // 单列列表：["thorough", "concentrated"]
+    list: function (b) {
+      var items = b.items || [];
+      if (!items.length) return "";
+      var s = '<ul class="fc-block-list">';
+      items.forEach(function (it) {
+        var o = blockItem(it);
+        s += "<li>" + escHtml(o.left) +
+             (o.right ? '<span class="fc-block-cn">' + escHtml(o.right) + "</span>" : "") +
+             "</li>";
+      });
+      return s + "</ul>";
+    },
+    // 左右两列：[{en, cn}] 或 [{k, v}]
+    pairs: function (b) {
+      var items = b.items || [];
+      if (!items.length) return "";
+      var s = '<div class="fc-block-pairs">';
+      items.forEach(function (it) {
+        var o = blockItem(it);
+        s += '<div class="fc-block-pair">' +
+             '<span class="fc-pair-l">' + escHtml(o.left) + "</span>" +
+             '<span class="fc-pair-r">' + escHtml(o.right) + "</span></div>";
+      });
+      return s + "</div>";
+    },
+    // 表格：{cols:["原形","过去式"], rows:[["go","went"]]}
+    table: function (b) {
+      var cols = b.cols || [], rows = b.rows || [];
+      if (!cols.length && !rows.length) return "";
+      var s = '<table class="fc-block-table">';
+      if (cols.length) {
+        s += "<thead><tr>";
+        cols.forEach(function (c) { s += "<th>" + escHtml(c) + "</th>"; });
+        s += "</tr></thead>";
+      }
+      s += "<tbody>";
+      rows.forEach(function (r) {
+        s += "<tr>";
+        (r || []).forEach(function (c) { s += "<td>" + escHtml(c) + "</td>"; });
+        s += "</tr>";
+      });
+      return s + "</tbody></table>";
+    },
+    // 图片：{src, alt}
+    image: function (b) {
+      if (!b.src) return "";
+      return '<img class="fc-block-img" src="' + escHtml(b.src) +
+             '" alt="' + escHtml(b.alt || "") + '">';
+    }
+  };
+
+  // 注意：这里用 "&" + "amp;" 拼出来，
+  // 不直接写实体字面量 —— 避免脚本/补丁工具把 & 实体解码掉。
+  var AMP = "&" + "amp;", LT = "&" + "lt;", GT = "&" + "gt;", QUOT = "&" + "quot;";
+
+  function escHtml(s) {
+    return String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, AMP)
+      .replace(/</g, LT)
+      .replace(/>/g, GT)
+      .replace(/"/g, QUOT);
+  }
+
+  /// 把 block 的 items 元素归一成 {left, right}
+  function blockItem(it) {
+    if (it === undefined || it === null) return { left: "", right: "" };
+    if (typeof it !== "object") return { left: String(it), right: "" };
+    if (it.en !== undefined || it.cn !== undefined) {
+      return { left: String(it.en || ""), right: String(it.cn || "") };
+    }
+    if (it.k !== undefined || it.v !== undefined) {
+      return { left: String(it.k || ""), right: String(it.v || "") };
+    }
+    if (it.left !== undefined || it.right !== undefined) {
+      return { left: String(it.left || ""), right: String(it.right || "") };
+    }
+    var ks = Object.keys(it);
+    if (ks.length === 1) return { left: ks[0], right: String(it[ks[0]] || "") };
+    return { left: "", right: "" };
+  }
+
+  /// 未知 type 不崩：按内容退化渲染（html → 列表 → 表格 → 纯文本）
+  function blockBody(b) {
+    var fn = BLOCK_BODY[String(b.type || "").toLowerCase()];
+    if (fn) return fn(b);
+    if (b.html) return String(b.html);
+    if (b.text) return escHtml(b.text);
+    if (Array.isArray(b.items) && b.items.length) return BLOCK_BODY.list(b);
+    if (Array.isArray(b.rows) && b.rows.length) return BLOCK_BODY.table(b);
+    return "";
+  }
+
+  /// 归一化 blocks：
+  ///   新格式直接用 fields.blocks；
+  ///   老格式（phrases / root 平铺在字段上）现场折成 block ——
+  ///   用户手里的老书不改 json 也能正常渲染。
+  function blocksOf(f) {
+    var out = [];
+    if (Array.isArray(f.blocks)) {
+      f.blocks.forEach(function (b) {
+        if (b && typeof b === "object") out.push(b);
+      });
+    }
+    if (out.length) return out;
+    if (Array.isArray(f.phrases) && f.phrases.length) {
+      out.push({ type: "pairs", title: "常用短语", items: f.phrases });
+    }
+    if (f.root && String(f.root).trim()) {
+      out.push({ type: "html", title: "词根词源", html: f.root });
+    }
+    return out;
+  }
+
+  function renderBlocks() {
+    var host = root.querySelector(".fc-back .fc-blocks");
+    if (!host) return;
+    host.innerHTML = "";
+    var tpl = document.getElementById("fc-block-tpl");
+    blocksOf(fields).forEach(function (b) {
+      var body = blockBody(b);
+      if (!body) return;
+      var block = (tpl && tpl.content && tpl.content.firstElementChild)
+        ? tpl.content.firstElementChild.cloneNode(true)
+        : null;
+      if (!block) {
+        block = document.createElement("div");
+        block.className = "fc-card-block";
+        block.innerHTML =
+          '<div class="fc-block-header"><span class="fc-block-title"></span></div>' +
+          '<div class="fc-block-body"></div>';
+      }
+      var title = String(b.title || "").trim();
+      var titleEl = block.querySelector(".fc-block-title");
+      if (titleEl) titleEl.textContent = title;
+      var headerEl = block.querySelector(".fc-block-header");
+      if (headerEl) headerEl.style.display = title ? "" : "none";
+      var bodyEl = block.querySelector(".fc-block-body");
+      if (bodyEl) bodyEl.innerHTML = body;
+      host.appendChild(block);
+    });
+  }
+
+  // ---------- 固定卡片：派生词 / 近义词 / 反义词 ----------
+  // 这三个是**固定字段**（不是 blocks）：每条 = 词 + 词性释义，形状一致，
+  // 所以共用一套归一化与渲染。多词性 = 多条 senses。
+  //
+  // 宽容读取（json 里少写哪样都不崩）：
+  //   {word, senses:[{pos,cn}]}  |  {word, pos, cn}  |  "word"
+  function relatedOf(key) {
+    var raw = fields[key];
+    if (!Array.isArray(raw)) return [];
+    var out = [];
+    raw.forEach(function (it) {
+      if (it === null || it === undefined) return;
+      if (typeof it === "string") {
+        if (it.trim()) out.push({ word: it.trim(), senses: [] });
+        return;
+      }
+      if (typeof it !== "object") return;
+      var w = String(it.word || it.en || it.k || "").trim();
+      var senses = [];
+      var rawS = it.senses || it.meanings;
+      if (Array.isArray(rawS)) {
+        rawS.forEach(function (s) {
+          if (s && typeof s === "object") {
+            var cn = String(s.cn || s.meaning || "").trim();
+            if (cn) senses.push({ pos: String(s.pos || "").trim(), cn: cn });
+          } else if (typeof s === "string" && s.trim()) {
+            senses.push({ pos: "", cn: s.trim() });
+          }
+        });
+      }
+      if (!senses.length) {
+        var cn0 = String(it.cn || it.meaning || it.v || "").trim();
+        if (cn0) senses.push({ pos: String(it.pos || "").trim(), cn: cn0 });
+      }
+      if (!w && !senses.length) return;
+      out.push({ word: w, senses: senses });
+    });
+    return out;
+  }
+
+  // 一条关联词：左边词，右边逐条「词性 + 释义」
+  function relatedRowHtml(item) {
+    var s = '<div class="fc-rel-row">';
+    s += '<div class="fc-rel-word" data-say="' + escHtml(item.word) + '">' +
+         escHtml(item.word) + "</div>";
+    if (item.senses.length) {
+      s += '<div class="fc-rel-senses">';
+      item.senses.forEach(function (x) {
+        s += '<div class="fc-rel-sense">' +
+             (x.pos ? '<span class="fc-rel-pos">' + escHtml(x.pos) + "</span>" : "") +
+             '<span class="fc-rel-cn">' + escHtml(x.cn) + "</span></div>";
+      });
+      s += "</div>";
+    }
+    return s + "</div>";
+  }
+
+  // groups = [{label, items}]；全空则整张卡隐藏
+  function renderRelated(blockSel, bodySel, groups) {
+    var block = root.querySelector(blockSel);
+    var body = root.querySelector(bodySel);
+    if (!block || !body) return;
+    var html = "";
+    groups.forEach(function (g) {
+      if (!g.items || !g.items.length) return;
+      html += '<div class="fc-rel-group">' +
+              (g.label ? '<div class="fc-rel-label">' + escHtml(g.label) + "</div>" : "") +
+              g.items.map(relatedRowHtml).join("") +
+              "</div>";
+    });
+    body.innerHTML = html;
+    block.style.display = html ? "" : "none";
+  }
+
+  function renderDerivatives() {
+    renderRelated(".fc-deriv-block", ".fc-deriv-body",
+      [{ label: "", items: relatedOf("derivatives") }]);
+  }
+
+  // 近义词和反义词**同一张卡**：各带小标题，谁有显示谁
+  function renderThesaurus() {
+    renderRelated(".fc-thes-block", ".fc-thes-body", [
+      { label: "近义词", items: relatedOf("synonyms") },
+      { label: "反义词", items: relatedOf("antonyms") }
+    ]);
+  }
+
+  // ---------- 渲染词义页的各个区块 ----------
+  function renderBackFace() {
+    renderSenses();
+    renderSentence();
+    renderDerivatives();
+    renderThesaurus();
+    renderBlocks();
+  }
+
+  // ---------- choice 考法：渲染四大选项卡片（对标图 1） ----------
+  function renderChoiceOptions() {
+    var box = root.querySelector('.fc-options[data-for="choice"]');
+    if (!box) return;
+    box.innerHTML = "";
+
+    choices.forEach(function (c) {
+      var btn = document.createElement("button");
+      btn.className = "fc-opt-btn";
+      btn.type = "button";
+      var isRight = (c.right === "true" || c.right === true);
+      btn.setAttribute("data-right", String(isRight));
+      btn.setAttribute("data-plain", c.plain || "");
+
+      // 选完后揭晓的真实英文单词（图 1 核心亮点！）
+      var revealEl = document.createElement("div");
+      revealEl.className = "fc-opt-revealed-word";
+      revealEl.textContent = c.word || (isRight ? (fields.word || "") : "");
+      btn.appendChild(revealEl);
+
+      // 主体：词性 + 释义
+      var mainEl = document.createElement("div");
+      mainEl.className = "fc-opt-main";
+
+      if (c.pos) {
+        var posEl = document.createElement("span");
+        posEl.className = "fc-opt-pos";
+        posEl.textContent = c.pos;
+        mainEl.appendChild(posEl);
+      }
+
+      var textEl = document.createElement("span");
+      textEl.className = "fc-opt-text";
+      textEl.textContent = c.text || "";
+      mainEl.appendChild(textEl);
+
+      btn.appendChild(mainEl);
+
+      // 点击选项
+      btn.addEventListener("click", function () {
+        handleChoicePick(btn, box, isRight);
+      });
+
+      box.appendChild(btn);
+    });
+  }
+
+  // ---------- 用户点击选项处理（图 1 红绿反馈） ----------
+  function handleChoicePick(pickedBtn, box, isRight) {
+    // 连点锁：切卡后 250ms 内的幽灵点击，即使落在选项上也一律忽略。
+    // （root 上的委托监听检查了 clickLock，但选项按钮是直接绑的，
+    //   事件在 target 阶段先于 root 冒泡执行，必须在这里再挡一道。）
+    if (clickLock) return;
+    if (pendingAnswer !== null) return;
+    pendingAnswer = isRight ? "good" : "again";
+
+    // 禁用所有选项，并标色
+    var allBtns = box.querySelectorAll(".fc-opt-btn");
+    allBtns.forEach(function (b) {
+      b.setAttribute("disabled", "disabled");
+      var right = (b.getAttribute("data-right") === "true");
+      if (right) {
+        b.classList.add("is-right");
+      } else if (b === pickedBtn) {
+        b.classList.add("is-wrong");
+      } else {
+        b.classList.add("is-dimmed");
+      }
+    });
+
+    // 答完都读一遍正确选项。
+    // cloze 进卡时故意不读（答案就是这个单词，读了直接泄题）；这里已经答完，可以读了。
+    speak(fields.word || "", "en-US", TTS_WORD);
+
+    if (isRight) {
+      // 答对 -> 停在原题看绿色反馈，点「继续」进下一题
+      wrongToMeaning = false;
+    } else {
+      // 答错 -> **不要**立刻跳词义页：先把「你选的那个」的中文意思亮出来，
+      //         让你知道错在哪；点「继续」才去看完整词义。
+      if (mode === "cloze") revealPickedMeaning(pickedBtn);
+      wrongToMeaning = true;
+    }
+
+    // 激活底部的「继续」大按钮
+    var continueBtn = root.querySelector(".fc-btn-continue");
+    if (continueBtn) {
+      continueBtn.removeAttribute("disabled");
+      var lbl = continueBtn.querySelector("span");
+      if (lbl) lbl.textContent = wrongToMeaning ? "看词义" : "继续";
+    }
+  }
+
+  /// 在选错的那个选项上补一行中文释义，让用户知道自己选的是什么意思
+  function revealPickedMeaning(btn) {
+    if (!btn) return;
+    var plain = btn.getAttribute("data-plain") || "";
+    if (!plain) return;
+    var el = btn.querySelector(".fc-opt-plain");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "fc-opt-plain";
+      btn.appendChild(el);
+    }
+    el.textContent = plain;
+  }
+
+  // ---------- cloze 填空考法 ----------
+  // 常见变形后缀白名单：只有「词干 + 这些后缀」才认，
+  // 避免 act 把 practice 误抠成 pr______ice。
+  var BLANK_SUFFIXES = ["", "s", "es", "ed", "d", "ing", "ion", "ions", "ation",
+    "ations", "ment", "ments", "ly", "ness", "er", "ers", "est", "ive", "ives",
+    "al", "ally", "ence", "ance", "ful", "less", "ity", "ities", "ize", "ized",
+    "izes", "izing", "t"];
+
+  // 把例句里的目标词抠成 ______，返回 { text, answer }
+  //
+  //   1) 优先认 <u>/<b>/<em>/<strong> 标记 —— json 里已经像语篇一样把词划好线了，
+  //      直接整段精准抠掉。这样 prevailed / provoked / endorsed 这些**变形词**
+  //      也不会漏，不会再出现「匹配不上原形 → 空挖不出来 → 整句连答案一起显示」。
+  //   2) 没有标记的老数据，退回「原形整词」匹配。
+  //   3) 还没有，做变形兜底：词干 + 后缀白名单（comply→complied、impose→imposed…）。
+  function blankSentence(raw, word) {
+    var src = String(raw || "");
+    var w = String(word || "").trim();
+
+    // 1) 标记优先：数据里已经划好线了，精准抠
+    var m = src.match(/<(u|b|em|strong)\b[^>]*>([\s\S]*?)<\/\1>/i);
+    if (m) {
+      var inner = m[2].replace(/<[^>]+>/g, "").trim();
+      if (inner) {
+        return {
+          text: src.slice(0, m.index) + "______" + src.slice(m.index + m[0].length),
+          answer: inner
+        };
+      }
+    }
+
+    var plain = src.replace(/<[^>]+>/g, "");
+    if (!w) return { text: plain, answer: "" };
+
+    // 2) 原形整词（转义 a.m. / e.g. / (up)on 这些正则元字符）
+    var safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var re = null;
+    try { re = new RegExp("\\b" + safe + "\\b", "i"); } catch (e) { re = null; }
+    var hit = re ? plain.match(re) : null;
+    if (hit) {
+      return {
+        text: plain.slice(0, hit.index) + "______" + plain.slice(hit.index + hit[0].length),
+        answer: hit[0]
+      };
+    }
+
+    // 3) 变形兜底：词干 + 后缀白名单
+    var stem = w.toLowerCase();
+    if (/y$/.test(stem) && !/[aeiou]y$/.test(stem)) stem = stem.slice(0, -1) + "i";
+    else if (/e$/.test(stem)) stem = stem.slice(0, -1);
+
+    var tokRe = /\b[A-Za-z][A-Za-z'’-]*\b/g, t;
+    while ((t = tokRe.exec(plain)) !== null) {
+      var low = t[0].toLowerCase();
+      if (low.indexOf(stem) !== 0) continue;
+      if (BLANK_SUFFIXES.indexOf(low.slice(stem.length)) < 0) continue;
+      return {
+        text: plain.slice(0, t.index) + "______" + plain.slice(t.index + t[0].length),
+        answer: t[0]
+      };
+    }
+
+    return { text: plain, answer: "" };
+  }
+
+  function renderCloze() {
+    var rawSent = String(fields.sentence_en || "").trim();
+    var box = root.querySelector(".fc-cloze-box");
+    var optBox = root.querySelector('.fc-options[data-for="cloze"]');
+
+    // 这张卡没有例句 —— 正常情况下会话编排已经把 cloze 考法对它跳过了，
+    // 这里再兜一道，避免出现「空题干 + 没选项」的死页面。
+    if (!rawSent) {
+      if (box) box.textContent = "（本词没有例句，已跳过选词填空）";
+      if (optBox) optBox.innerHTML = "";
+      var contBtn = root.querySelector(".fc-btn-continue");
+      if (contBtn) contBtn.removeAttribute("disabled");
+      return;
+    }
+
+    var res = blankSentence(rawSent, fields.word || "");
+    // 抠完再把残留的标签洗掉（______ 留着）
+    var shown = res.text.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    if (box) box.textContent = shown;
+
+    // 渲染 cloze 选项
+    if (!optBox) return;
+    optBox.innerHTML = "";
+
+    choices.forEach(function (c) {
+      var btn = document.createElement("button");
+      btn.className = "fc-opt-btn";
+      btn.type = "button";
+      var isRight = (c.right === "true" || c.right === true);
+      btn.setAttribute("data-right", String(isRight));
+      // cloze 的选项是英文词，答错时要补一行中文释义，让用户知道错在哪
+      btn.setAttribute("data-plain", c.plain || "");
+
+      var mainEl = document.createElement("div");
+      mainEl.className = "fc-opt-main";
+      var textEl = document.createElement("span");
+      textEl.className = "fc-opt-text";
+      textEl.textContent = c.text || c.word || "";
+      mainEl.appendChild(textEl);
+      btn.appendChild(mainEl);
+
+      btn.addEventListener("click", function () {
+        handleChoicePick(btn, optBox, isRight);
+      });
+      optBox.appendChild(btn);
+    });
+  }
+
+  // ---------- 语篇：把 segments 渲染成 DOM ----------
+  function passageSegments() {
+    var p = card.passage || {};
+    return p.segments || [];
+  }
+
+  function passageText() {
+    var t = "";
+    passageSegments().forEach(function (seg) {
+      t += (seg.w !== undefined && seg.w !== null) ? (seg.w + " ") : (seg.t || "");
+    });
+    return t;
+  }
+
+  function renderPassageRead() {
+    var p = card.passage || {};
+    var body = root.querySelector(".fc-passage .fc-passage-body");
+    var titleEl = root.querySelector(".fc-passage .fc-passage-title");
+    var cnEl = root.querySelector(".fc-passage .fc-passage-cn");
+    var tip = root.querySelector(".fc-passage .fc-passage-tip");
+    if (titleEl) titleEl.textContent = p.title || "语篇";
+    if (cnEl) {
+      renderPassageCn(cnEl, p.cn || "");
+      cnEl.style.display = p.cn ? "block" : "none";
+    }
+    if (tip) tip.classList.remove("show");
+    if (!body) return;
+    body.innerHTML = "";
+
+    passageSegments().forEach(function (seg) {
+      if (seg.w !== undefined && seg.w !== null) {
+        var span = document.createElement("span");
+        span.className = "fc-pw";
+        span.textContent = seg.w;
+        span.setAttribute("data-word", seg.lemma || seg.w);
+        span.setAttribute("data-pos", seg.pos || "");
+        span.setAttribute("data-meaning", seg.meaning || "");
+        body.appendChild(span);
+      } else {
+        body.appendChild(document.createTextNode(seg.t || ""));
+      }
+    });
+  }
+
+  // 中文译文目标词：数据格式 [中文](english)。中文划线高亮，点按读英文 + 浮释义。
+  // 兼容旧数据：没有 (...) 的 [x] 原样保留，不解析，绝不吞字。
+  function renderPassageCn(cnEl, cn) {
+    if (!cnEl) return;
+    cnEl.innerHTML = "";
+    var s = String(cn || "");
+    var re = /\[([^\[\]]+)\]\(([^()]+)\)/g;
+    var last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      if (m.index > last) cnEl.appendChild(document.createTextNode(s.slice(last, m.index)));
+      var span = document.createElement("span");
+      span.className = "fc-cn-pw";
+      span.textContent = m[1];
+      span.setAttribute("data-en", m[2]);
+      cnEl.appendChild(span);
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) cnEl.appendChild(document.createTextNode(s.slice(last)));
+  }
+
+  // 中文译文目标词对应的英文释义（从语篇 segments 里捞）
+  function segmentMeaning(en) {
+    var key = String(en || "").toLowerCase().split("|")[0];
+    var found = "";
+    passageSegments().forEach(function (seg) {
+      if (seg.w === undefined || seg.w === null) return;
+      var lem = String(seg.lemma || seg.w).toLowerCase();
+      var sur = String(seg.w).toLowerCase();
+      if (lem === key || sur === key) found = seg.meaning || found;
+    });
+    return found;
+  }
+
+  // 点中文译文划线词：读英文 + 浮释义
+  function showCnTooltip(el) {
+    var raw = String(el.getAttribute("data-en") || "");
+    var en = raw.split("|")[0];
+    speak(en, "en-US", TTS_WORD);
+    var tip = root.querySelector(".fc-passage .fc-passage-tip");
+    if (!tip) return;
+    tip.innerHTML = "";
+    var a = document.createElement("div");
+    a.className = "fc-tip-word";
+    a.textContent = raw;
+    var b = document.createElement("div");
+    b.className = "fc-tip-mean";
+    b.textContent = segmentMeaning(raw) || "（本章未收录释义）";
+    tip.appendChild(a);
+    tip.appendChild(b);
+    tip.classList.add("show");
+    positionTip(tip, el);
+    if (passageTipTimer) clearTimeout(passageTipTimer);
+    passageTipTimer = setTimeout(function () { tip.classList.remove("show"); }, 3000);
+  }
+
+  function showPassageTooltip(el) {
+    var w = el.getAttribute("data-word") || el.textContent || "";
+    var pos = String(el.getAttribute("data-pos") || "").trim();
+    var mean = String(el.getAttribute("data-meaning") || "").trim();
+    speak(w, "en-US", TTS_WORD);
+    var tip = root.querySelector(".fc-passage .fc-passage-tip");
+    if (!tip) return;
+    tip.innerHTML = "";
+    var a = document.createElement("div");
+    a.className = "fc-tip-word";
+    a.textContent = w;
+    var b = document.createElement("div");
+    b.className = "fc-tip-mean";
+    // 数据源的 meaning 有时已经带了词性前缀（"adj. 财政的…"），
+    // 再拼一次 pos 就变成「adj. adj. 财政的…」——这里去重。
+    if (pos && mean && mean.indexOf(pos) === 0) pos = "";
+    b.textContent = (pos ? pos + " " : "") + (mean || "（本章未收录释义）");
+    tip.appendChild(a);
+    tip.appendChild(b);
+    tip.classList.add("show");
+    // 浮到目标词正上方（上方放不下就翻到下方）；fixed 定位，不被正文滚动裁掉
+    positionTip(tip, el);
+    if (passageTipTimer) clearTimeout(passageTipTimer);
+    passageTipTimer = setTimeout(function () { tip.classList.remove("show"); }, 3000);
+  }
+
+  // 把浮层摆到目标词上方（水平居中，越界自动收回，上方不够翻到下方）
+  function positionTip(tip, el) {
+    var r = el.getBoundingClientRect();
+    var vw = window.innerWidth || document.documentElement.clientWidth || 360;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 640;
+    var tw = tip.offsetWidth || 0;
+    var th = tip.offsetHeight || 0;
+    var m = 8;
+    var left = r.left + r.width / 2 - tw / 2;
+    if (left < m) left = m;
+    if (left + tw > vw - m) left = vw - m - tw;
+    if (left < m) left = m;
+    var top = r.top - th - m;
+    if (top < m) top = r.bottom + m;
+    if (top + th > vh - m) top = vh - m - th;
+    if (top < m) top = m;
+    tip.style.left = Math.round(left) + "px";
+    tip.style.top = Math.round(top) + "px";
+  }
+
+  // ---------- 语篇选词（多邻国式填词） ----------
+  function renderPassageCloze() {
+    var p = card.passage || {};
+    var titleEl = root.querySelector(".fc-passage-cloze .fc-passage-title");
+    var body = root.querySelector(".fc-cloze-passage");
+    if (titleEl) titleEl.textContent = p.title || "语篇选词";
+    if (!body) return;
+    body.innerHTML = "";
+    blanks = [];
+    bank = [];
+    activeBlank = -1;
+
+    passageSegments().forEach(function (seg) {
+      if (seg.w !== undefined && seg.w !== null) {
+        // 今天不复习这个词（blank === false）：只作划线词展示，不挖空、不进词库
+        if (seg.blank === false) {
+          var pw = document.createElement("span");
+          pw.className = "fc-pw";
+          pw.textContent = seg.w;
+          pw.setAttribute("data-word", seg.lemma || seg.w);
+          pw.setAttribute("data-pos", seg.pos || "");
+          pw.setAttribute("data-meaning", seg.meaning || "");
+          body.appendChild(pw);
+          return;
+        }
+        var idx = blanks.length;
+        var b = document.createElement("span");
+        b.className = "fc-blank";
+        b.setAttribute("data-idx", String(idx));
+        b.textContent = "______";
+        b.addEventListener("click", function () { onTapBlank(idx); });
+        body.appendChild(b);
+        blanks.push({
+          el: b, answer: seg.w, lemma: seg.lemma || seg.w,
+          pos: seg.pos || "",
+          meaning: seg.meaning || "", plain: seg.plain || "",
+          filled: null, wrong: 0, failed: false
+        });
+        bank.push({ surface: seg.w, used: false, el: null });
+      } else {
+        body.appendChild(document.createTextNode(seg.t || ""));
+      }
+    });
+
+    renderBank();
+    setActiveBlank(firstEmptyBlank());
+    updateClozeContinue();
+  }
+
+  function renderBank() {
+    var box = root.querySelector(".fc-wordbank");
+    if (!box) return;
+    box.innerHTML = "";
+    var order = [];
+    for (var i = 0; i < bank.length; i++) order.push(i);
+    for (var k = order.length - 1; k > 0; k--) {
+      var j = Math.floor(Math.random() * (k + 1));
+      var t = order[k]; order[k] = order[j]; order[j] = t;
+    }
+    order.forEach(function (i) {
+      var tile = document.createElement("button");
+      tile.className = "fc-bank-tile";
+      tile.type = "button";
+      tile.textContent = bank[i].surface;
+      tile.addEventListener("click", function () { onPickTile(i); });
+      bank[i].el = tile;
+      box.appendChild(tile);
+    });
+  }
+
+  function firstEmptyBlank() {
+    for (var i = 0; i < blanks.length; i++) {
+      if (blanks[i].filled === null) return i;
+    }
+    return -1;
+  }
+
+  function onTapBlank(idx) {
+    if (clickLock) return;
+    if (idx < 0 || idx >= blanks.length) return;
+    if (blanks[idx].filled !== null) return;
+    setActiveBlank(idx);
+  }
+
+  function setActiveBlank(i) {
+    activeBlank = i;
+    blanks.forEach(function (b, k) {
+      if (b.el) b.el.classList.toggle("is-active", k === i && b.filled === null);
+    });
+    var hint = root.querySelector(".fc-blank-hint");
+    if (!hint) return;
+    if (i < 0) {
+      hint.textContent = "全部填好，点「继续」过关";
+    } else {
+      var b = blanks[i];
+      // 用纯中文释义：带短语的完整释义会把答案（这个词本身）写进提示里
+      hint.textContent = "当前空：" +
+          ((b.pos ? b.pos + " " : "") + (b.plain || b.meaning || "（无语义）"));
+    }
+  }
+
+  function onPickTile(i) {
+    if (clickLock) return;
+    var tile = bank[i];
+    if (!tile || tile.used) return;
+    if (activeBlank < 0 || blanks[activeBlank].filled !== null) {
+      setActiveBlank(firstEmptyBlank());
+    }
+    if (activeBlank < 0) return;
+    var blank = blanks[activeBlank];
+    if (blank.filled !== null) return;
+
+    if (String(tile.surface).toLowerCase() === String(blank.answer).toLowerCase()) {
+      blank.filled = tile.surface;
+      if (blank.el) {
+        blank.el.textContent = tile.surface;
+        blank.el.classList.remove("is-active");
+        blank.el.classList.add("is-filled");
+      }
+      tile.used = true;
+      if (tile.el) {
+        tile.el.classList.add("is-used");
+        tile.el.setAttribute("disabled", "disabled");
+      }
+      speak(blank.answer, "en-US", TTS_WORD);
+      setActiveBlank(firstEmptyBlank());
+      updateClozeContinue();
+    } else {
+      // 语篇接 effort：同一个空累计错 3 次 -> 标 failed，后面跳过自评直接送考
+      blank.wrong = (blank.wrong || 0) + 1;
+      if (blank.wrong >= 3) blank.failed = true;
+      if (tile.el) {
+        tile.el.classList.add("is-wrong");
+        setTimeout(function () { if (tile.el) tile.el.classList.remove("is-wrong"); }, 450);
+      }
+      if (blank.el) {
+        blank.el.classList.add("is-wrong");
+        setTimeout(function () { if (blank.el) blank.el.classList.remove("is-wrong"); }, 450);
+      }
+    }
+  }
+
+  /// 导出语篇每个目标词的检验状态：failed / tested / untested
+  /// key = lemma 小写，和 plan 里 card.word 归一化后一一对应
+  function exportPassageTag() {
+    var tag = {};
+    blanks.forEach(function (b) {
+      var k = String(b.lemma || b.answer || "").trim().toLowerCase();
+      if (!k) return;
+      tag[k] = b.failed ? "failed" : (b.filled !== null ? "tested" : "untested");
+    });
+    return tag;
+  }
+
+  /// 只有语篇选词阶段才带 tag；其它阶段（词义/通读）返回 null
+  function answerMeta() {
+    if (mode !== "passage_cloze") return null;
+    return { passageTag: exportPassageTag() };
+  }
+
+  function updateClozeContinue() {
+    // blanks 为空（本批词在语篇里一个都没命中）也视为完成，避免卡死
+    var done = blanks.every(function (b) { return b.filled !== null; });
+    var btn = root.querySelector(".fc-btn-continue");
+    if (done) {
+      pendingAnswer = "good";
+      if (btn) btn.removeAttribute("disabled");
+    } else {
+      pendingAnswer = null;
+      if (btn) btn.setAttribute("disabled", "disabled");
+    }
+  }
+
+  // ---------- 进词义页：先念单词，念完再念例句 ----------
+  function playMeaningAudio() {
+    // 清掉切卡时挂起的正面自动发音，避免和这里的顺序播放打架
+    if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
+    var seq = [];
+    var w = String(fields.word || "").trim();
+    if (w) seq.push(Object.assign({ text: w, lang: "en-US" }, TTS_WORD));
+    var sent = String(fields.sentence_en || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (sent) seq.push(Object.assign({ text: sent, lang: "en-US" }, TTS_SENTENCE));
+    if (seq.length && FC.ttsSeq) FC.ttsSeq(seq);
+  }
+
+  // ---------- 切换到词义页（read 模式） ----------
+  function toMeaning(pre) {
+    preRating = pre || "good";
+    root.setAttribute("data-pre", preRating);
+    root.setAttribute("data-state", "back");
+    var backEl = root.querySelector(".fc-back");
+    if (backEl) backEl.scrollTop = 0;
+    playMeaningAudio();
+  }
+
+  // ---------- 顶栏：标熟（永久出队 / 可撤销） ----------
+  function updateKnownBtn() {
+    var b = root.querySelector('[data-top="known"]');
+    if (b) b.classList.toggle("is-on", !!known);
+  }
+
+  /// 语篇两阶段（passage / passage_cloze）没有具体单词 —— StudyStep 的 card 是 null，
+  /// card.id 为空。标熟 / 拼写对它们无意义，硬点会把空 id 写进 KV，必须挡一道。
+  /// CSS 已经把按钮收起来了，这里是防御性兜底（改样式的人未必知道有这条约束）。
+  function hasWordCard() {
+    return !!(card && card.id);
+  }
+
+  function toggleKnown() {
+    if (!hasWordCard()) return;
+    known = !known;
+    updateKnownBtn();
+    // 落盘走宿主：bridge 收到 setState 就写进这张卡的私有 KV
+    if (FC.setState) FC.setState("known", known);
+  }
+
+  // ---------- 拼写测验 ----------
+  /// 中文提示：义项拼起来，剥掉括号里的短语（别把答案写脸上）
+  function spellCnText() {
+    var parts = [];
+    sensesOf().forEach(function (s) {
+      var t = String(s.cn || "").replace(/[（(][^（()）]*[)）]/g, "").trim();
+      if (t) parts.push((s.pos ? s.pos + " " : "") + t);
+    });
+    return parts.join("；");
+  }
+
+  function renderSpell() {
+    var cn = root.querySelector(".fc-spell-cn");
+    if (cn) cn.textContent = spellCnText();
+  }
+
+  function resetSpell() {
+    spellChecked = false;
+    var inp = root.querySelector(".fc-spell-input");
+    if (inp) { inp.value = ""; inp.disabled = false; }
+    var res = root.querySelector(".fc-spell-result");
+    if (res) { res.textContent = ""; res.className = "fc-spell-result"; }
+    var lbl = root.querySelector('[data-action="spell-check"] span:last-child');
+    if (lbl) lbl.textContent = "检查";
+    var exitBtn = root.querySelector('[data-action="spell-exit"]');
+    if (exitBtn) exitBtn.removeAttribute("disabled");
+  }
+
+  function enterSpell() {
+    if (!hasWordCard()) return;
+    spellPrevMode = mode;
+    spellPrevState = root.getAttribute("data-state") || "front";
+    root.setAttribute("data-mode", "spell");
+    root.setAttribute("data-state", "front");
+    renderSpell();
+    resetSpell();
+    var inp = root.querySelector(".fc-spell-input");
+    if (inp) setTimeout(function () { inp.focus(); }, 60);
+  }
+
+  function exitSpell() {
+    root.setAttribute("data-mode", spellPrevMode || mode);
+    root.setAttribute("data-state", spellPrevState || "front");
+    resetSpell();
+  }
+
+  function spellCheck() {
+    var inp = root.querySelector(".fc-spell-input");
+    if (!inp) return;
+    var val = String(inp.value || "").trim().toLowerCase();
+    if (!val) return; // 空输入不判错，免得白挨一刀
+    var ans = String(fields.word || "").trim().toLowerCase();
+    var ok = (val === ans);
+    spellChecked = true;
+    inp.disabled = true;
+    var res = root.querySelector(".fc-spell-result");
+    if (res) {
+      res.className = "fc-spell-result " + (ok ? "is-right" : "is-wrong");
+      res.textContent = ok ? "✓ 拼对了" : ("✕ 正确拼写：" + (fields.word || ""));
+    }
+    // 答完念一遍正确发音：拼写本来就该连着音记
+    speak(fields.word || "", "en-US", TTS_WORD);
+    var lbl = root.querySelector('[data-action="spell-check"] span:last-child');
+    if (lbl) lbl.textContent = "返回";
+  }
+
+  // 输入框回车 = 检查（移动端键盘的「前往」也走这条）
+  var spellInputEl = root.querySelector(".fc-spell-input");
+  if (spellInputEl) {
+    spellInputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.code === "Enter") {
+        e.preventDefault();
+        if (!spellChecked) spellCheck();
+      }
+    });
+  }
+
+  // 拼写轮的循环已迁到 workflow.js（阶段 3）—— 整轮状态机 + 落盘都在那边。
+  // script.js 只保留「当场拼写」（顶栏 abc）。
+
+  // ---------- JSlogs：模板层诊断输出（落 logs/js/）----------
+  function jlog(msg) { if (FC.log) { try { FC.log("[SC]", msg); } catch (e) {} } }
+
+  // ---------- 供 workflow.js 复用的渲染原语（阶段 3）----------
+  FC.helpers = {
+    speak: speak,
+    blankSentence: blankSentence,
+    ttsWord: TTS_WORD,
+    ttsSentence: TTS_SENTENCE
+  };
+
+  // ---------- mount：增量刷新全部卡片数据 ----------
+  function mount() {
+    card = FC.getCard() || {};
+    fields = card.fields || {};
+    sess = card.session || {};
+    mode = sess.mode || "read";
+    choices = card.choices || [];
+    jlog("mount id=" + (card.id || "") + " mode=" + mode +
+         " choices=" + (choices.length || 0));
+    preRating = "good";
+    pendingAnswer = null;
+    wrongToMeaning = false;
+
+    var curWord = fields.word || card.id || "";
+    var curSyllable = fields.syllable || curWord;
+    var phonetic = fields.phonetic_us || fields.phonetic_uk || "";
+
+    // 1. 设置根状态
+    root.setAttribute("data-mode", mode);
+    root.setAttribute("data-state", "front");
+    root.setAttribute("data-pre", "");
+
+    // 2. 顶栏更新
+    var counterEl = root.querySelector(".fc-counter");
+    if (counterEl) {
+      var idx = (card.index !== undefined) ? (card.index + 1) : 1;
+      var tot = card.total || 1;
+      counterEl.textContent = idx + " / " + tot;
+    }
+    var tagEl = root.querySelector(".fc-tag");
+    var tagText = root.querySelector(".fc-tag-text");
+    if (tagEl && tagText) {
+      if (fields.exam_tag) {
+        tagText.textContent = fields.exam_tag;
+        tagEl.style.display = "inline-flex";
+      } else {
+        tagEl.style.display = "none";
+      }
+    }
+
+    // 3. 刷新正面与所有单词标题
+    root.querySelectorAll(".fc-word:not(.fc-word-syllable)").forEach(function (el) {
+      el.textContent = curWord;
+    });
+    var sylEl = root.querySelector(".fc-word-syllable");
+    if (sylEl) sylEl.textContent = curSyllable;
+
+    // 4. 音标胶囊刷新
+    root.querySelectorAll(".fc-pill-us .fc-phonetic-text").forEach(function (el) {
+      el.textContent = phonetic ? ("/" + phonetic.replace(/^\/|\/$/g, "") + "/") : "";
+    });
+
+    // 5. 重置按钮状态：
+    //    - 上一张卡答完时把词义页「记错了 / 下一词」禁用了，切卡必须重新放开，
+    //      否则第二张卡点「下一词」毫无反应（disabled 按钮不触发 click，整个卡死）。
+    //      以前整页重载会自然清掉，SPA 增量挂卡后 DOM 复用，必须手动复位。
+    //    - 底部「继续」按钮重置为禁用，等选了选项再亮。
+    root.querySelectorAll(".fc-actions button").forEach(function (b) {
+      b.removeAttribute("disabled");
+    });
+    // 顶栏 pass 是「一次性」按钮：上一章点过就 disabled 了，切章必须复位
+    var passBtn = root.querySelector(".fc-top-pass");
+    if (passBtn) passBtn.removeAttribute("disabled");
+    var continueBtn = root.querySelector(".fc-btn-continue");
+    if (continueBtn) {
+      continueBtn.setAttribute("disabled", "disabled");
+      var continueLbl = continueBtn.querySelector("span");
+      if (continueLbl) continueLbl.textContent = "继续";
+    }
+
+    // 6. 词义页所有模式都渲染 —— choice / cloze 答错要切到 back 看完整词义，
+    //    此时 .fc-back 的词性 / 释义 / 例句 / 短语 / 词根必须已经填好。
+    renderBackFace();
+
+    // 6b. 顶栏状态：标熟按钮点亮 + 拼写面板复位
+    //     切卡必须重读 —— 上一张标过熟，这一张没标，按钮不能还亮着。
+    known = !!(card.kv && card.kv.known);
+    updateKnownBtn();
+    resetSpell();
+    if (mode === "passage") {
+      renderPassageRead();
+    } else if (mode === "passage_cloze") {
+      renderPassageCloze();
+    } else if (mode === "choice") {
+      renderChoiceOptions();
+    } else if (mode === "cloze") {
+      renderCloze();
+    }
+
+    // 7. 自动播放当前单词发音（用户强烈需求！）
+    //    cloze 例外：答案就是这个单词，一进卡就念 = 直接泄题。
+    if (autoTtsTimer) { clearTimeout(autoTtsTimer); autoTtsTimer = null; }
+    if (FC.ttsStop) FC.ttsStop(); // 切卡先掐断上一张可能还在念的语音
+    _lastPassage = ""; _lastPassageAt = 0; // 换卡了，防重复窗口清零
+    if (curWord && mode !== "cloze") {
+      autoTtsTimer = setTimeout(function () {
+        autoTtsTimer = null;
+        speak(curWord, "en-US", TTS_WORD);
+      }, 70);
+    } else if (mode === "passage") {
+      // 语篇通读：进页自动朗读全文（保持旧版「进卡即读」的听感）
+      autoTtsTimer = setTimeout(function () {
+        autoTtsTimer = null;
+        speakPassage();
+      }, 260);
+    }
+  }
+
+  // ---------- 全局点击事件代理 ----------
+  root.addEventListener("click", function (e) {
+    if (clickLock) {
+      e.preventDefault();
+      return;
+    }
+
+    // 拼写轮（workflow.js）自己处理块内事件；块外的点击别误伤
+    if (e.target.closest(".fc-spellround")) return;
+
+    // 0. 顶栏按钮组：☆收藏 / 熟 / abc / ⋯
+    //    收藏 和 ⋯ 目前是占位，**故意不响应**（按需求）；
+    //    标熟 和 拼写 是真功能。
+    var topBtn = e.target.closest("[data-top]");
+    if (topBtn) {
+      e.stopPropagation();
+      var which = topBtn.getAttribute("data-top");
+      if (which === "known") {
+        toggleKnown();
+      } else if (which === "spell") {
+        enterSpell();
+      } else if (which === "pass") {
+        // 语篇选词太磨人：一键整段跳过，直接进单词背诵
+        if (topBtn.hasAttribute("disabled")) return;
+        topBtn.setAttribute("disabled", "disabled");
+        if (FC.ttsStop) FC.ttsStop();
+        FC.answer("good", answerMeta());
+      }
+      return;
+    }
+
+    // 1. 点击单词或音标胶囊 -> 发音
+    var ttsWordTarget = e.target.closest('[data-role="tts-word"], .fc-word, .fc-tts');
+    if (ttsWordTarget) {
+      e.stopPropagation();
+      speak(fields.word || "", "en-US", TTS_WORD);
+      return;
+    }
+
+    // 2. 点击例句小喇叭 -> 朗读例句
+    var ttsSentTarget = e.target.closest('[data-role="tts-sentence"]');
+    if (ttsSentTarget) {
+      e.stopPropagation();
+      speak(fields.sentence_en || "", "en-US", TTS_SENTENCE);
+      return;
+    }
+
+    // 2b. 语篇通读：点小喇叭 -> 朗读全文
+    var ttsPassage = e.target.closest('[data-role="tts-passage"]');
+    if (ttsPassage) {
+      e.stopPropagation();
+      speakPassage();
+      return;
+    }
+
+    // 2c. 语篇通读：点划线目标词 -> 浮释义 + 发音
+    var pwTarget = e.target.closest(".fc-pw");
+    if (pwTarget) {
+      e.stopPropagation();
+      showPassageTooltip(pwTarget);
+      return;
+    }
+
+    // 2c-2. 中文译文里的划线目标词 -> 读英文 + 浮释义
+    var cnPwTarget = e.target.closest(".fc-cn-pw");
+    if (cnPwTarget) {
+      e.stopPropagation();
+      showCnTooltip(cnPwTarget);
+      return;
+    }
+
+    // 2d. 关联词（派生词 / 近义词 / 反义词）点词 -> 发音
+    var sayTarget = e.target.closest("[data-say]");
+    if (sayTarget) {
+      e.stopPropagation();
+      speak(sayTarget.getAttribute("data-say") || "", "en-US", TTS_WORD);
+      return;
+    }
+
+    // 3. 底部操作按钮
+    var actionTarget = e.target.closest("[data-action]");
+    if (!actionTarget) return;
+
+    var act = actionTarget.getAttribute("data-action");
+
+    // 正面自评 -> 进词义页
+    if (act === "to-meaning") {
+      toMeaning(actionTarget.getAttribute("data-pre"));
+      return;
+    }
+
+    // 语篇通读 -> 进入单词背诵
+    if (act === "start-drill") {
+      if (actionTarget.hasAttribute("disabled")) return;
+      actionTarget.setAttribute("disabled", "disabled");
+      FC.answer("good", answerMeta());
+      return;
+    }
+
+    // 词义页打分落盘
+    if (act === "answer") {
+      var r = actionTarget.getAttribute("data-rating");
+      var fin = (r === "again") ? "again" : preRating;
+      root.querySelectorAll(".fc-actions-back .fc-btn").forEach(function (b) {
+        b.setAttribute("disabled", "disabled");
+      });
+      FC.answer(fin);
+      return;
+    }
+
+    // 拼写：第一次点「检查」，检查完按钮变「返回」，再点就走人
+    if (act === "spell-check") {
+      if (actionTarget.hasAttribute("disabled")) return;
+      if (spellChecked) { exitSpell(); } else { spellCheck(); }
+      return;
+    }
+
+    // 拼写：直接返回原状态
+    if (act === "spell-exit") {
+      exitSpell();
+      return;
+    }
+
+    // choice / cloze 点击「继续」
+    if (act === "submit") {
+      if (pendingAnswer === null) return;
+      actionTarget.setAttribute("disabled", "disabled");
+      if (wrongToMeaning) {
+        // 答错后点「继续」= 进词义页（按 again 计）。
+        // 看完词义再点「下一词」才算真正作答 —— 这张卡后面仍会被重考。
+        wrongToMeaning = false;
+        pendingAnswer = null;
+        toMeaning("again");
+        return;
+      }
+      FC.answer(pendingAnswer, answerMeta());
+      return;
+    }
+  });
+
+  // ---------- 键盘空格快捷键 ----------
+  document.addEventListener("keydown", function (e) {
+    // 拼写模式下键盘归输入框，别被空格 / 回车快捷键抢走
+    if (root.getAttribute("data-mode") === "spell") return;
+    var srSecK = document.querySelector(".fc-spellround");
+    if (srSecK && !srSecK.hidden) return;
+    if (e.code === "Space" || e.code === "Enter") {
+      e.preventDefault();
+      if (mode === "read") {
+        if (root.getAttribute("data-state") === "front") toMeaning("good");
+      } else if (pendingAnswer !== null) {
+        var cb = root.querySelector(".fc-btn-continue");
+        if (cb && !cb.hasAttribute("disabled")) {
+          cb.setAttribute("disabled", "disabled");
+          FC.answer(pendingAnswer, answerMeta());
+        }
+      }
+    }
+  });
+
+  // ---------- SPA 挂载回调 ----------
+  if (FC.onMount) {
+    FC.onMount(function () {
+      clickLock = true;
+      setTimeout(function () { clickLock = false; }, 250);
+      mount();
+      if (FC.ready) FC.ready();
+    });
+  }
+
+  // ---------- 首次启动 ----------
+  function boot() {
+    // 真机：骨架页首帧 __FLASHCARD_CARD__ 是空壳（id 为空），先不渲染空卡，
+    //       等原生 mountCard 灌入真实数据（onMount 回调里再 mount）。
+    // 预览 mock：没有注入 __FLASHCARD_CARD__，直接渲染。
+    var injected = window.__FLASHCARD_CARD__;
+    if (injected && !injected.id) return;
+    mount();
+    console.log("[bubei_dark v2] mounted mode=" + mode);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+
+  // 拼写轮实现已迁到 workflow.js（阶段 3）。若模板包没带 workflow.js，
+  // 这里兜一个「立刻结束」的降级，避免原生触发拼写轮后整场卡死。
+  // workflow.js 加载时会覆盖它（它排在 script.js 之后）。
+  if (typeof FC.startSpellRound !== "function") {
+    FC.startSpellRound = function () { if (FC.spellDone) FC.spellDone(); };
+  }
+})();
+
+
+/* ============================================================
+   bubei_replica · 信息卡 tab 控制器 + 本地笔记
+   ------------------------------------------------------------
+   这一层完全独立于上面的 bubei_dark 内核：
+     · 只认 DOM（.fc-tabcard / [data-pane] / [data-tab-btn]）
+     · 不碰 FC.answer / 评分 / 调度
+     · 空段自动隐藏；当前段空了就跳到第一个有内容的段
+   笔记落在 localStorage，key = fc_note_<cardId>，纯本地、不上报。
+   ============================================================ */
+(function () {
+  "use strict";
+
+  var FC = window.Flashcard;
+  var root = document.querySelector(".fc-root");
+  if (!root) return;
+  var tabcard = root.querySelector(".fc-tabcard");
+  if (!tabcard) return;
+
+  var NOTE_KEY = "fc_note_";
+  var NOTE_MAX = 1000;
+  var _noteCardId = null;
+
+  function currentCardId() {
+    try {
+      var c = FC && FC.getCard ? FC.getCard() : null;
+      return (c && c.id) ? String(c.id) : "";
+    } catch (e) { return ""; }
+  }
+
+  function noteArea() { return tabcard.querySelector(".fc-note-area"); }
+  function noteCount() { return tabcard.querySelector(".fc-note-count"); }
+  function noteSaveBtn() { return tabcard.querySelector("[data-note-save]"); }
+
+  // ---------- 笔记：localStorage 即时 + books/_notes/notes.json 落盘（双写）----------
+  // 页面在 WebView 沙箱里碰不到文件系统，落盘得走壳的 fs.* RPC。
+  //   写：localStorage 同步落（立刻生效、不丢），再异步推一份到文件（持久、能导出、换机带走）。
+  //   读：开页异步拉一次文件进内存镜像；镜像没就绪 / 文件不在时回落 localStorage。
+  // 全程不 reload 页面、不碰卡片数据、不碰评分调度。
+  var NOTES_FILE = "books/_notes/notes.json";
+  var _notesAll = null;   // {cardId: {text, ts}} —— 文件的全量镜像
+  var _notesReady = false;
+
+  function readNote(id) {
+    if (!id) return "";
+    if (_notesReady && _notesAll && _notesAll[id] &&
+        typeof _notesAll[id].text === "string") {
+      return _notesAll[id].text;
+    }
+    try { return localStorage.getItem(NOTE_KEY + id) || ""; } catch (e) { return ""; }
+  }
+
+  function writeNote(id, v) {
+    if (!id) return;
+    // 1) 本地先落，立刻生效
+    try { localStorage.setItem(NOTE_KEY + id, v); } catch (e) {}
+    // 2) 异步推文件，失败不影响本地
+    if (!FC || !FC.fs || !FC.fs.write) return;
+    if (!_notesAll) _notesAll = {};
+    _notesAll[id] = { text: v, ts: new Date().toISOString() };
+    FC.fs.write(NOTES_FILE, JSON.stringify(_notesAll, null, 2))
+      .catch(function (e) {
+        if (FC.log) { try { FC.log("[NOTE]", "fs write fail: " + e); } catch (_) {} }
+      });
+  }
+
+  /// 开页拉一次全量笔记进内存。文件不存在 = 空，不算错。
+  function loadAllNotes() {
+    if (!FC || !FC.fs || !FC.fs.read) { _notesReady = true; return; }
+    FC.fs.read(NOTES_FILE).then(function (r) {
+      var m;
+      try { m = JSON.parse(r.content || "{}"); } catch (e) { m = {}; }
+      _notesAll = (m && typeof m === "object") ? m : {};
+      _notesReady = true;
+      // 文件里的笔记比本地新 → 补进当前输入框（用户没在改的前提下）
+      var id = currentCardId();
+      var ta = noteArea();
+      if (id && ta && _noteCardId === id && _notesAll[id] &&
+          typeof _notesAll[id].text === "string") {
+        var local = "";
+        try { local = localStorage.getItem(NOTE_KEY + id) || ""; } catch (e) {}
+        if (ta.value === local) {
+          ta.value = _notesAll[id].text;
+          syncNoteFoot();
+        }
+      }
+    }).catch(function () {
+      _notesReady = true;   // 没文件 / 不可用，走 localStorage
+    });
+  }
+
+  function syncNoteFoot() {
+    var ta = noteArea();
+    if (!ta) return;
+    var v = String(ta.value || "").slice(0, NOTE_MAX);
+    var cnt = noteCount();
+    if (cnt) {
+      var want = v.length + "/" + NOTE_MAX;
+      if (cnt.textContent !== want) cnt.textContent = want;
+    }
+    var btn = noteSaveBtn();
+    if (btn) {
+      if (v === readNote(currentCardId())) btn.setAttribute("disabled", "disabled");
+      else btn.removeAttribute("disabled");
+    }
+  }
+
+  /// 只有换卡才重读 —— 否则用户打字打到一半会被冲掉
+  function loadNote() {
+    var id = currentCardId();
+    if (id === _noteCardId) return;
+    _noteCardId = id;
+    var ta = noteArea();
+    if (ta) ta.value = readNote(id);
+    syncNoteFoot();
+  }
+
+  function saveNote() {
+    var id = currentCardId();
+    if (!id) return;
+    var ta = noteArea();
+    if (!ta) return;
+    writeNote(id, String(ta.value || "").slice(0, NOTE_MAX));
+    if (FC.log) { try { FC.log("[TAB]", "note saved " + id + " len=" + ta.value.length); } catch (e) {} }
+    syncNoteFoot();
+  }
+
+  // ---------- 段落内容判定 ----------
+  function paneHasContent(pane) {
+    if (!pane) return false;
+    var t = pane.getAttribute("data-pane");
+    if (t === "note") return true;   // 笔记永远可写
+    var html = pane.classList.contains("fc-blocks") ? pane.innerHTML : "";
+    var bodies = pane.querySelectorAll(".fc-block-body");
+    for (var i = 0; i < bodies.length; i++) html += bodies[i].innerHTML;
+    return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim().length > 0;
+  }
+
+  function setTab(key) {
+    tabcard.setAttribute("data-tab", key || "");
+    var btns = tabcard.querySelectorAll("[data-tab-btn]");
+    for (var i = 0; i < btns.length; i++) {
+      var on = btns[i].getAttribute("data-tab-btn") === key;
+      if (on) btns[i].classList.add("is-on");
+      else btns[i].classList.remove("is-on");
+    }
+  }
+
+  function refreshTabs() {
+    var panes = tabcard.querySelectorAll("[data-pane]");
+    var any = false, firstKey = "";
+    for (var i = 0; i < panes.length; i++) {
+      var p = panes[i];
+      var key = p.getAttribute("data-pane");
+      var has = paneHasContent(p);
+      p.setAttribute("data-empty", has ? "0" : "1");
+      var btn = tabcard.querySelector('[data-tab-btn="' + key + '"]');
+      if (btn) {
+        if (has) btn.classList.remove("fc-tab-hide");
+        else btn.classList.add("fc-tab-hide");
+      }
+      if (has) { any = true; if (!firstKey) firstKey = key; }
+    }
+    if (any) tabcard.setAttribute("data-has", "1");
+    else tabcard.setAttribute("data-has", "0");
+
+    var cur = tabcard.getAttribute("data-tab") || "";
+    var curBtn = cur ? tabcard.querySelector('[data-tab-btn="' + cur + '"]') : null;
+    if (!cur || !curBtn || curBtn.classList.contains("fc-tab-hide")) setTab(firstKey);
+    else setTab(cur);
+
+    loadNote();
+  }
+
+  // ---------- 事件 ----------
+  root.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+
+    var tb = t.closest("[data-tab-btn]");
+    if (tb) {
+      e.preventDefault();
+      e.stopPropagation();
+      setTab(tb.getAttribute("data-tab-btn"));
+      return;
+    }
+    var nb = t.closest("[data-note-save]");
+    if (nb) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveNote();
+      return;
+    }
+  }, true);
+
+  root.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains("fc-note-area")) syncNoteFoot();
+  });
+
+  // ---------- 内容一变就重算 ----------
+  var _rt = null;
+  function scheduleRefresh() {
+    if (_rt) return;
+    _rt = setTimeout(function () { _rt = null; refreshTabs(); }, 0);
+  }
+  var back = root.querySelector(".fc-back");
+  if (back && window.MutationObserver) {
+    new MutationObserver(scheduleRefresh).observe(back, { childList: true, subtree: true });
+  }
+
+  loadAllNotes();
+  setTimeout(refreshTabs, 0);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", refreshTabs);
+  } else {
+    refreshTabs();
+  }
+})();

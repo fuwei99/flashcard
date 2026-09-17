@@ -1,0 +1,1581 @@
+/* ============================================================
+   不背单词 · 暗黑模板 v2 样式（对标参考图精美复刻）
+   ============================================================ */
+:root {
+  /* bubei_replica：取自「不背单词复刻页」量图取色，中性暗底 + 柔和 teal */
+  --bg: #121214;
+  --bg-card: #222226;
+  --bg-card-hover: #29292e;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+
+  --txt-main: #f5f5f7;
+  --txt-sub: #d5d5da;
+  --txt-dim: #7c7c82;
+
+  --teal: #2ec4a5;
+  --teal-soft: rgba(46, 196, 165, 0.16);
+  --teal-border: rgba(46, 196, 165, 0.45);
+
+  --red: #e34d64;
+  --red-soft: rgba(227, 77, 100, 0.16);
+  --red-border: rgba(227, 77, 100, 0.45);
+
+  --orange: #e3a83c;
+  --orange-soft: rgba(227, 168, 60, 0.16);
+
+  --r-card: 16px;
+  --r-btn: 14px;
+  --r-pill: 999px;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--bg);
+  color: var(--txt-main);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.fc-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 600px;
+  margin: 0 auto;
+  overflow: hidden;
+  position: relative;
+  background-color: var(--bg);
+}
+
+/* ---------- 顶栏 ---------- */
+.fc-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 44px;
+  padding: 0 20px;
+  flex: 0 0 auto;
+}
+.fc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal);
+  background: var(--teal-soft);
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--teal-border);
+}
+.fc-tag svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+}
+.fc-counter {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+/* ---------- 容器与滚动 ---------- */
+.fc-face {
+  display: none;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 20px 24px;
+  scrollbar-width: none;
+}
+.fc-face::-webkit-scrollbar {
+  display: none;
+}
+
+.fc-root[data-mode="read"][data-state="front"] .fc-front {
+  display: flex;
+  flex-direction: column;
+}
+.fc-root[data-state="back"] .fc-back {
+  display: block;
+}
+.fc-root[data-mode="choice"] .fc-choice {
+  display: flex;
+  flex-direction: column;
+}
+.fc-root[data-mode="cloze"] .fc-cloze {
+  display: flex;
+  flex-direction: column;
+}
+.fc-root[data-state="back"][data-mode="choice"] .fc-choice,
+.fc-root[data-state="back"][data-mode="cloze"] .fc-cloze {
+  display: none;
+}
+
+.fc-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---------- 单词 Hero 区（图 1 风格） ---------- */
+.fc-hero {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  margin-bottom: 20px;
+}
+.fc-hero-back {
+  margin-bottom: 12px;
+}
+.fc-word-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fc-word {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 0;
+  line-height: 1.1;
+  color: #ffffff;
+}
+.fc-word-syllable {
+  font-size: 34px;
+  letter-spacing: 0;
+}
+
+/* 音标胶囊（对标图 1 图 2：美 🔊 /.../） */
+.fc-phonetics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.fc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 5px 14px;
+  font-size: 13.5px;
+  color: var(--txt-sub);
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+.fc-pill:active {
+  transform: scale(0.95);
+  background: var(--bg-card-hover);
+  border-color: var(--teal-border);
+}
+.fc-pill b {
+  color: var(--teal);
+  font-weight: 700;
+  font-size: 12px;
+}
+.fc-speaker-ico {
+  width: 13px;
+  height: 13px;
+  fill: var(--teal);
+  flex-shrink: 0;
+}
+
+/* 提示文案（图 1） */
+.fc-hint-text {
+  font-size: 12.5px;
+  color: var(--txt-dim);
+  margin-top: 18px;
+  letter-spacing: 0.3px;
+}
+
+/* ---------- choice / cloze 选项大卡片（对标图 1） ---------- */
+.fc-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  flex: 1 1 auto;
+}
+.fc-opt-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 64px;
+  padding: 14px 18px;
+  border-radius: var(--r-card);
+  background: var(--bg-card);
+  border: 1.5px solid transparent;
+  color: var(--txt-main);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+  text-align: left;
+}
+.fc-opt-btn:active {
+  transform: scale(0.985);
+  background: var(--bg-card-hover);
+}
+
+/* 未选前选项内布局：词性 + 释义 */
+.fc-opt-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+}
+.fc-opt-pos {
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 600;
+  color: var(--txt-dim);
+  flex-shrink: 0;
+}
+.fc-opt-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--txt-main);
+  line-height: 1.45;
+  flex: 1;
+}
+
+/* 选完后揭晓的单词标题（图 1 核心亮点！） */
+.fc-opt-revealed-word {
+  display: none;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+/* 选中状态：正确（墨绿） */
+.fc-opt-btn.is-right {
+  background: var(--teal-soft) !important;
+  border-color: var(--teal) !important;
+  color: var(--teal) !important;
+}
+.fc-opt-btn.is-right .fc-opt-revealed-word {
+  display: block;
+  color: var(--teal);
+}
+.fc-opt-btn.is-right .fc-opt-pos {
+  color: var(--teal);
+}
+.fc-opt-btn.is-right .fc-opt-text {
+  color: #ffffff;
+}
+
+/* 选中状态：错误（暗红） */
+.fc-opt-btn.is-wrong {
+  background: var(--red-soft) !important;
+  border-color: var(--red) !important;
+  color: var(--red) !important;
+}
+.fc-opt-btn.is-wrong .fc-opt-revealed-word {
+  display: block;
+  color: var(--red);
+}
+.fc-opt-btn.is-wrong .fc-opt-pos {
+  color: var(--red);
+}
+.fc-opt-btn.is-wrong .fc-opt-text {
+  color: #ffffff;
+}
+
+/* 其他未被选中的错误选项淡化 */
+.fc-opt-btn.is-dimmed {
+  opacity: 0.35;
+  cursor: default;
+}
+.fc-opt-btn[disabled] {
+  cursor: default;
+}
+
+/* 填空题挖空展示 */
+.fc-cloze-box {
+  font-size: 19px;
+  line-height: 1.7;
+  font-weight: 500;
+  color: var(--txt-main);
+  background: var(--bg-card);
+  padding: 16px 18px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--line);
+}
+
+/* ---------- 词义长页（无限下滑，对标图 2） ---------- */
+.fc-meaning-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0 16px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+  margin-bottom: 20px;
+}
+/* 单个义项：词性 + 释义（+ 多音词的音标）。
+   一词多义 / 一词多性就是多行 .fc-sense。 */
+.fc-sense {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.fc-sense-phonetic {
+  font-size: 13px;
+  color: var(--txt-dim);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  flex-shrink: 0;
+}
+.fc-pos {
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 700;
+  color: var(--teal);
+  flex-shrink: 0;
+}
+.fc-mean-text {
+  font-size: 21px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.5;
+}
+
+/* 大卡片块：真题例句 / 短语 / 词根 */
+.fc-card-block {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.fc-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.fc-block-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--txt-dim);
+  text-transform: uppercase;
+}
+.fc-block-tts {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--teal);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fc-block-tts:active {
+  transform: scale(0.9);
+  background: var(--teal-soft);
+}
+.fc-block-tts svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.fc-en-sentence {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--txt-main);
+  margin-bottom: 8px;
+}
+.fc-en-sentence u, .fc-en-sentence b {
+  color: var(--teal);
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1.5px solid var(--teal);
+}
+.fc-cn-sentence {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--txt-sub);
+}
+
+.fc-phrase-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fc-phrase-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.fc-phrase-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.fc-phrase-en {
+  font-weight: 600;
+  color: var(--txt-main);
+}
+.fc-phrase-cn {
+  color: var(--txt-sub);
+}
+
+.fc-root-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--txt-sub);
+}
+.fc-root-content b {
+  color: var(--teal);
+}
+
+.fc-scroll-pad {
+  height: 40px;
+}
+
+/* ---------- 底部动作条 ---------- */
+.fc-actions {
+  display: none;
+  flex: 0 0 auto;
+  gap: 12px;
+  padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, rgba(17, 22, 24, 0.95) 25%, var(--bg) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fc-root[data-mode="read"][data-state="front"] .fc-actions-front {
+  display: flex;
+}
+/* 词义页底部：不论从哪个 mode 进来（read 自评 / choice·cloze 答错），
+   都显示「记错了 / 下一词」。以前写死 data-mode="read"，
+   导致 choice/cloze 答错跳词义页后底部只剩个死掉的「看词义」，切不动下一张。 */
+.fc-root[data-state="back"] .fc-actions-back {
+  display: flex;
+}
+/* 「继续」条只在正面显示；进了词义页一律收起 */
+.fc-root[data-mode="choice"][data-state="front"] .fc-actions-next {
+  display: flex;
+}
+.fc-root[data-mode="cloze"][data-state="front"] .fc-actions-next {
+  display: flex;
+}
+
+/* 正面点了「忘记」：词义页只剩「下一词」 */
+.fc-root[data-pre="again"] .fc-actions-back .fc-btn-again {
+  display: none;
+}
+
+/* ---------- 单卡预览（章节词表点进来）：只读词义页，不显示任何动作条 ---------- */
+.fc-root[data-preview="1"] .fc-actions {
+  display: none !important;
+}
+.fc-root[data-preview="1"] .fc-top-right {
+  display: none;
+}
+
+/* ---------- 顶栏动作按钮组：☆收藏 / 熟 / abc / ⋯ ---------- */
+.fc-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.fc-top-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--txt-dim);
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color .15s, background .15s;
+}
+.fc-top-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+  display: block;
+}
+.fc-top-btn span {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+.fc-top-abc span {
+  font-size: 12.5px;
+  letter-spacing: .3px;
+}
+.fc-top-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* 已标熟：按钮点亮 */
+.fc-top-known.is-on {
+  color: #00C08B;
+  background: rgba(0, 192, 139, 0.14);
+}
+/* 语篇两阶段（passage / passage_cloze）没有具体单词 —— StudyStep 的 card 为 null，
+   标熟 / 拼写无处可施，硬点会拿空 id 写 KV。直接收起按钮组。 */
+.fc-root[data-mode="passage"] .fc-top-actions,
+.fc-root[data-mode="passage_cloze"] .fc-top-actions {
+  display: none;
+}
+
+/* 语篇选词只有一个「pass」—— 嫌磨人直接整段跳过。
+   标熟 / 拼写那排按钮在两阶段全收起（card 为 null，点了会写脏数据）。 */
+.fc-top-pass { display: none; }
+.fc-root[data-mode="passage_cloze"] .fc-top-pass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   拼写轮（一轮走完触发，整轮覆盖在卡片之上）
+   ------------------------------------------------------------
+   逐格输入：真 input 藏在屏幕外收键盘，格子在 .fc-sr-slots 里画。
+   三种形态共用一套骨架：句子拼写 / 单词拼写 / 语篇拼写
+   ============================================================ */
+.fc-spellround {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #141D1F;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.fc-spellround[hidden] { display: none; }
+
+.fc-sr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fc-sr-progress {
+  color: #00C08B;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fc-sr-quit {
+  background: transparent;
+  border: 1px solid #2A3A3E;
+  color: #8C9DA2;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
+.fc-sr-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+.fc-sr-kind {
+  color: #54666C;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.fc-sr-cn {
+  color: #F0F4F5;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+.fc-sr-prompt {
+  color: #B7C4C8;
+  font-size: 15px;
+  line-height: 2.1;
+  word-break: break-word;
+}
+.fc-sr-tries {
+  color: #54666C;
+  font-size: 12px;
+}
+
+/* 逐格：每格一条下划线，填上字母后变绿 */
+.fc-sr-slots {
+  display: inline-flex;
+  gap: 6px;
+  vertical-align: middle;
+  margin: 0 6px;
+}
+.fc-sr-slots-block {
+  display: flex;
+  margin: 12px 0 0;
+}
+.fc-sr-slot {
+  min-width: 20px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-bottom: 2px solid #3A4A4E;
+  color: #F0F4F5;
+  font-size: 20px;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+.fc-sr-slot.is-filled { border-bottom-color: #00C08B; }
+.fc-sr-slots.is-wrong .fc-sr-slot { border-bottom-color: #E5534B; }
+.fc-sr-slots.is-wrong { animation: fc-sr-shake 0.36s; }
+@keyframes fc-sr-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.fc-sr-result {
+  min-height: 20px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.fc-sr-result.is-right { color: #00C08B; }
+.fc-sr-result.is-wrong { color: #E5534B; }
+
+.fc-sr-actions {
+  display: flex;
+  gap: 10px;
+}
+.fc-sr-btn {
+  flex: 1;
+  padding: 13px 0;
+  border-radius: 12px;
+  border: 1px solid #2A3A3E;
+  background: #1B2629;
+  color: #B7C4C8;
+  font-size: 14px;
+}
+.fc-sr-next {
+  background: #00C08B;
+  color: #141D1F;
+  border-color: #00C08B;
+  font-weight: 600;
+}
+
+/* 藏起来的真输入框：放在屏幕底部、几乎全透明，只为把键盘顶出来 */
+.fc-sr-input {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  opacity: 0.01;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+}
+
+/* ---------- 拼写测验（顶栏 abc 进入） ---------- */
+.fc-root[data-mode="spell"] .fc-spell {
+  display: flex;
+  flex-direction: column;
+}
+.fc-spell-cn {
+  color: var(--txt, #F0F4F5);
+  font-size: 17px;
+  line-height: 1.65;
+  margin: 4px 0 20px;
+  text-align: center;
+}
+.fc-spell-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  color: var(--txt, #F0F4F5);
+  font-size: 17px;
+  letter-spacing: .5px;
+  padding: 13px 14px;
+  outline: none;
+  text-align: center;
+}
+.fc-spell-input::placeholder {
+  color: var(--txt-dim);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.fc-spell-input:focus {
+  border-color: #00C08B;
+}
+.fc-spell-input:disabled {
+  opacity: .7;
+}
+.fc-spell-result {
+  min-height: 22px;
+  margin-top: 14px;
+  font-size: 13.5px;
+  text-align: center;
+  line-height: 1.5;
+}
+.fc-spell-result.is-right {
+  color: #00C08B;
+}
+.fc-spell-result.is-wrong {
+  color: #FF6B6B;
+}
+.fc-root[data-mode="spell"] .fc-actions-spell {
+  display: flex;
+}
+
+.fc-actions .fc-btn {
+  flex: 1;
+}
+
+.fc-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 56px;
+  border-radius: var(--r-btn);
+  background: var(--bg-card);
+  border: 1px solid var(--line-strong);
+  color: var(--txt-sub);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fc-btn:active {
+  transform: scale(0.96);
+}
+.fc-btn .fc-ico {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+.fc-btn-again {
+  color: var(--red);
+}
+.fc-btn-again:active {
+  background: var(--red-soft);
+  border-color: var(--red);
+}
+.fc-btn-hard {
+  color: var(--orange);
+}
+.fc-btn-hard:active {
+  background: var(--orange-soft);
+  border-color: var(--orange);
+}
+.fc-btn-good {
+  color: var(--teal);
+}
+.fc-btn-good:active {
+  background: var(--teal-soft);
+  border-color: var(--teal);
+}
+
+/* 继续大按钮（对标图 1：居中大气） */
+.fc-btn-continue {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 54px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-btn);
+  color: var(--txt-dim);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: default;
+  transition: all 0.2s ease;
+  position: relative;
+}
+.fc-btn-continue .fc-continue-line {
+  width: 24px;
+  height: 3px;
+  background: transparent;
+  border-radius: 2px;
+  margin-top: 4px;
+  transition: all 0.2s ease;
+}
+
+/* 激活状态的「继续」按钮 */
+.fc-btn-continue:not([disabled]) {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #0d1517;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 199, 149, 0.35);
+}
+.fc-btn-continue:not([disabled]):active {
+  transform: scale(0.985);
+  box-shadow: 0 2px 8px rgba(0, 199, 149, 0.25);
+}
+.fc-btn-continue:not([disabled]) .fc-continue-line {
+  display: none;
+}
+
+/* ============================================================
+   语篇（passage / passage_cloze）
+   ============================================================ */
+.fc-root[data-mode="passage"] .fc-passage {
+  display: block;
+}
+.fc-root[data-mode="passage_cloze"] .fc-passage-cloze {
+  display: flex;
+  flex-direction: column;
+  /* 外层不再整体滚动 —— 正文区 / 词库区各自独立滚，互不干扰 */
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.fc-root[data-mode="passage"] .fc-actions-passage {
+  display: flex;
+}
+.fc-root[data-mode="passage_cloze"] .fc-actions-next {
+  display: flex;
+}
+
+.fc-passage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.fc-passage-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.2px;
+}
+.fc-passage-body {
+  font-size: 18px;
+  line-height: 1.95;
+  color: var(--txt-main);
+}
+.fc-passage-cn {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--txt-sub);
+}
+
+/* 目标词：下划线 + 点按浮释义 */
+.fc-pw {
+  color: var(--teal);
+  font-weight: 700;
+  border-bottom: 2px solid var(--teal-border);
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+.fc-pw:active {
+  background: var(--teal-soft);
+}
+
+/* 中文译文里的目标词：与英文正文 .fc-pw 同款高亮（划线亮亮），点按读英文 + 浮释义 */
+.fc-cn-pw {
+  color: var(--teal);
+  font-weight: 700;
+  border-bottom: 2px solid var(--teal-border);
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+.fc-cn-pw:active {
+  background: var(--teal-soft);
+}
+
+.fc-passage-tip {
+  display: none;
+  /* 浮动释义：固定定位，由 JS 摆到目标词上方；不再占正文流位置 */
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  max-width: 320px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: var(--r-card);
+  background: var(--bg-card);
+  border: 1px solid var(--teal-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.fc-passage-tip.show {
+  display: block;
+  animation: fcFade 0.14s ease;
+}
+.fc-tip-word {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffffff;
+}
+.fc-tip-mean {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--txt-sub);
+  line-height: 1.5;
+}
+
+@keyframes fcFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 语篇页主按钮 */
+.fc-btn-primary {
+  flex: 1;
+  height: 54px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: var(--teal);
+  color: #0d1517;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 199, 149, 0.35);
+}
+.fc-btn-primary:active {
+  transform: scale(0.985);
+}
+.fc-btn-primary[disabled] {
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* ---------- 语篇选词 ---------- */
+.fc-cloze-passage {
+  font-size: 16px;
+  line-height: 1.95;
+  color: var(--txt-main);
+}
+.fc-blank {
+  display: inline-block;
+  min-width: 56px;
+  text-align: center;
+  color: var(--txt-dim);
+  border-bottom: 2px solid var(--line-strong);
+  margin: 0 2px;
+  padding: 0 2px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fc-blank.is-active {
+  color: var(--teal);
+  border-bottom-color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 4px 4px 0 0;
+}
+.fc-blank.is-filled {
+  color: #ffffff;
+  border-bottom-color: var(--teal);
+}
+.fc-blank.is-wrong {
+  color: var(--red);
+  border-bottom-color: var(--red);
+  animation: fcShake 0.3s;
+}
+@keyframes fcShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.fc-blank-hint {
+  margin: 16px 0 12px;
+  font-size: 13px;
+  color: var(--txt-sub);
+  min-height: 18px;
+}
+
+.fc-wordbank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.fc-bank-tile {
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line-strong);
+  color: var(--txt-main);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fc-bank-tile:active {
+  transform: scale(0.95);
+  background: var(--bg-card-hover);
+}
+.fc-bank-tile.is-used {
+  opacity: 0.28;
+  pointer-events: none;
+}
+.fc-bank-tile.is-wrong {
+  border-color: var(--red);
+  color: var(--red);
+  animation: fcShake 0.3s;
+}
+
+/* ---------- 语篇选词：上下分区，各自滚动 ----------
+   以前整页一根滚动条：改一个空要滑到底选词，再滑回顶上读原文，
+   来回拉锯。现在拆成两块 ——
+     正文区（.fc-cloze-passage）吃满剩余高度，自己滚；
+     词库区（.fc-wordbank）钉在底部，最多占 30vh，自己滚。
+   选词、读文各滚各的，谁也顶不动谁。 */
+.fc-root[data-mode="passage_cloze"] .fc-passage-head {
+  flex: 0 0 auto;
+}
+.fc-root[data-mode="passage_cloze"] .fc-cloze-passage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+}
+.fc-root[data-mode="passage_cloze"] .fc-cloze-passage::-webkit-scrollbar {
+  display: none;
+}
+.fc-root[data-mode="passage_cloze"] .fc-blank-hint {
+  flex: 0 0 auto;
+  margin: 10px 0 8px;
+}
+.fc-root[data-mode="passage_cloze"] .fc-wordbank {
+  flex: 0 0 auto;
+  max-height: 30vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-top: 1px solid var(--line);
+  padding: 12px 2px 14px;
+}
+.fc-root[data-mode="passage_cloze"] .fc-wordbank::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------
+   cloze 答错时，补在错误选项上的那行中文释义。
+   cloze 的选项本身只有英文单词，答错后要让你知道
+   「我刚才选的那个词是什么意思」，再点「继续」才进词义页。
+   ------------------------------------------------------------ */
+.fc-opt-btn .fc-opt-plain {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 400;
+  color: #FF7A7A;
+  opacity: 0.95;
+}
+
+
+/* ------------------------------------------------------------
+   扩展块正文（blocks 里的 list / pairs / table / image）。
+   对应 script.js 的 BLOCK_BODY —— 沿用已有 type 的话，
+   这里一行都不用改；加新 type 才需要补一段样式。
+   ------------------------------------------------------------ */
+.fc-block-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--txt-sub);
+}
+
+/* list：近义词 / 反义词 / 易混词 */
+.fc-block-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.fc-block-list li {
+  margin-bottom: 6px;
+}
+.fc-block-list li:last-child {
+  margin-bottom: 0;
+}
+.fc-block-list .fc-block-cn {
+  color: var(--txt-sub);
+  margin-left: 8px;
+}
+
+/* pairs：常用短语 / 词形对照 */
+.fc-block-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fc-block-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.fc-block-pair:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.fc-pair-l {
+  font-weight: 600;
+  color: var(--txt-main);
+}
+.fc-pair-r {
+  color: var(--txt-sub);
+}
+
+/* table：词形变化 */
+.fc-block-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.fc-block-table th,
+.fc-block-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.fc-block-table th {
+  color: var(--txt-dim);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+.fc-block-table td {
+  color: var(--txt-sub);
+}
+
+/* image：词根图 / 示意图 */
+.fc-block-img {
+  max-width: 100%;
+  border-radius: 10px;
+  display: block;
+}
+
+/* ---------- 固定卡片：派生词 / 近义词 / 反义词 ----------
+   每条 = 词（可点发音） + 逐条「词性 + 释义」。
+   字段缺失时整张卡由 script.js 隐藏，这里不用管空态。 */
+.fc-rel-group + .fc-rel-group {
+  margin-top: 12px;
+}
+.fc-rel-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--txt-dim);
+  margin-bottom: 6px;
+}
+.fc-rel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.fc-rel-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.fc-rel-word {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--txt-main);
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.fc-rel-word:active {
+  opacity: 0.6;
+}
+.fc-rel-senses {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fc-rel-sense {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fc-rel-pos {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--txt-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.fc-rel-cn {
+  color: var(--txt-sub);
+}
+
+/* ---------- 拼写前确认浮层（容器内，取代原生 AlertDialog） ---------- */
+/* 配色对齐原来的原生弹窗：底 #1B2629 / 正文 #B7C4C8 / 主按钮 #00C08B */
+.fc-spell-ask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.fc-spell-ask[hidden] { display: none; }
+.fc-sa-box {
+  width: 100%;
+  max-width: 320px;
+  background: #1B2629;
+  border-radius: 14px;
+  padding: 20px 18px 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.fc-sa-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.fc-sa-sub {
+  color: #B7C4C8;
+  font-size: 13px;
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.fc-sa-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.fc-sa-btn {
+  background: none;
+  border: 0;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: #8C9DA2;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.fc-sa-btn:active { background: rgba(255, 255, 255, 0.06); }
+.fc-sa-go { color: #00C08B; font-weight: 600; }
+
+/* ============================================================
+   bubei_replica · 复刻版增量样式
+   对标「不背单词 · 暗黑复刻」参考页：
+     · 中性暗底 #121214 → 右下角透 #1a1522
+     · 词头 34px extrabold，义项 17px + 虚线下划线
+     · 词义页「信息卡 + 分段 tab」（派生 / 近义 / 扩展 / 笔记）
+     · 底部按钮改极简：文字 + 色条
+   ============================================================ */
+
+/* ---------- 1. 底色 ---------- */
+html, body { background: #121214; }
+.fc-root {
+  background: linear-gradient(168deg, #121214 0%, #131216 55%, #1a1522 100%);
+}
+
+/* ---------- 2. 单词 Hero ---------- */
+.fc-hero { margin-top: 10px; margin-bottom: 22px; }
+.fc-word {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: #f5f5f7;
+}
+.fc-word-syllable { font-size: 34px; letter-spacing: -0.01em; }
+.fc-phonetics { margin-top: 14px; gap: 12px; }
+.fc-pill {
+  background: #29292e;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 13px;
+  gap: 6px;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: #b9b9bf;
+}
+.fc-pill b { color: #b9b9bf; font-size: 11px; font-weight: 500; }
+.fc-speaker-ico { width: 12px; height: 12px; fill: #b9b9bf; }
+.fc-pill:active { background: #32323a; border-color: transparent; }
+.fc-hint-text { font-size: 14px; color: #7c7c82; line-height: 1.9; }
+
+/* ---------- 3. 义项：白粗 + 虚线下划线 ---------- */
+.fc-meaning-card {
+  border-bottom: 0;
+  gap: 14px;
+  padding: 0 0 8px;
+  margin-bottom: 20px;
+}
+.fc-sense { flex-wrap: wrap; align-items: baseline; gap: 18px; }
+.fc-pos {
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 400;
+  color: #a8a8ae;
+}
+.fc-mean-text {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f0f0f2;
+  line-height: 1.45;
+  padding-bottom: 5px;
+  border-bottom: 1.5px dashed #5a5a60;
+}
+.fc-sense + .fc-sense .fc-mean-text { font-weight: 400; color: #d5d5da; }
+.fc-sense-phonetic { font-size: 13px; color: #7c7c82; }
+.fc-hero-back { margin-bottom: 14px; }
+
+/* ---------- 4. 卡片 ---------- */
+.fc-card-block {
+  background: rgba(34, 34, 38, 0.9);
+  border: 0;
+  border-radius: 16px;
+  padding: 17px 18px;
+  margin-bottom: 14px;
+}
+.fc-block-header { margin-bottom: 10px; }
+.fc-block-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8c8c92;
+  text-transform: none;
+}
+.fc-block-tts { background: #2e2e33; color: #b9b9bf; }
+.fc-block-tts:active { background: #3a3a42; }
+.fc-en-sentence { font-size: 17px; line-height: 1.55; color: #ececef; }
+.fc-cn-sentence { font-size: 15px; line-height: 1.7; color: #c5c5ca; margin-top: 6px; }
+
+/* ---------- 5. 信息卡 tab ---------- */
+.fc-tabcard { margin-bottom: 14px; }
+.fc-tabcard[data-has="0"] { display: none; }
+.fc-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.fc-tab {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: #8c8c92;
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 7px 11px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.fc-tab.is-on { background: #38383e; color: #f0f0f2; font-weight: 600; }
+.fc-tab-hide { display: none !important; }
+
+.fc-tabcard > .fc-tabpanes {
+  background: rgba(34, 34, 38, 0.9);
+  border-radius: 16px;
+  padding: 17px 18px;
+  min-height: 110px;
+}
+.fc-tabcard > .fc-tabpanes > [data-pane] { display: none !important; }
+.fc-tabcard[data-tab="deriv"]  > .fc-tabpanes > [data-pane="deriv"],
+.fc-tabcard[data-tab="thes"]   > .fc-tabpanes > [data-pane="thes"],
+.fc-tabcard[data-tab="blocks"] > .fc-tabpanes > [data-pane="blocks"],
+.fc-tabcard[data-tab="note"]   > .fc-tabpanes > [data-pane="note"] { display: block !important; }
+.fc-tabcard > .fc-tabpanes > [data-pane][data-empty="1"] { display: none !important; }
+/* 卡中卡：内层面板去掉自己的卡片皮 */
+.fc-tabcard > .fc-tabpanes > [data-pane].fc-card-block {
+  background: transparent; border: 0; border-radius: 0; padding: 0; margin: 0;
+}
+.fc-tabcard > .fc-tabpanes > [data-pane="blocks"] > .fc-card-block {
+  background: transparent; border: 0; border-radius: 0; padding: 0; margin-bottom: 16px;
+}
+.fc-tabcard > .fc-tabpanes > [data-pane="blocks"] > .fc-card-block:last-child { margin-bottom: 0; }
+
+/* ---------- 6. 笔记 ---------- */
+.fc-note-area {
+  width: 100%;
+  min-height: 132px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #ececef;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.7;
+  padding: 0;
+}
+.fc-note-area::placeholder { color: #7c7c82; }
+.fc-note-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.fc-note-count { font-size: 12px; color: #7c7c82; font-variant-numeric: tabular-nums; }
+.fc-note-save {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 10px;
+  background: #2ec4a5;
+  color: #0c2620;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+.fc-note-save[disabled] { background: #26262b; color: #5a5a60; }
+.fc-note-save:active { transform: scale(0.96); }
+
+/* ---------- 7. 底部按钮：文字 + 色条 ---------- */
+.fc-actions {
+  gap: 0;
+  border-top: 0;
+  padding: 8px 20px calc(22px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, rgba(18, 18, 20, 0.92) 30%, #121214 100%);
+}
+.fc-actions .fc-btn { flex: 1; }
+.fc-btn {
+  flex-direction: column;
+  gap: 9px;
+  height: auto;
+  padding: 6px 0;
+  background: transparent;
+  border: 0;
+  color: #ececef;
+  font-size: 18px;
+  font-weight: 600;
+}
+.fc-btn:active { transform: none; opacity: 0.6; }
+.fc-btn .fc-ico { display: none; }
+.fc-btn .fc-bar {
+  display: block;
+  width: 22px;
+  height: 4px;
+  border-radius: 999px;
+  background: #4a4a4f;
+}
+.fc-btn-again { color: #ececef; }
+.fc-btn-again .fc-bar { background: #e34d64; }
+.fc-btn-hard .fc-bar { background: #e3a83c; }
+.fc-btn-good .fc-bar { background: #2ec4a5; }
+.fc-btn-again:active, .fc-btn-hard:active, .fc-btn-good:active {
+  background: transparent; border: 0; opacity: 0.6;
+}
+.fc-btn[disabled] { opacity: 0.35; }
+
+.fc-btn-continue {
+  flex: 1;
+  height: auto;
+  padding: 6px 0;
+  gap: 9px;
+  background: transparent;
+  border: 0;
+  color: #7c7c82;
+  font-size: 18px;
+  font-weight: 600;
+}
+.fc-btn-continue .fc-continue-line {
+  display: block !important;
+  width: 22px;
+  height: 4px;
+  margin-top: 0;
+  border-radius: 999px;
+  background: #4a4a4f;
+}
+.fc-btn-continue:not([disabled]) {
+  background: transparent; border: 0; color: #ececef; box-shadow: none;
+}
+.fc-btn-continue:not([disabled]) .fc-continue-line { background: #2ec4a5; }
+.fc-btn-continue:not([disabled]):active { transform: none; opacity: 0.6; box-shadow: none; }
+
+.fc-btn-primary {
+  flex: 1;
+  height: auto;
+  padding: 14px 0;
+  border: 0;
+  border-radius: 14px;
+  background: #2ec4a5;
+  color: #0c2620;
+  font-size: 16px;
+  font-weight: 700;
+}
+.fc-btn-primary:active { background: #29b096; }
+
+/* ---------- 8. choice / cloze 选项 ---------- */
+.fc-opt-btn { background: rgba(34, 34, 38, 0.9); border: 0; border-radius: 16px; }
+.fc-opt-btn:active { background: #29292e; }
+.fc-opt-btn.is-right { background: #1d4239 !important; border: 0 !important; }
+.fc-opt-btn.is-right .fc-opt-revealed-word,
+.fc-opt-btn.is-right .fc-opt-pos { color: #2ec4a5; }
+.fc-opt-btn.is-right .fc-opt-text { color: #d5d5da; }
+.fc-opt-btn.is-wrong { background: #4a1a24 !important; border: 0 !important; }
+.fc-opt-btn.is-wrong .fc-opt-revealed-word,
+.fc-opt-btn.is-wrong .fc-opt-pos { color: #e34d64; }
+.fc-opt-btn.is-wrong .fc-opt-text { color: #d5d5da; }
+.fc-cloze-box { background: rgba(34, 34, 38, 0.9); border: 0; border-radius: 16px; }
+
+/* ---------- 9. 拼写 ---------- */
+.fc-spellround { background: #121214; }
+.fc-sr-progress { color: #2ec4a5; }
+.fc-sr-slot.is-filled { border-bottom-color: #2ec4a5; }
+.fc-sr-next { background: #2ec4a5; border-color: #2ec4a5; color: #0c2620; }
+.fc-spell-input:focus { border-color: #2ec4a5; }
+.fc-spell-result.is-right { color: #2ec4a5; }
+.fc-spell-result.is-wrong { color: #e34d64; }
+.fc-top-known.is-on { color: #2ec4a5; background: rgba(46, 196, 165, 0.14); }
+
+/* ---------- 10. 收尾 ---------- */
+/* 底部按钮文字：三种评分一律白字，只靠色条区分（对齐参考页） */
+.fc-btn .fc-btn-label {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: inherit;
+}
+.fc-btn-continue > span { line-height: 1; }
+/* 笔记面板本身不带卡片皮，皮在 .fc-tabpanes 上 */
+.fc-tabcard > .fc-tabpanes > .fc-note-pane { padding: 0; }
+/* 信息卡里的关联词条：贴着参考页的字号 */
+.fc-rel-word { font-size: 16px; color: #ececef; }
+.fc-rel-cn { font-size: 15px; color: #d5d5da; }
+.fc-rel-pos { font-size: 14px; color: #a8a8ae; }
+.fc-rel-label { font-size: 12px; color: #8c8c92; letter-spacing: .06em; }

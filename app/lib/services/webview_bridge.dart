@@ -25,6 +25,7 @@ import 'js_log.dart';
 import 'scheduler.dart';
 import 'session_store.dart';
 import 'template_engine.dart';
+import 'template_fs.dart';
 import 'tts_engine.dart';
 import 'tts_log.dart';
 import 'tts_service.dart';
@@ -185,6 +186,20 @@ class WebViewBridge {
       final d = p['olderThanDays'];
       final n = d is num ? d.toInt() : int.tryParse('${d ?? ''}');
       return tts.purgeCache(olderThanDays: (n == null || n <= 0) ? null : n);
+    });
+
+    // ---- 模板文件接口（fs.*）----
+    // 让模板 / workflow.js 直接读写数据目录下的文件。默认白名单 books/，
+    // 页面里能自己加笔记文件、删卡、把卡挪到别的目录，不用回 Dart 层改。
+    // 边界：路径相对 Documents/Flashcard/，规范化后必须落在白名单内。
+    TemplateFs().registerInto(rpc);
+
+    // 书文件被模板改过之后（fs.write / fs.move / fs.delete），壳里那份
+    // 书列表缓存还是旧的 —— 不显式失效，页面就还在按老书跑，白改。
+    rpc.register('book.reload', (p) async {
+      final src = cardSource;
+      if (src is BookCardSource) src.invalidate();
+      return {'ok': true};
     });
   }
 

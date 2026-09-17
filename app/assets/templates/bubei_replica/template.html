@@ -1,0 +1,275 @@
+<div class="fc-root" data-state="front" data-mode="read" data-pre="">
+
+  <!-- 顶栏：标签 + 进度 -->
+  <header class="fc-top">
+    <div class="fc-top-left">
+      <span class="fc-tag" style="display:none;">
+        <svg viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5l8.5 14.5H3.5L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
+        <span class="fc-tag-text"></span>
+      </span>
+    </div>
+    <div class="fc-top-right">
+      <div class="fc-top-actions">
+        <button class="fc-top-btn" type="button" data-top="fav" title="收藏">
+          <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+        </button>
+        <button class="fc-top-btn fc-top-known" type="button" data-top="known" title="标熟（永久出队）">
+          <span>熟</span>
+        </button>
+        <button class="fc-top-btn fc-top-abc" type="button" data-top="spell" title="拼写测验">
+          <span>abc</span>
+        </button>
+        <button class="fc-top-btn" type="button" data-top="more" title="更多">
+          <svg viewBox="0 0 24 24"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </button>
+      </div>
+      <!-- 语篇选词专用：整段跳过（其它 mode 不显示，见 style.css） -->
+      <button class="fc-top-btn fc-top-pass" type="button" data-top="pass" title="跳过语篇填空">
+        <span>pass</span>
+      </button>
+      <span class="fc-counter">0 / 0</span>
+    </div>
+  </header>
+
+  <!-- ============ read · 正面 ============ -->
+  <section class="fc-face fc-front">
+    <div class="fc-hero">
+      <div class="fc-word-row">
+        <h1 class="fc-word"></h1>
+      </div>
+      <div class="fc-phonetics">
+        <div class="fc-pill fc-pill-us" data-role="tts-word">
+          <b>美</b>
+          <svg class="fc-speaker-ico" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          <span class="fc-phonetic-text"></span>
+        </div>
+      </div>
+      <div class="fc-hint-text">瞬间想起词义，选「认识」<br>思考后想起词义，选「模糊」</div>
+    </div>
+    <div class="fc-spacer"></div>
+  </section>
+
+  <!-- ============ read · 词义页 ============ -->
+  <section class="fc-face fc-back">
+    <div class="fc-hero fc-hero-back">
+      <div class="fc-word-row">
+        <h1 class="fc-word fc-word-syllable"></h1>
+      </div>
+      <div class="fc-phonetics">
+        <div class="fc-pill fc-pill-us" data-role="tts-word">
+          <b>美</b>
+          <svg class="fc-speaker-ico" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          <span class="fc-phonetic-text"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 核心释义：义项列表 -->
+    <div class="fc-meaning-card fc-senses"></div>
+
+    <!-- 真题例句卡片 -->
+    <div class="fc-card-block fc-sentence-block" style="display:none;">
+      <div class="fc-block-header">
+        <span class="fc-block-title">真题例句</span>
+        <button class="fc-block-tts" data-role="tts-sentence" title="朗读例句">
+          <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+        </button>
+      </div>
+      <div class="fc-en-sentence"></div>
+      <div class="fc-cn-sentence"></div>
+    </div>
+
+    <!-- ============ 信息卡：分段 tab ============
+         派生 / 近义 / 扩展 / 笔记 四段，同一时刻只显示一段。
+         内容由 script.js 的 renderBackFace() 灌进各自的 pane；
+         本模板尾部的 tab 控制器负责挑默认段、隐藏空段。 -->
+    <div class="fc-tabcard" data-tab="" data-has="1">
+      <div class="fc-tabbar">
+        <button class="fc-tab" type="button" data-tab-btn="deriv">派生</button>
+        <button class="fc-tab" type="button" data-tab-btn="thes">近义</button>
+        <button class="fc-tab" type="button" data-tab-btn="blocks">扩展</button>
+        <button class="fc-tab" type="button" data-tab-btn="note">笔记</button>
+      </div>
+      <div class="fc-tabpanes">
+        <!-- 派生词 -->
+        <div class="fc-card-block fc-deriv-block" data-pane="deriv" style="display:none;">
+          <div class="fc-block-header"><span class="fc-block-title">派生词</span></div>
+          <div class="fc-block-body fc-deriv-body"></div>
+        </div>
+        <!-- 近义词 / 反义词 -->
+        <div class="fc-card-block fc-thes-block" data-pane="thes" style="display:none;">
+          <div class="fc-block-header"><span class="fc-block-title">近义词 / 反义词</span></div>
+          <div class="fc-block-body fc-thes-body"></div>
+        </div>
+        <!-- 扩展块：内容全部来自 json 的 blocks（词组 / 词根 / 词形变化…） -->
+        <div class="fc-blocks" data-pane="blocks"></div>
+        <!-- 笔记（本地留存，key = fc_note_<cardId>） -->
+        <div class="fc-note-pane" data-pane="note">
+          <textarea class="fc-note-area" placeholder="写下你的笔记…" maxlength="1000" spellcheck="false"></textarea>
+          <div class="fc-note-foot">
+            <span class="fc-note-count">0/1000</span>
+            <button class="fc-note-save" type="button" data-note-save disabled>保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 块模板：新增 type 时只动 script.js 里的 BLOCK_BODY -->
+    <template id="fc-block-tpl">
+      <div class="fc-card-block">
+        <div class="fc-block-header"><span class="fc-block-title"></span></div>
+        <div class="fc-block-body"></div>
+      </div>
+    </template>
+
+    <div class="fc-scroll-pad"></div>
+  </section>
+
+  <!-- ============ choice · 英选义 ============ -->
+  <section class="fc-face fc-choice">
+    <div class="fc-hero">
+      <div class="fc-word-row">
+        <h1 class="fc-word"></h1>
+      </div>
+      <div class="fc-phonetics">
+        <div class="fc-pill fc-pill-us" data-role="tts-word">
+          <b>美</b>
+          <svg class="fc-speaker-ico" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          <span class="fc-phonetic-text"></span>
+        </div>
+      </div>
+      <div class="fc-hint-text">先回想词义再选择，想不起来「看答案」</div>
+    </div>
+    <!-- 四大选项卡片挂载区 -->
+    <div class="fc-options" data-for="choice"></div>
+  </section>
+
+  <!-- ============ cloze · 填空选词 ============ -->
+  <section class="fc-face fc-cloze">
+    <div class="fc-hero">
+      <div class="fc-block-title" style="margin-bottom:8px;">选词填空</div>
+      <div class="fc-cloze-box"></div>
+      <div class="fc-hint-text" style="margin-top:14px;">请选择适合语境的正确单词</div>
+    </div>
+    <div class="fc-options" data-for="cloze"></div>
+  </section>
+
+  <!-- ============ spell · 拼写测验（顶栏 abc 进入） ============ -->
+  <section class="fc-face fc-spell">
+    <div class="fc-hero">
+      <div class="fc-block-title" style="margin-bottom:12px;">拼写测验</div>
+      <div class="fc-spell-cn"></div>
+      <input class="fc-spell-input" type="text" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false"
+             placeholder="拼出对应的英文单词">
+      <div class="fc-spell-result"></div>
+    </div>
+    <div class="fc-spacer"></div>
+  </section>
+
+  <!-- ============ passage · 语篇通读（辅助记忆） ============ -->
+  <section class="fc-face fc-passage">
+    <div class="fc-passage-head">
+      <div class="fc-passage-title"></div>
+      <button class="fc-block-tts" data-role="tts-passage" title="朗读全文">
+        <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      </button>
+    </div>
+    <div class="fc-passage-body"></div>
+    <div class="fc-passage-cn"></div>
+    <div class="fc-hint-text" style="margin-top:16px;">点按划线单词可查看释义</div>
+    <div class="fc-passage-tip"></div>
+    <div class="fc-spacer"></div>
+  </section>
+
+  <!-- ============ passage_cloze · 语篇选词（多邻国式填词） ============ -->
+  <section class="fc-face fc-passage-cloze">
+    <div class="fc-passage-head">
+      <div class="fc-passage-title"></div>
+    </div>
+    <div class="fc-cloze-passage"></div>
+    <div class="fc-blank-hint"></div>
+    <div class="fc-wordbank"></div>
+  </section>
+
+  <!-- ============ read 正面三档按钮 ============ -->
+  <footer class="fc-actions fc-actions-front">
+    <button class="fc-btn fc-btn-again" data-action="to-meaning" data-pre="again">
+      <span class="fc-btn-label">忘记了</span><span class="fc-bar"></span>
+    </button>
+    <button class="fc-btn fc-btn-hard" data-action="to-meaning" data-pre="hard">
+      <span class="fc-btn-label">模糊</span><span class="fc-bar"></span>
+    </button>
+    <button class="fc-btn fc-btn-good" data-action="to-meaning" data-pre="good">
+      <span class="fc-btn-label">认识</span><span class="fc-bar"></span>
+    </button>
+  </footer>
+
+  <!-- ============ read 词义页按钮 ============ -->
+  <footer class="fc-actions fc-actions-back">
+    <button class="fc-btn fc-btn-again" data-action="answer" data-rating="again">
+      <span class="fc-btn-label">记错了</span><span class="fc-bar"></span>
+    </button>
+    <button class="fc-btn fc-btn-good" data-action="answer" data-rating="next">
+      <span class="fc-btn-label">下一词</span><span class="fc-bar"></span>
+    </button>
+  </footer>
+
+  <!-- ============ passage 底部：进入单词背诵 ============ -->
+  <footer class="fc-actions fc-actions-passage">
+    <button class="fc-btn-primary" data-action="start-drill">进入单词背诵</button>
+  </footer>
+
+  <!-- ============ spell · 底部操作条 ============ -->
+  <footer class="fc-actions fc-actions-spell">
+    <button class="fc-btn fc-btn-again" data-action="spell-exit">
+      <span class="fc-btn-label">返回</span><span class="fc-bar"></span>
+    </button>
+    <button class="fc-btn fc-btn-good" data-action="spell-check">
+      <span class="fc-btn-label">检查</span><span class="fc-bar"></span>
+    </button>
+  </footer>
+
+  <!-- ============ choice / cloze / 语篇选词 底部操作条 ============ -->
+  <footer class="fc-actions fc-actions-next">
+    <button class="fc-btn-continue" data-action="submit" disabled>
+      <span>继续</span>
+      <div class="fc-continue-line"></div>
+    </button>
+  </footer>
+
+  <!-- ============ 拼写轮 ============ -->
+  <section class="fc-spellround" hidden>
+    <div class="fc-sr-head">
+      <span class="fc-sr-progress">0 / 0</span>
+      <button class="fc-sr-quit" type="button" data-sr="quit">结束拼写</button>
+    </div>
+    <div class="fc-sr-body">
+      <div class="fc-sr-kind"></div>
+      <div class="fc-sr-cn"></div>
+      <div class="fc-sr-prompt"></div>
+      <div class="fc-sr-tries"></div>
+    </div>
+    <div class="fc-sr-result"></div>
+    <div class="fc-sr-actions">
+      <button class="fc-sr-btn" type="button" data-sr="skip">跳过</button>
+      <button class="fc-sr-btn" type="button" data-sr="hint">提示</button>
+      <button class="fc-sr-btn" type="button" data-sr="forget">忘记了</button>
+      <button class="fc-sr-btn fc-sr-next" type="button" data-sr="next" style="display:none">继续</button>
+    </div>
+    <input class="fc-sr-input" type="text" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false">
+  </section>
+
+  <!-- ============ 拼写前确认浮层 ============ -->
+  <section class="fc-spell-ask" hidden>
+    <div class="fc-sa-box">
+      <div class="fc-sa-title">这一轮拼写吗？</div>
+      <div class="fc-sa-sub"></div>
+      <div class="fc-sa-actions">
+        <button class="fc-sa-btn" type="button" data-sa="skip">跳过</button>
+        <button class="fc-sa-btn fc-sa-go" type="button" data-sa="go">开始拼写</button>
+      </div>
+    </div>
+  </section>
+</div>

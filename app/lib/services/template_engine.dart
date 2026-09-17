@@ -128,6 +128,24 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
       post(o);
     },
     undo:    function () { post({type:"undo"}); },
+    // ---- 文件接口（fs.*）：路径相对 Documents/Flashcard/，壳侧白名单校验 ----
+    fs: {
+      info:   function ()              { return call("fs.info", {}); },
+      list:   function (path)          { return call("fs.list", {path: path}); },
+      read:   function (path)          { return call("fs.read", {path: path}); },
+      write:  function (path, content) { return call("fs.write", {path: path, content: content}); },
+      append: function (path, content) { return call("fs.append", {path: path, content: content}); },
+      del:    function (path, o)       { return call("fs.delete", Object.assign({path: path}, o || {})); },
+      move:   function (from, to, o)   { return call("fs.move", Object.assign({from: from, to: to}, o || {})); },
+      copy:   function (from, to, o)   { return call("fs.copy", Object.assign({from: from, to: to}, o || {})); },
+      mkdir:  function (path)          { return call("fs.mkdir", {path: path}); },
+      stat:   function (path)          { return call("fs.stat", {path: path}); },
+      exists: function (path)          { return call("fs.exists", {path: path}); }
+    },
+    // ---- 改完书文件后让壳丢掉旧缓存，下次取卡重新读盘 ----
+    book: {
+      reload: function () { return call("book.reload", {}); }
+    },
     // ---- 拼写轮（一轮走完触发，循环在模板里跑）----
     spellDone:     function () { post({type:"spellDone"}); },
     spellProgress: function (d, t) { post({type:"spellProgress", done:d, total:t}); },
