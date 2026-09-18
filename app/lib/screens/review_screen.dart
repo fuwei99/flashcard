@@ -349,7 +349,7 @@ class _ReviewScreenState extends State<ReviewScreen>
     final choices = (card != null &&
             (stepMode == StudyMode.choice || stepMode == StudyMode.cloze))
         ? _choicesFor(StudyStep(card, stepMode, round))
-        : const <Map<String, String>>[];
+        : const <Map<String, dynamic>>[];
 
     await _bridge.mountCard(
       ctrl,
@@ -682,63 +682,91 @@ class _ReviewScreenState extends State<ReviewScreen>
     await SwitchLog.write('switch', 'mount#$gen 完成 ${ms}ms');
   }
 
-  /// 生成干扰项
-  ///   choice : 中文义 —— 必须带词性，且带上该项原本的英文单词，便于选错后揭晓
-  ///   cloze  : 英文词
-  List<Map<String, String>> _choicesFor(StudyStep step) {
+  /// 生成干扰项（**只返回干扰项**，正确项由模板自己补进去）：
+  ///   1. 卡上预备的 `confusions`（易混项）优先 —— 词 + 释义都现成，最有针对性；
+  ///   2. 不够 3 个，再从**整本书**的干扰池随机抽（不再局限本章，
+  ///      一个词的章节也能出题）；
+  ///   3. 去重：选义看中文释义、填词看英文词，避免选项撞车。
+  /// 选项形状 {id, fields:{word, senses:[…]}}，与卡片同构，模板直接渲染。
+  List<Map<String, dynamic>> _choicesFor(StudyStep step) {
     final cur = step.card;
     if (cur == null) return const [];
-    // 缺字段的卡直接作废对应考法（会话编排里已过滤，这里再兜一道，
-    // 保证界面上永远不会出现「空题干 + 无选项」的死页面）：
-    //   没有例句 -> 挖不出空，填空作废
-    //   没有词义 -> 出不了选项，选义作废
+    // 缺字段的卡直接作废对应考法（会话编排里已过滤，这里再兜一道）：
+    //   没有例句 -> 挖不出空，填空作废；没有词义 -> 出不了选项，选义作废
     if (step.mode == StudyMode.cloze && !cur.hasSentence) return const [];
     if (step.mode == StudyMode.choice && cur.senses.isEmpty) return const [];
-    final all = widget.distractorPool;
     final isChoice = step.mode == StudyMode.choice;
 
-    // 选义用「纯中文释义」（剥掉括号里的短语，否则答案直接写在脸上）
-    String textOf(FlashCard c) => isChoice
-        ? c.meaningPlain
-        : (c.fields['word'] ?? c.word).toString().trim();
-
-    // 词性前缀：走 posLabel，多词性自动用 / 连（adj./vt.）
-    String posOf(FlashCard c) => isChoice ? c.posLabel : '';
-
-    String wordOf(FlashCard c) => (c.fields['word'] ?? c.word).toString().trim();
-
-    final rightText = textOf(cur);
-    if (rightText.isEmpty) return const [];
-
-    final pool = <Map<String, String>>[];
-    final seen = <String>{rightText};
-    for (final c in all) {
-      if (c.id == cur.id) continue;
-      final t = textOf(c);
-      if (t.isEmpty || seen.contains(t)) continue;
-      seen.add(t);
-      pool.add({
-        'word': wordOf(c),
-        'text': t,
-        'pos': posOf(c),
-        'plain': c.meaningPlain,
-        'right': 'false',
-      });
+    // 去重键：选义看中文释义（剥括号短语，否则答案写在脸上），填词看英文词
+    String keyOf(Map<String, dynamic> f) {
+      if (!isChoice) return (f['word'] ?? '').toString().trim().toLowerCase();
+      final raw = f['senses'];
+      if (raw is List && raw.isNotEmpty) {
+        final s0 = raw.first;
+        if (s0 is Map) {
+          final cn = s0['cn'];
+          final t = (cn is List ? cn.join('；') : (cn ?? '')).toString();
+          return FlashCard.stripParenthetical(t).trim();
+        }
+      }
+      return (f['cn'] ?? f['meaning'] ?? '').toString().trim();
     }
-    pool.shuffle();
 
-    final opts = <Map<String, String>>[
-      {
-        'word': wordOf(cur),
-        'text': rightText,
-        'pos': posOf(cur),
-        'plain': cur.meaningPlain,
-        'right': 'true',
-      },
-      ...pool.take(3),
-    ]..shuffle();
+    final out = <Map<String, dynamic>>[];
+    final seen = <String>{keyOf(cur.fields)};
 
-    return opts;
+    void push(String id, Map<String, dynamic> fields) {
+      final k = keyOf(fields);
+      if (k.isEmpty || !seen.add(k)) return;
+      out.add({'id': id, 'fields': fields});
+    }
+
+    Map<String, dynamic> shape(FlashCard c) {
+      final f = <String, dynamic>{'word': c.word};
+      final s = c.fields['senses'];
+      if (s is List && s.isNotEmpty) {
+        f['senses'] = s;
+      } else if (c.meaningPlain.isNotEmpty) {
+        f['senses'] = <Map<String, dynamic>>[
+          {'pos': c.posLabel, 'cn': <String>[c.meaningPlain]}
+        ];
+      }
+      return f;
+    }
+
+    // 1. 卡上预备的易混项优先
+    final conf = cur.confusions;
+    for (var i = 0; i < conf.length && out.length < 3; i++) {
+      final e = conf[i];
+      final w = (e['word'] ?? '').toString().trim();
+      if (w.isEmpty) continue;
+      final f = <String, dynamic>{'word': w};
+      final senses = e['senses'];
+      if (senses is List && senses.isNotEmpty) {
+        f['senses'] = senses;
+      } else if ((e['cn'] ?? e['meaning']) != null) {
+        f['senses'] = <Map<String, dynamic>>[
+          {
+            'pos': (e['pos'] ?? '').toString(),
+            'cn': <String>[(e['cn'] ?? e['meaning']).toString()],
+          }
+        ];
+      }
+      push('conf_${cur.id}_$i', f);
+    }
+
+    // 2. 不够 -> 从整本书的池子里随机补
+    if (out.length < 3) {
+      final pool = widget.distractorPool.toList()..shuffle();
+      for (final c in pool) {
+        if (out.length >= 3) break;
+        if (c.id == cur.id) continue;
+        push(c.id, shape(c));
+      }
+    }
+
+    out.shuffle();
+    return out.take(3).toList();
   }
 
   @override

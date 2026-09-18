@@ -85,13 +85,22 @@ class HomeScreenState extends State<HomeScreen> {
     return n;
   }
 
-  /// 干扰项池：只从**已经载入的**单元里取，避免为了出题把整本书读进来
-  List<FlashCard> _poolFromUnits(List<StudyUnit> units) {
+  /// 干扰项池：把本次涉及的书**整本**摊开抽词，而不是只看这一轮的单元。
+  /// 否则「一个词的章节 / 小会话」凑不齐 3 个干扰项，choice/cloze 直接作废。
+  List<FlashCard> _poolFromUnits(
+      List<StudyUnit> units, Map<String, Book> bookOfCard) {
+    final books = <Book>{};
+    for (final u in units) {
+      final src =
+          u.cards.isNotEmpty ? u.cards : (u.passageCards ?? const <FlashCard>[]);
+      if (src.isEmpty) continue;
+      final b = bookOfCard[src.first.id];
+      if (b != null) books.add(b);
+    }
     final out = <FlashCard>[];
     final seen = <String>{};
-    for (final u in units) {
-      final src = u.passageCards ?? u.cards;
-      for (final c in src) {
+    for (final b in books) {
+      for (final c in b.allCards) {
         if (seen.add(c.id)) out.add(c);
       }
     }
@@ -170,7 +179,7 @@ class HomeScreenState extends State<HomeScreen> {
           units: us,
           template: tpl,
           fieldsOrder: b?.fieldsOrder ?? const <String>[],
-          distractorPool: _poolFromUnits(us),
+          distractorPool: _poolFromUnits(us, bookOfCard),
           store: widget.store,
           settings: widget.settings,
           isCard: isCard,

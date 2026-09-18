@@ -335,7 +335,7 @@ class WebViewBridge {
     required int index,
     required int total,
     Map<String, dynamic> session = const {},
-    List<Map<String, String>> choices = const [],
+    List<Map<String, dynamic>> choices = const [],
   }) {
     _currentCardId = card?.id;
 
@@ -378,7 +378,7 @@ class WebViewBridge {
     required int index,
     required int total,
     Map<String, dynamic> session = const {},
-    List<Map<String, String>> choices = const [],
+    List<Map<String, dynamic>> choices = const [],
   }) async {
     _currentCardId = card?.id;
 

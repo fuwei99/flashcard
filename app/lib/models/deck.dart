@@ -171,6 +171,23 @@ class FlashCard {
   bool get hasSentence =>
       (fields['sentence_en'] ?? '').toString().trim().isNotEmpty;
 
+  /// 预备「易混项」：卡里显式给几个长得像 / 意思近的词当干扰项，
+  /// 出题时**优先**用它们（顺序照样打乱），没有才回落到整本书随机抽词。
+  ///
+  ///   "confusions": [
+  ///     {"word":"accident","senses":[{"pos":"n.","cn":["事故；意外"]}]},
+  ///     {"word":"occasion","senses":[{"pos":"n.","cn":["场合；时机"]}]}
+  ///   ]
+  /// 宽容读取简写：{"word":"accident","pos":"n.","cn":"事故；意外"}
+  List<Map<String, dynamic>> get confusions {
+    final raw = fields['confusions'];
+    if (raw is! List) return const [];
+    return [
+      for (final e in raw)
+        if (e is Map) Map<String, dynamic>.from(e),
+    ];
+  }
+
   /// 关联词通用读取（派生词 / 近义词 / 反义词形状一致，共用一套解析）
   List<RelatedWord> _related(String key) {
     final raw = fields[key];

@@ -160,7 +160,8 @@ class PageListBody extends StatelessWidget {
           ],
           template: template!,
           fieldsOrder: book.fieldsOrder,
-          distractorPool: cards,
+          // 干扰池 = 整本书（不再只限本章）：一个词的章节也出得了题
+          distractorPool: book.allCards,
           store: store,
           settings: settings,
           isCard: template!.engine == 'srs_basic',

@@ -1113,8 +1113,9 @@
       if (byId[o.id]) return;
       byId[o.id] = 1; cands.push(o);
     }
-    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
+    // 壳给的 choices（易混项 / 整本书池）优先
     arr(c.choices).forEach(add);
+    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
     var opts = shuffle(cands, ((String(c.id || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
     opts.push(c);
     S.sentCloze.opts = shuffle(opts, 99);
@@ -1346,10 +1347,10 @@
       if (byId[o.id]) return;
       byId[o.id] = 1; cands.push(o);
     }
-    // 优先用本会话学过的完整卡（learn 阶段 mount 过，带 fields）
-    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
-    // 再用壳给的 choices 补足
+    // 壳给的 choices 是「卡上易混项 / 整本书池」里挑好的干扰项，优先用
     arr(cur && cur.choices).forEach(add);
+    // 不够再用本会话学过的卡补足（learn 阶段 mount 过，带 fields）
+    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
     var opts = shuffle(cands, ((String((cur && cur.id) || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
     opts.push(cur);
     S.choiceOpts = shuffle(opts, 99);
