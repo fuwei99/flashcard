@@ -1,6 +1,21 @@
 /// 卡牌包 / 卡组 / 卡片 数据模型
 library;
 
+/// 把可能是 List 的释义压成字符串。
+/// Dart 的 `List.toString()` 会吐 `[税, 负担]`（带方括号和空格），
+/// theme_vocab 这类书的 cn 就是数组，直接 toString 会把方括号漏到界面上。
+/// 凡是可能为 List 的释义字段，一律走这里。
+String cnToString(dynamic v) {
+  if (v == null) return '';
+  if (v is List) {
+    return v
+        .map((e) => e == null ? '' : e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .join('；');
+  }
+  return v.toString().trim();
+}
+
 /// 一个义项：词性 + 释义（+ 多音词的音标）。
 /// 一词多义 / 一词多性就靠它拆开，
 /// 不再用「一个 pos 字符串 + 一个 meaning 字符串」硬凑。
@@ -13,11 +28,15 @@ class Sense {
 
   bool get isEmpty => cn.trim().isEmpty;
 
-  factory Sense.fromJson(Map<dynamic, dynamic> j) => Sense(
-        pos: (j['pos'] ?? '').toString().trim(),
-        cn: (j['cn'] ?? j['meaning'] ?? '').toString().trim(),
-        phonetic: (j['phonetic_us'] ?? j['phonetic'] ?? '').toString().trim(),
-      );
+  factory Sense.fromJson(Map<dynamic, dynamic> j) {
+    var cn = cnToString(j['cn']);
+    if (cn.isEmpty) cn = cnToString(j['meaning']);
+    return Sense(
+      pos: (j['pos'] ?? '').toString().trim(),
+      cn: cn,
+      phonetic: (j['phonetic_us'] ?? j['phonetic'] ?? '').toString().trim(),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         if (pos.isNotEmpty) 'pos': pos,
@@ -62,7 +81,7 @@ class RelatedWord {
     }
     // 平铺简写兜底：pos + cn 直接挂在条目上
     if (out.isEmpty) {
-      final cn = (j['cn'] ?? j['meaning'] ?? j['v'] ?? '').toString().trim();
+      final cn = cnToString(j['cn'] ?? j['meaning'] ?? j['v']);
       if (cn.isNotEmpty) {
         out.add(Sense(pos: (j['pos'] ?? '').toString().trim(), cn: cn));
       }
@@ -117,7 +136,7 @@ class FlashCard {
       }
       if (out.isNotEmpty) return out;
     }
-    final cn = (fields['meaning'] ?? '').toString().trim();
+    final cn = cnToString(fields['meaning']);
     if (cn.isEmpty) return const [];
     return [Sense(pos: (fields['pos'] ?? '').toString().trim(), cn: cn)];
   }
@@ -143,7 +162,7 @@ class FlashCard {
   /// 否则「…(prevail over/against)」这种会把答案直接写在脸上。
   /// 优先用 json 里显式给的 `meaning_plain`，没有就从 senses 现场派生。
   String get meaningPlain {
-    final explicit = (fields['meaning_plain'] ?? '').toString().trim();
+    final explicit = cnToString(fields['meaning_plain']);
     if (explicit.isNotEmpty) return explicit;
     final parts = senses
         .map((s) => stripParenthetical(s.cn))

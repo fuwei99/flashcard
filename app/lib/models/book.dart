@@ -105,7 +105,7 @@ class Passage {
     return Passage(
       title: (j['title'] ?? '').toString(),
       text: text,
-      cn: (j['cn'] ?? j['translation'] ?? '').toString(),
+      cn: cnToString(j['cn'] ?? j['translation']),
     );
   }
 

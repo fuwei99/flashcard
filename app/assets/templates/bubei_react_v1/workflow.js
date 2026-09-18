@@ -516,9 +516,36 @@
   // ============================================================
   //  会话启动 / 续上
   // ============================================================
+  /* 断点是否真的属于当前 plan 的当前 unit？
+     壳的 session.load 只有一份全局断点，跨书 / 跨章不区分：
+     A 章学到一半退出，点进 B 章时会原样喂回来，把老进度
+     (learnRating / effort / graduated …) 套到 B 章的卡上，还强行
+     phase = learn —— 结果就是「所有书都跳过篇章」。
+     这里用卡 id 有没有交集判：毫无交集 = 脏断点，丢弃重开，
+     让 startUnit() 正常走 passage。 */
+  function savedBelongsToUnit(sv, u) {
+    var cur = {};
+    ((u && u.cards) || []).forEach(function (c) { cur[c.id] = 1; });
+    var ids = [];
+    ["learnRating", "effort"].forEach(function (k) {
+      var o = sv[k];
+      if (o && typeof o === "object" && !Array.isArray(o)) ids = ids.concat(Object.keys(o));
+    });
+    ["graduated", "provisional"].forEach(function (k) {
+      var a = sv[k];
+      if (Array.isArray(a)) ids = ids.concat(a);
+    });
+    if (!ids.length) return false;         // 空断点：一点进度都没有，直接重开走篇章
+    for (var i = 0; i < ids.length; i++) { if (cur[ids[i]]) return true; }
+    return false;                          // 有进度但一张都对不上 = 跨章脏断点
+  }
+
   function restoreSession(sv) {
     var ui = sv.unitIdx || 0;
     if (ui < 0 || ui >= S.units.length) return false;
+    var okUnit = savedBelongsToUnit(sv, S.units[ui]);
+    log("restore? unitIdx=" + ui + " savedPhase=" + (sv && sv.phase) + " 同unit=" + okUnit);
+    if (!okUnit) return false;
     S.unitIdx = ui;
     S.retestPool = (sv.retestPool || []).filter(function (id) { return !!cardMeta(id); });
     S.effort = sv.effort || {};
@@ -554,6 +581,8 @@
     _committed = {};
     var _c0 = ((plan.units || [])[0] || {}).cards || [];
     log("start units=" + (plan.units || []).length + " retestModes=" + JSON.stringify(plan.retestModes || []) + " card0modes=" + JSON.stringify((_c0[0] || {}).modes || []));
+    var _u0 = (plan.units || [])[0] || {};
+    log("u0 hasPassage=" + !!_u0.hasPassage + " readFirst=" + !!_u0.readFirst + " passage=" + !!_u0.passage + " segs=" + (((_u0.passage || {}).segments || []).length) + " savedPhase=" + (saved && saved.session && saved.session.phase));
     S = {
       units: plan.units || [],
       retestModes: (function () {

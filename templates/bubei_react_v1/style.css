@@ -18,3 +18,20 @@ html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;overscroll-b
 .border-\[\#8a8a90\]{border-color:#8a8a90}
 .decoration-\[\#e3a83c\]{text-decoration-color:#e3a83c}
 .pt-\[24px\]{padding-top:24px}
+
+/* ===== 江锋 2026-09-18：语篇/语篇填空 对标 dark 优化 ===== */
+.fc-pg-title{font-size:17px;font-weight:800;color:#f5f5f7;letter-spacing:.2px}
+.fc-pg-tag{font-size:12px;color:#a8a8ae;background:#29292e;border-radius:5px;padding:3px 8px}
+.fc-pg-body{font-size:17px;line-height:1.95;color:#d5d5da}
+.fc-pg-cloze{font-size:16px}
+.fc-pg-cn{font-size:14px;line-height:1.8;color:#96a5ab}
+.fc-pg-pw{color:#00c795;font-weight:700;border-bottom:2px solid rgba(0,199,149,.45);padding-bottom:1px;cursor:pointer}
+.fc-pg-pw:active{background:rgba(0,199,149,.16)}
+.fc-pg-word{color:#d5d5da;font-weight:600;border-bottom:1.5px dotted rgba(255,255,255,.25);padding-bottom:1px;cursor:pointer}
+.fc-pg-cn-pw{color:#00c795;font-weight:700;border-bottom:2px solid rgba(0,199,149,.45);padding-bottom:1px;cursor:pointer}
+.fc-pg-cn-pw:active{background:rgba(0,199,149,.16)}
+.fc-dot-teal{background:#00c795}
+/* 空格：1:1 复刻 bubei_dark 的 .fc-blank 三态，不自造发光 */
+.fc-blank{display:inline-block;min-width:56px;text-align:center;color:#58686e;border-bottom:2px solid rgba(255,255,255,.16);margin:0 2px;padding:0 2px;font-weight:700;cursor:pointer;transition:all .15s}
+.fc-blank.is-active{color:#00c795;border-bottom-color:#00c795;background:rgba(0,199,149,.16);border-radius:4px 4px 0 0}
+.fc-blank.is-filled{color:#fff;border-bottom-color:#00c795}

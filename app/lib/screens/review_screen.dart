@@ -718,7 +718,7 @@ class _ReviewScreenState extends State<ReviewScreen>
           return FlashCard.stripParenthetical(t).trim();
         }
       }
-      return (f['cn'] ?? f['meaning'] ?? '').toString().trim();
+      return cnToString(f['cn'] ?? f['meaning']);
     }
 
     final out = <Map<String, dynamic>>[];
@@ -757,7 +757,7 @@ class _ReviewScreenState extends State<ReviewScreen>
         f['senses'] = <Map<String, dynamic>>[
           {
             'pos': (e['pos'] ?? '').toString(),
-            'cn': <String>[(e['cn'] ?? e['meaning']).toString()],
+            'cn': <String>[cnToString(e['cn'] ?? e['meaning'])],
           }
         ];
       }

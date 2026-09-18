@@ -211,8 +211,9 @@
     var body = "";
     if (tab === "colloc") {
       body = arr(f.collocations).map(function (c, ci) {
-        var mIdx = c.m == null ? 0 : c.m; var bound = c.m !== -1 && details.length > mIdx && mIdx >= 0;
-        return '<p class="mb-[15px] flex items-baseline text-[16px] leading-snug"><span ' + (bound ? 'data-act="meaning" data-m="' + mIdx + '"' : "") + ' class="' + (bound ? "cursor-pointer pb-[4px] text-[#ececef] underline decoration-dashed decoration-[#5a5a60] decoration-[1.5px] underline-offset-[6px] " : "text-[#ececef]") + '">' + esc(c.en) + '</span><span class="ml-[13px] text-[#d5d5da]">' + esc(c.cn) + '</span>' + (c.tag ? '<span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">' + esc(c.tag) + "</span>" : "") + '</p>';
+        var mIdx = c.m == null ? 0 : c.m; var own = arr(c.examples).length > 0;
+        var bound = own || (c.m !== -1 && details.length > mIdx && mIdx >= 0);
+        return '<p class="mb-[15px] flex items-baseline text-[16px] leading-snug"><span ' + (bound ? 'data-act="phr" data-i="' + ci + '"' : "") + ' class="' + (bound ? "cursor-pointer pb-[4px] text-[#ececef] underline decoration-dashed decoration-[#5a5a60] decoration-[1.5px] underline-offset-[6px] " : "text-[#ececef]") + '">' + esc(c.en) + '</span><span class="ml-[13px] text-[#d5d5da]">' + esc(c.cn) + '</span>' + (c.tag ? '<span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">' + esc(c.tag) + "</span>" : "") + '</p>';
       }).join("");
     } else if (tab === "deriv") {
       var derivs = arr(f.derivatives);
@@ -361,7 +362,7 @@
     var bg = S.screen === "learn" ? LEARN_BG : BG;
     var counter = ((S.idx || 0) + 1) + "/" + (S.retestTotal || 1);
     var h = '<div class="relative flex h-full flex-col overflow-hidden text-[#f0f0f2]" style="background:' + bg + '">';
-    if (S.phase === "cards" && !S.browse) h += topBar(counter, { canUndo: S.face === "back" && S.history.length > 0, fav: !!S.favs[card.id], showKnown: S.face === "front" });
+    if (S.phase === "cards" && !S.browse) h += topBar(counter, { canUndo: S.face === "back" && S.history.length > 0, fav: !!S.favs[card.id], showKnown: true });
     if (S.phase === "cards" && S.face === "front") {
       if (S.screen === "learn") {
         h += '<div data-scroll="learn-front" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="mt-[26px] space-y-[13px] px-[34px]"><div class="h-[26px] w-[168px] rounded-full bg-[#222226]"></div><div class="h-[26px] w-[100px] rounded-full bg-[#222226]"></div></div><div class="mx-4 mt-[56px] rounded-[16px] bg-[#28282c]/80 px-[18px] py-[19px]">' + clickable(sentenceText(card), card.fields.word, S.dictWord, "text-[17px] leading-[1.6] text-[#ececef]") + (S.hinted ? '<p class="mt-[8px] text-[15px] leading-relaxed text-[#c5c5ca]">' + esc((card.fields.sentence || {}).cn) + "</p>" : "") + "</div></div>";
@@ -393,7 +394,7 @@
     while ((m = re.exec(s)) !== null) {
       if (m.index > last) out += esc(s.slice(last, m.index));
       var en = String(m[2]).split("|")[0];
-      out += '<span data-act="word" data-w="' + esc(en) + '" class="cursor-pointer font-semibold text-[#f0a824] underline decoration-dashed decoration-[#f0a824]/50 decoration-[1.5px] underline-offset-[5px]">' + esc(m[1]) + "</span>";
+      out += '<span data-act="word" data-w="' + esc(en) + '" class="fc-pg-cn-pw cursor-pointer">' + esc(m[1]) + "</span>";
       last = m.index + m[0].length;
     }
     if (last < s.length) out += esc(s.slice(last));
@@ -403,16 +404,16 @@
   function ovPassage() {
     var p = S.passage || {}; var segs = arr(p.segments);
     var body = segs.map(function (x) {
-      if (x.w) return '<span data-act="word" data-w="' + esc(x.w) + '" class="mx-[2px] cursor-pointer pb-[3px] font-bold text-[#f0a824] underline decoration-dashed decoration-[#f0a824]/50 decoration-[1.5px] underline-offset-[6px]">' + esc(x.w) + "</span>";
+      if (x.w) return '<span data-act="word" data-w="' + esc(x.w) + '" class="fc-pg-pw mx-[2px] cursor-pointer">' + esc(x.w) + "</span>";
       return esc(x.t || "");
     }).join("");
     return '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2"><button data-act="home" class="flex items-center gap-2 text-[#c9c9ce]">' + ico(I.chevron, "h-[22px] w-[22px]") + '<span class="text-[15px] font-medium text-[#b9b9bf]">语篇通读</span></button>' +
       '<button data-act="passage-speak" class="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#29292e] text-[#b9b9bf]">' + ico(I.speaker, "h-[16px] w-[16px]") + "</button></header>" +
-      '<div data-scroll="passage" class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-4"><div class="mt-[10px] flex items-baseline gap-3"><h1 class="text-[26px] font-extrabold text-[#f5f5f7]">' + esc(p.title || "") + '</h1><span class="rounded-[5px] bg-[#29292e] px-[8px] py-[3px] text-[12px] text-[#a8a8ae]">' + esc(p.tag || "") + '</span></div>' +
-      '<p class="mt-[20px] text-[18px] leading-[1.85] text-[#d5d5da]">' + body + "</p>" +
-      '<p class="mt-[22px] border-t border-white/[0.07] pt-[18px] text-[15px] leading-[1.9] text-[#8c8c92]">' + cnHtml(p.cn) + "</p></div>" +
+      '<div data-scroll="passage" class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-4"><div class="mt-[10px] flex items-baseline gap-3"><h1 class="fc-pg-title">' + esc(p.title || "") + '</h1><span class="fc-pg-tag">' + esc(p.tag || "") + '</span></div>' +
+      '<p class="fc-pg-body mt-[20px]">' + body + "</p>" +
+      '<p class="fc-pg-cn mt-[22px] border-t border-white/[0.07] pt-[18px]">' + cnHtml(p.cn) + "</p></div>" +
       '<footer class="grid flex-none ' + (S.prefs.cloze ? "grid-cols-2" : "grid-cols-1") + ' pb-[30px] pt-[10px]">' +
-      (S.prefs.cloze ? dashBtn("语篇填空", "bg-[#e3a83c]", "cloze-start") : "") + dashBtn("进入单词背诵", "bg-[#2ec4a5]", "cards-start") + "</footer>";
+      (S.prefs.cloze ? dashBtn("语篇填空", "fc-dot-teal", "cloze-start") : "") + dashBtn("进入单词背诵", "bg-[#2ec4a5]", "cards-start") + "</footer>";
   }
 
   function ovCloze() {
@@ -421,10 +422,10 @@
     var bi = -1; var nextBlank = filled.indexOf(null);
     var body = segs.map(function (x) {
       if (!x.w) return esc(x.t || "");
-      if (x.blank === false) return '<span data-act="word" data-w="' + esc(x.lemma || x.w) + '" class="mx-[2px] cursor-pointer font-semibold text-[#d5d5da] underline decoration-dotted decoration-white/25 decoration-[1.5px] underline-offset-4">' + esc(x.w) + "</span>";
+      if (x.blank === false) return '<span data-act="word" data-w="' + esc(x.lemma || x.w) + '" class="fc-pg-word mx-[2px] cursor-pointer">' + esc(x.w) + "</span>";
       bi += 1; var idx = bi; var val = filled[idx];
       var isActive = idx === S.clozeActive;
-      return '<span data-act="cloze-blank" data-i="' + idx + '" class="mx-[3px] inline-block min-w-[92px] cursor-pointer border-b-2 pb-[1px] text-center font-bold ' + (val ? "border-[#2ec4a5]/60 text-[#2ec4a5]" : isActive ? "border-[#e3a83c] text-transparent" : "border-[#4a4a4f] text-transparent") + '">' + esc(val || "____") + "</span>";
+      return '<span data-act="cloze-blank" data-i="' + idx + '" class="fc-blank' + (val ? " is-filled" : isActive ? " is-active" : "") + '">' + esc(val || "______") + "</span>";
     }).join("");
     var used = filled.filter(Boolean);
     var done = nextBlank === -1;
@@ -439,8 +440,8 @@
       return '<button data-act="cloze-chip" data-w="' + esc(w) + '" ' + (u ? "disabled" : "") + ' class="flex-none rounded-[12px] px-[16px] py-[9px] text-[16px] font-semibold ' + (u ? "bg-[#1c1c20] text-[#4a4a4f]" : err ? "animate-pulse bg-[#4a1a24] text-[#ff8a8a]" : "bg-[#26262b] text-[#ececef]") + '">' + esc(w) + "</button>";
     }).join("");
     return '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2"><button data-act="cloze-back" class="flex items-center gap-2 text-[#c9c9ce]">' + ico(I.chevron, "h-[22px] w-[22px]") + '<span class="text-[15px] font-medium text-[#b9b9bf]">语篇填空</span></button></header>' +
-      '<div data-scroll="cloze" class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-2 [scrollbar-width:none]"><div class="mt-[10px] flex items-baseline justify-between"><h1 class="text-[26px] font-extrabold text-[#f5f5f7]">' + esc(p.title || "") + '</h1><span class="text-[13px] tabular-nums text-[#8c8c92]">' + used.length + "/" + (S.clozeTargets || []).length + "</span></div>" +
-      '<p class="mt-[20px] text-[18px] leading-[2.05] text-[#d5d5da]">' + body + "</p>" +
+      '<div data-scroll="cloze" class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-2 [scrollbar-width:none]"><div class="mt-[10px] flex items-baseline justify-between"><h1 class="fc-pg-title">' + esc(p.title || "") + '</h1><span class="text-[13px] tabular-nums text-[#8c8c92]">' + used.length + "/" + (S.clozeTargets || []).length + "</span></div>" +
+      '<p class="fc-pg-body fc-pg-cloze mt-[20px]">' + body + "</p>" +
       (done ? '<div style="margin-top:22px;border-radius:14px;background:rgba(29,66,57,.6);padding:14px 18px"><p style="font-size:15px;font-weight:600;color:#3fe0b4">✓ 全部填对！</p><p style="margin-top:4px;font-size:13px;color:#8fccc4">出错 ' + (S.clozeWrongs || 0) + " 次 · 建议现在进入单词背诵巩固</p></div>" : "") +
       "</div>" +
       '<div style="flex:none;border-top:1px solid rgba(255,255,255,.07);padding:12px 16px 0">' + hint + '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:10px;max-height:32vh;overflow-y:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none">' + chips + "</div></div>" +
@@ -465,7 +466,7 @@
       }
       return '<button data-act="choice-pick" data-i="' + i + '" class="relative block w-full rounded-[16px] px-[18px] text-left transition-colors ' + cls + " " + (S.revealed ? "py-[17px]" : "py-[21px]") + '">' + inner + "</button>";
     }).join("");
-    return topBar((S.rIdx + 1) + "/" + (S.retestCards || []).length, { canUndo: false, fav: !!S.favs[card.id], showKnown: false }) +
+    return topBar((S.rIdx + 1) + "/" + (S.retestCards || []).length, { canUndo: false, fav: !!S.favs[card.id], showKnown: true }) +
       '<div data-scroll="choice" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="min-h-[60px] flex-1"></div><div class="space-y-[13px] px-4 pb-5 pt-8">' + optsHtml + "</div></div>" +
       '<footer class="flex flex-none justify-center pb-[34px] pt-[6px]">' + (S.revealed ? dashBtn("继续", "bg-[#2ec4a5]", "choice-next") : dashBtn("看答案", "bg-[#e34d64]", "choice-reveal")) + "</footer>";
   }
@@ -474,7 +475,8 @@
     var v = S.sentView; if (!v) return "";
     var card = v.card, f = card.fields || {}; var details = arr(f.meaningDetails);
     var mIdx = Math.min(v.m || 0, Math.max(0, details.length - 1));
-    var detail = details[mIdx] || { examples: [] }; var exs = arr(detail.examples);
+    var detail = (v.phr && arr(v.exs).length) ? { meaning: v.phr.cn || v.phr.en, examples: arr(v.exs) } : (details[mIdx] || { examples: [] });
+    var exs = svExs(v);
     var exIdx = Math.min(v.ex || 0, Math.max(0, exs.length - 1)); var ex = exs[exIdx];
     if (!ex) return "";
     var pos = ""; arr(f.senses).forEach(function (s) { if (arr(s.cn).indexOf(detail.meaning) >= 0) pos = s.pos; });
@@ -709,10 +711,29 @@
 
   /* ---- 例句轮播卡 ---- */
   function openSV(m) {
-    S.sentView = { card: S.card, m: m || 0, ex: 0, revealed: false, star: false };
+    S.sentView = { card: S.card, m: m || 0, ex: 0, revealed: false, star: false, exs: [] };
     var d = arr((S.card.fields || {}).meaningDetails)[m || 0];
     if (d && arr(d.examples)[0]) speak(arr(d.examples)[0].en, TTS_PASSAGE);
     paint();
+  }
+  /* 词组点开例句轮播：优先词组专属例句 collocations[i].examples，
+     否则回退到所绑义项 meaningDetails[m].examples（ex 指定第几句，复用现成例句）。 */
+  function openPhr(i) {
+    var f = S.card.fields || {};
+    var c = arr(f.collocations)[i] || {};
+    var m = c.m == null ? 0 : c.m;
+    var exs = arr(c.examples);
+    S.sentView = { card: S.card, m: m, ex: c.ex || 0, revealed: false, star: false, phr: c, exs: exs };
+    var list = exs.length ? exs : arr((arr(f.meaningDetails)[m] || {}).examples);
+    if (list[S.sentView.ex]) speak(list[S.sentView.ex].en, TTS_PASSAGE);
+    paint();
+  }
+  /* 例句轮播卡当前实际展示的例句数组：词组专属 > 所绑义项 */
+  function svExs(v) {
+    if (!v) return [];
+    if (arr(v.exs).length) return arr(v.exs);
+    var d = arr((v.card.fields || {}).meaningDetails)[v.m || 0];
+    return arr(d && d.examples);
   }
 
   /* ---- 会话：拉队列 ---- */
@@ -1229,7 +1250,7 @@
       }
       return '<button data-act="sc-pick" data-i="' + i + '" data-right="' + (isRight ? 1 : 0) + '" class="relative block w-full rounded-[16px] px-[18px] text-left transition-colors ' + cls + " " + (sc.revealed ? "py-[17px]" : "py-[21px]") + '">' + inner + "</button>";
     }).join("");
-    return topBar(((S.idx || 0) + 1) + "/" + (S.retestTotal || 1), { canUndo: false, fav: !!S.favs[card.id], showKnown: false }) +
+    return topBar(((S.idx || 0) + 1) + "/" + (S.retestTotal || 1), { canUndo: false, fav: !!S.favs[card.id], showKnown: true }) +
       '<div data-scroll="sentcloze" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' +
         '<div class="px-[26px] pt-1"><span class="text-[13px] text-[#8c8c92]">例句填空 · 选词填入</span>' +
         (sc.blanked
@@ -1264,11 +1285,17 @@
       case "next": nextCard(false); break;
       case "next-miss": nextCard(true); break;
       case "hint": S.hinted = true; speakSentence(S.card); paint(); break;
-      case "known":
-        call("state.kvPut", { id: S.card.id, key: "known", value: true });
-        S.learned[S.card.id] = true;
+      case "known": {
+        /* 当前卡可能是 S.card（cards 阶段），也可能是 S.rCur（choice / 例句填空）。
+           以前只认 S.card，在后两种界面按「熟」会打空甚至报错。 */
+        var kc = S.card || S.rCur || (S.sentCloze && S.sentCloze.card) || null;
+        if (kc && kc.id) {
+          call("state.kvPut", { id: kc.id, key: "known", value: true });
+          S.learned[kc.id] = true;
+        }
         if (FC.answer) FC.answer("good", answerMeta());
         break;
+      }
       case "undo":
         if (S.face === "back") { S.face = "front"; S.hinted = false; paint(); }
         break;
@@ -1278,6 +1305,7 @@
         paint(); break;
       case "tab": S.tab = el.getAttribute("data-t"); paint(); break;
       case "meaning": openSV(parseInt(el.getAttribute("data-m"), 10) || 0); break;
+      case "phr": openPhr(parseInt(el.getAttribute("data-i"), 10) || 0); break;
       case "sentence-view": openSV(0); break;
       case "word": openDict(el.getAttribute("data-w"), el); break;
       case "exam": S.examOpen = true; paint(); break;
@@ -1323,9 +1351,9 @@
       case "sv-close": S.sentView = null; paint(); break;
       case "sv-next": S.sentView = null; paint(); break;
       case "sv-reveal": if (S.sentView) { S.sentView.revealed = true; paint(); } break;
-      case "sv-m": if (S.sentView) { S.sentView.m = parseInt(el.getAttribute("data-m"), 10) || 0; S.sentView.ex = 0; S.sentView.revealed = false; paint(); } break;
+      case "sv-m": if (S.sentView) { S.sentView.m = parseInt(el.getAttribute("data-m"), 10) || 0; S.sentView.ex = 0; S.sentView.revealed = false; S.sentView.phr = null; S.sentView.exs = []; paint(); } break;
       case "sv-star": if (S.sentView) { S.sentView.star = !S.sentView.star; paint(); } break;
-      case "sv-speak": var d = S.sentView && arr((S.sentView.card.fields || {}).meaningDetails)[S.sentView.m]; var ex0 = d && arr(d.examples)[S.sentView.ex]; if (ex0) speak(ex0.en, TTS_PASSAGE); break;
+      case "sv-speak": var _exs = svExs(S.sentView); var ex0 = _exs[(S.sentView && S.sentView.ex) || 0]; if (ex0) speak(ex0.en, TTS_PASSAGE); break;
       case "passage-speak": if (S.passage) speak(S.passage.plain || ""); break;
       case "cloze-start":
         if (S.clozeBlanks && S.clozeBlanks.length) { S.phase = "cloze"; paint(); }
@@ -1466,8 +1494,7 @@
     if (Date.now() - st.t > 700) return;
     if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
     var v = S.sentView; if (!v) return;
-    var d = arr((v.card.fields || {}).meaningDetails)[v.m || 0];
-    var list = arr(d && d.examples), n = list.length;
+    var list = svExs(v), n = list.length;
     if (n <= 1) return;
     var nx = (v.ex || 0) + (dx < 0 ? 1 : -1);
     if (nx < 0) nx = n - 1;

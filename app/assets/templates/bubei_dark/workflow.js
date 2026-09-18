@@ -1030,9 +1030,31 @@
 
   /// 从上次未完成的快照续上：恢复池 + 各卡评分依据，直接进重考。
   /// 返回 false = 快照不可用，退回从头。
+  /* 断点是否真的属于当前 plan 的当前 unit？壳的 session.load 只有一份
+     全局断点，跨书 / 跨章不区分；毫无卡 id 交集 = 脏断点，丢弃重开，
+     让 startUnit() 正常走 passage。否则「学到一半退出」会把后续所有书
+     的篇章全跳过。 */
+  function savedBelongsToUnit(sv, u) {
+    var cur = {};
+    ((u && u.cards) || []).forEach(function (c) { cur[c.id] = 1; });
+    var ids = [];
+    ["learnRating", "effort"].forEach(function (k) {
+      var o = sv[k];
+      if (o && typeof o === "object" && !Array.isArray(o)) ids = ids.concat(Object.keys(o));
+    });
+    ["graduated", "provisional"].forEach(function (k) {
+      var a = sv[k];
+      if (Array.isArray(a)) ids = ids.concat(a);
+    });
+    if (!ids.length) return false;         // 空断点：一点进度都没有，直接重开走篇章
+    for (var i = 0; i < ids.length; i++) { if (cur[ids[i]]) return true; }
+    return false;
+  }
+
   function restoreSession(sv) {
     var ui = sv.unitIdx || 0;
     if (ui < 0 || ui >= S.units.length) return false;
+    if (!savedBelongsToUnit(sv, S.units[ui])) return false;
     S.unitIdx = ui;
     S.retestPool = (sv.retestPool || []).filter(function (id) {
       return !!cardMeta(id);
