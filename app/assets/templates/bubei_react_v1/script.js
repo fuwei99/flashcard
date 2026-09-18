@@ -877,6 +877,7 @@
       case "dict-close": S.dictWord = null; S.dictExpanded = false; paint(); break;
       case "dict-expand": S.dictExpanded = true; paint(); break;
       case "dict-fav": var w = (S.dictEntry && S.dictEntry.word) || S.dictWord; S.dictFavs[w] = !S.dictFavs[w]; paint(); break;
+      case "tts-word": if (S.card) speak(String((S.card.fields || {}).word || "").trim(), TTS_WORD); break;
       case "dict-speak": if (S.dictEntry) speak(S.dictEntry.word); break;
       case "sv-close": S.sentView = null; paint(); break;
       case "sv-next": S.sentView = null; nextCard(false); break;
