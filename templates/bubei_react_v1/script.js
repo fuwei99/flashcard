@@ -1076,6 +1076,9 @@
   }
   function mountFromCard(c) {
     if (!c) return;
+    /* 先预热干扰池再分派：下面 initSentCloze / buildChoice 是同步跑完的，
+       池子要是没起，首帧就只能靠易混项，选项凑不满。 */
+    warmPool(c);
     var mode = (c.session && c.session.mode) || "read";
     /* 统一场景 API：壳在 session.scene 里说明「当前是什么状态」——
        learn=背新词 / review=复习 / retest=背完再背一遍 / preview=查卡片(只读)。
@@ -1164,6 +1167,15 @@
     }).catch(function () { finish([]); });
   }
 
+  /* 会话开场预热：池子是异步读盘的。等到 buildChoice / initSentCloze 要用时才加载，
+     首帧必然拿不到 —— 那时只剩易混项，选项凑不满，得白重画一次。
+     所以挂第一张卡时就把池子读起来，之后全程同步命中。
+     loadPool 自带去重（_poolByBook 缓存 + q._started），重复调是空操作。 */
+  function warmPool(c) {
+    var bid = bookIdOf(c);
+    if (bid) loadPool(bid, null);
+  }
+
   /* 卡上预备的易混项 -> 伪卡选项 */
   function confOpts(cur) {
     var f = (cur && cur.fields) || {};
@@ -1179,7 +1191,10 @@
     }).filter(Boolean);
   }
 
-  /* 干扰项候选：易混项 > 壳 choices > 本会话见到的卡 > 整本书池 */
+  /* 干扰项候选：易混项 > 本会话见到的卡 > 整本书池
+     —— 全部由模板自己产出，壳不再下发选项（manifest: self_distractors）。
+     壳那份 `_choicesFor()` 已删：出干扰项要先判题型，题型属于流程，
+     流程归模板 —— 让壳算选项，流程就会顺着回流进壳。 */
   function distractorCands(cur) {
     var byId = {}, cands = [];
     function add(o) {
@@ -1189,7 +1204,6 @@
       byId[o.id] = 1; cands.push(o);
     }
     confOpts(cur).forEach(add);
-    arr(cur && cur.choices).forEach(add);
     Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
     var pool = _poolByBook[bookIdOf(cur)];
     if (pool && cands.length < 3) {
@@ -1216,7 +1230,7 @@
       blanked: hit ? se.slice(0, hit.index) + "______" + se.slice(hit.index + hit[0].length) : "",
       answer: hit ? hit[0] : w, revealed: false, picked: null, hint: false
     };
-    // 干扰项：易混项 / 壳 choices / 整本书池（不足则异步补一次）
+    // 干扰项：易混项 / 本会话见过的卡 / 整本书池（池子没预热到就异步补一次）
     function buildOpts() {
       var opts = shuffle(distractorCands(c),
         ((String(c.id || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
@@ -1588,7 +1602,12 @@
       if (r && r.top != null) { S.prefs.topbar = !!r.top; paint(); }
     }).catch(function () {});
     if (c0 && c0.id) { mountFromCard(c0); }
-    else { paint(); }
+    else {
+      /* 骨架页（web_session 模式）里没有卡，但 session.book 已经下来了 ——
+         趁 workflow.js 还在拉计划，先把干扰池读起来，第一张卡就能同步命中。 */
+      warmPool(c0);
+      paint();
+    }
     try { if (FC.ready) FC.ready(); } catch (e) {}
   })();
 })();

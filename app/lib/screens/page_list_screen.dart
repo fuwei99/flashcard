@@ -160,8 +160,11 @@ class PageListBody extends StatelessWidget {
           ],
           template: template!,
           fieldsOrder: book.fieldsOrder,
-          // 干扰池 = 整本书（不再只限本章）：一个词的章节也出得了题
-          distractorPool: book.allCards,
+          // 干扰池 = 整本书（不再只限本章）：一个词的章节也出得了题。
+          // 惰性求值：`book.allCards` 会展开每一章的 cards，直接传值等于
+          // 「打开一章就把整本书读进内存」，把 Chapter 的懒加载拆掉。
+          // 声明了 self_distractors 的模板根本不会走到这儿（它自己读盘建池）。
+          distractorPool: () => book.allCards,
           bookId: book.bookId,
           store: store,
           settings: settings,

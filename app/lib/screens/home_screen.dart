@@ -179,7 +179,9 @@ class HomeScreenState extends State<HomeScreen> {
           units: us,
           template: tpl,
           fieldsOrder: b?.fieldsOrder ?? const <String>[],
-          distractorPool: _poolFromUnits(us, bookOfCard),
+          // 惰性求值：内部 `b.allCards` 会把每本书的每一章都展开读盘，
+          // 直接传值等于「一进会话就把所有相关书读进内存」。见 ReviewScreen 注释。
+          distractorPool: () => _poolFromUnits(us, bookOfCard),
           bookId: b?.bookId ?? '',
           store: widget.store,
           settings: widget.settings,

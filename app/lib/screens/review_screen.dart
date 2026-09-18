@@ -38,8 +38,16 @@ class ReviewScreen extends StatefulWidget {
   /// 骨架页字段顺序（跨牌组时取第一本书的）
   final List<String> fieldsOrder;
 
-  /// 干扰项池：跨牌组复习时是所有单词卡，单本书时是本书卡片
-  final List<FlashCard> distractorPool;
+  /// 干扰项池（**遗留兜底**）：只给没声明 `self_distractors` 的老模板用。
+  /// 声明了的模板自己用 `fs.*` 读整本书建池（见 [bookId] 注释），壳不碰。
+  ///
+  /// 故意做成惰性回调，不直接传 List：以前这里是 `book.allCards`，在构造
+  /// ReviewScreen 的那一刻就被求值 —— 而 `Book.allCards` 是
+  /// `chapters.expand((c) => c.cards)`，会把每一章的 cards 都碰一遍，等于
+  /// **打开一章就把整本书的 ch_*.json 全读进内存**，把 Chapter 的懒加载
+  /// 整个拆掉（2026-09-17 修过的 BUG-019 就是这个病，只修了 _groups() 一处）。
+  /// 现在只有真的走到 _choicesFor 才读，且整个会话只读一次。
+  final List<FlashCard> Function()? distractorPool;
 
   final CardStore store;
   final StudySettings settings;
@@ -57,7 +65,7 @@ class ReviewScreen extends StatefulWidget {
     required this.units,
     required this.template,
     required this.fieldsOrder,
-    required this.distractorPool,
+    this.distractorPool,
     required this.store,
     required this.settings,
     this.isCard = false,
@@ -106,6 +114,18 @@ class _ReviewScreenState extends State<ReviewScreen>
   /// 模板 manifest 声明 web_session=true 时，切牌流程归 workflow.js，
   /// 壳只执行它发来的指令（web.mount / web.spell / web.finish…）。
   late final bool _webDriven;
+
+  /// 模板 manifest 声明 self_distractors=true 时，干扰项（选项）由模板自己出，
+  /// 壳**一个都不算、一个都不发**。壳只负责告诉它「在哪本书」(session.book)
+  /// 和放行 fs.* —— 出题要判题型，题型属于流程，流程归模板。
+  ///
+  /// 没声明这个的老模板（bubei_dark / bubei_replica 等）仍走壳侧兜底，
+  /// 因为它们的 script.js 只认 `card.choices`，自己不会建池。
+  late final bool _selfDistractors;
+
+  /// 壳侧干扰池的会话级缓存（惰性求值，只读一次）
+  List<FlashCard>? _poolCache;
+
   bool _webFinished = false;
   String _webPhase = '';
   int _webDone = 0;
@@ -121,6 +141,8 @@ class _ReviewScreenState extends State<ReviewScreen>
     WidgetsBinding.instance.addObserver(this);
     // 阶段 4：模板 manifest 声明 web_session=true 时，切牌流程交给 workflow.js
     _webDriven = widget.template.manifest['web_session'] == true;
+    // 干扰项归属：模板自己出选项时，壳不再算、不再发（见字段注释）
+    _selfDistractors = widget.template.manifest['self_distractors'] == true;
     // 顶部栏：manifest 给默认（缺省显示），落盘值优先
     _showTopBar = widget.template.manifest['top_bar'] != false;
     UiPrefs.load().then((v) {
@@ -351,7 +373,10 @@ class _ReviewScreenState extends State<ReviewScreen>
     final scene = (stepMode == StudyMode.choice || stepMode == StudyMode.cloze)
         ? 'retest'
         : (unit.isReview ? 'review' : 'learn');
-    final choices = (card != null &&
+    // 干扰项归属：模板声明了 self_distractors 就一个都不算、一个都不发，
+    // 让它自己读盘建池（见 _selfDistractors 注释）。壳只给 session.book。
+    final choices = (!_selfDistractors &&
+            card != null &&
             (stepMode == StudyMode.choice || stepMode == StudyMode.cloze))
         ? _choicesFor(StudyStep(card, stepMode, round))
         : const <Map<String, dynamic>>[];
@@ -691,12 +716,22 @@ class _ReviewScreenState extends State<ReviewScreen>
     await SwitchLog.write('switch', 'mount#$gen 完成 ${ms}ms');
   }
 
+  /// 壳侧干扰池，惰性读一次、会话内复用。
+  /// 只有遗留模板（没声明 `self_distractors`）才会走到这儿。
+  List<FlashCard> _pool() =>
+      _poolCache ??= widget.distractorPool?.call() ?? const <FlashCard>[];
+
   /// 生成干扰项（**只返回干扰项**，正确项由模板自己补进去）：
   ///   1. 卡上预备的 `confusions`（易混项）优先 —— 词 + 释义都现成，最有针对性；
   ///   2. 不够 3 个，再从**整本书**的干扰池随机抽（不再局限本章，
   ///      一个词的章节也能出题）；
   ///   3. 去重：选义看中文释义、填词看英文词，避免选项撞车。
   /// 选项形状 {id, fields:{word, senses:[…]}}，与卡片同构，模板直接渲染。
+  ///
+  /// ⚠️ **这是遗留兜底，不是主路径。** 声明了 `self_distractors` 的模板
+  /// （如 bubei_react_v1）自己读 `books/<book>/ch_*.json` 建池出题，壳在
+  /// `_webMount` 里直接跳过这个方法 —— 出干扰项得先判题型（看下面的
+  /// `step.mode`），而题型属于流程，流程归模板。壳一旦算选项，流程就回流了。
   List<Map<String, dynamic>> _choicesFor(StudyStep step) {
     final cur = step.card;
     if (cur == null) return const [];
@@ -766,7 +801,7 @@ class _ReviewScreenState extends State<ReviewScreen>
 
     // 2. 不够 -> 从整本书的池子里随机补
     if (out.length < 3) {
-      final pool = widget.distractorPool.toList()..shuffle();
+      final pool = _pool().toList()..shuffle();
       for (final c in pool) {
         if (out.length >= 3) break;
         if (c.id == cur.id) continue;
@@ -933,7 +968,11 @@ class _ReviewScreenState extends State<ReviewScreen>
       index: _webDriven ? 0 : _session.doneInRound,
       total: _webDriven ? 0 : _session.roundTotal,
       session: _webDriven
-          ? const <String, dynamic>{}
+          ? <String, dynamic>{
+              // 骨架页就带上 book：模板拿到它就能在 boot 时先预热干扰池，
+              // 不必等到第一张卡挂下来（那时池子还没起，首帧只能靠易混项）。
+              'book': widget.bookId,
+            }
           : {
               'phase': _session.phase.name,
               'mode': step!.mode.key,
