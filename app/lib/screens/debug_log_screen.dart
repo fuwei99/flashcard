@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../services/crash_log.dart';
 import '../services/data_dir.dart';
 import '../services/study_settings.dart';
 
@@ -106,6 +107,8 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
   }
 
   Widget _pathCard() {
+    final last = CrashLog.readLastCrash();
+    final dir = CrashLog.logDir();
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -131,6 +134,38 @@ class _DebugLogScreenState extends State<DebugLogScreen> {
           const SizedBox(height: 4),
           Text(DataDir.publicPath,
               style: const TextStyle(color: Color(0xFF3C4A50), fontSize: 11)),
+          const Divider(height: 24, color: Color(0x14FFFFFF)),
+          const Text('崩溃 / 错误',
+              style: TextStyle(
+                  color: Color(0xFFF0F4F5),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          const SelectableText('Documents/Flashcard/logs/crash/',
+              style: TextStyle(color: Color(0xFFB7C4C8), fontSize: 12)),
+          const SizedBox(height: 10),
+          const Text(
+              '壳层未捕获的异常（框架 / 异步 / build 失败）落这里，'
+              '同时覆盖写一份 last_crash.json。\n'
+              '卡牌页里的 JS 异常在 logs/js/，tag 是 JSERR / JSPROMISE。\n'
+              '没拿到「所有文件访问权限」时退到 App 私有目录。',
+              style: TextStyle(
+                  color: Color(0xFF54666C), fontSize: 12, height: 1.6)),
+          if (last != null) ...[
+            const SizedBox(height: 12),
+            SelectableText(
+              '最近一次崩溃\n'
+              '${last['ts']}  [${last['where']}]\n'
+              '${last['error']}',
+              style: const TextStyle(
+                  color: Color(0xFFFF9C5C), fontSize: 11, height: 1.6),
+            ),
+          ],
+          if (dir != null) ...[
+            const SizedBox(height: 8),
+            Text('实际落盘目录：${dir.path}',
+                style: const TextStyle(color: Color(0xFF3C4A50), fontSize: 11)),
+          ],
         ],
       ),
     );

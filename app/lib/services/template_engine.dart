@@ -54,6 +54,14 @@ class TemplateEngine {
   }
 
   /// 把模板 + 数据组装成一个完整 HTML 页面，塞进 WebView
+  ///
+  /// 注入顺序（顺序本身是契约）：
+  ///   1. `__FLASHCARD_CARD__` / `__FLASHCARD_KV__` 数据
+  ///   2. glue：`window.Flashcard`（模板要用的一切 API 都挂在这）
+  ///   3. **全局错误钩子**（onerror / unhandledrejection / console.error）
+  ///      —— 必须在模板脚本之前，否则模板自身解析期的异常漏掉
+  ///   4. 模板 `script.js`
+  ///   5. 模板 `workflow.js`
   static String buildPage({
     required String templateHtml,
     required String css,
@@ -185,6 +193,89 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
       }
     }
   };
+})();
+</script>
+<script>
+// ---- 全局错误捕获（壳注入，模板无关）----
+//
+// 模板脚本抛异常以前是**完全静默**的：页面上就是「点了没反应」，
+// 只有连电脑看 logcat 才知道发生了什么。手机上的人没法把 logcat 发过来
+// —— 等于没有线索。这里装钩子，全部走 FCChannel 落到 logs/js/。
+//
+// 用 addEventListener 而不是 `window.onerror = fn`：模板 script.js 在本段
+// **之后**执行，它要是自己也赋值 window.onerror 就会把壳的钩子整个顶掉。
+// addEventListener 是叠加的，谁也顶不掉谁。
+//
+// 覆盖三类：
+//   JSERR      未捕获的运行时 / 语法错误（ErrorEvent）
+//   JSPROMISE  未处理的 Promise 拒绝（workflow.js 大量用 async）
+//   JSERROR / JSWARN  console.error / console.warn 的转发
+(function () {
+  var ch = (typeof FCChannel !== "undefined") ? FCChannel : null;
+  if (!ch) return;
+  var MAXLEN = 2000;
+  // 刷屏保护：一次 build 死循环能一秒甩几千条，不去重的话光是 fsync
+  // 就能把手机卡死 —— 比原来的 bug 还严重。
+  var WIN = 10000, CAP = 60;
+  var winStart = Date.now(), n = 0, told = false;
+
+  function send(kind, msg) {
+    try {
+      var now = Date.now();
+      if (now - winStart > WIN) { winStart = now; n = 0; told = false; }
+      n++;
+      if (n > CAP) {
+        if (told) return;
+        told = true;
+        msg = "（错误刷屏，" + (WIN / 1000) + " 秒内不再上报）";
+      }
+      var s = String(msg == null ? "" : msg);
+      if (s.length > MAXLEN) s = s.slice(0, MAXLEN) + "…(截断)";
+      ch.postMessage(JSON.stringify({ type: "log", tag: kind, msg: s }));
+    } catch (e) {}
+  }
+
+  function where(o) {
+    try {
+      var u = o && (o.filename || o.url) || "";
+      var l = o && (o.lineno || o.lineNumber) || 0;
+      var c = o && (o.colno || o.columnNumber) || 0;
+      return u ? (" @" + u + ":" + l + ":" + c) : "";
+    } catch (e) { return ""; }
+  }
+
+  window.addEventListener("error", function (ev) {
+    try {
+      var e = ev && ev.error;
+      send("JSERR",
+        (ev && ev.message) + where(ev) + ((e && e.stack) ? ("\\n" + e.stack) : ""));
+    } catch (e) {}
+  });
+
+  window.addEventListener("unhandledrejection", function (ev) {
+    try {
+      var r = ev && ev.reason;
+      send("JSPROMISE", (r && (r.stack || r.message)) || r);
+    } catch (e) {}
+  });
+
+  ["error", "warn"].forEach(function (lv) {
+    try {
+      var orig = console[lv];
+      console[lv] = function () {
+        try {
+          var parts = [];
+          for (var i = 0; i < arguments.length; i++) {
+            var a = arguments[i];
+            try { parts.push((a && a.stack) ? a.stack : String(a)); }
+            catch (e) { parts.push("<unprintable>"); }
+          }
+          send("JS" + lv.toUpperCase(), parts.join(" "));
+        } catch (e) {}
+        try { if (orig) return orig.apply(console, arguments); } catch (e) {}
+      };
+    } catch (e) {}
+  });
 })();
 </script>
 <script>$js</script>

@@ -95,6 +95,7 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
             if (mounted) setState(() => _loading = false);
             await _mount();
           },
+          onWebResourceError: logWebResourceError,
         ),
       );
     _controller = c;

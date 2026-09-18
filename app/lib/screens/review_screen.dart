@@ -956,6 +956,8 @@ class _ReviewScreenState extends State<ReviewScreen>
               _load();
             }
           },
+          // 资源加载失败（模板里的图 / 例句音频 / fetch）以前是静默的
+          onWebResourceError: logWebResourceError,
         ),
       );
     _controller = c;

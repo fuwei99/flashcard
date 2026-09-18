@@ -2,7 +2,8 @@
 /// ================================================================
 /// **模板**（HTML/CSS/JS/manifest）优先从公共目录读：
 ///   <Documents>/Flashcard/templates/<template_id>/
-/// 首次运行会把内置模板铺一份过去（已存在的不覆盖）。
+/// 内置只带一个旗舰模板（`bubei_react_v1`），启动时按文件同步过去：
+/// 缺的补、壳铺的旧版升、用户改过的留着（详见 [seedPublicTemplates]）。
 /// 之后想怎么美化 CSS / 改 HTML / 改 JS，直接改文件 → 「我的」页点
 /// 「重载模板」即可生效，不用重新编译 APK。
 ///
@@ -23,6 +24,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart' show rootBundle, AssetManifest;
 import 'package:path_provider/path_provider.dart';
 
@@ -35,8 +37,13 @@ class DeckRepository {
     'assets/decks/kaoyan_core.json',
   ];
 
+  /// 内置模板：**只有旗舰模板一个**。
+  ///
+  /// 播种（[seedPublicTemplates]）和兜底（[loadAllTemplates]）都只认这份清单。
+  /// 以前这里挂的是 bubei_dark —— 那是早期骨架模板，自己不会算干扰项、
+  /// 数据契约也停在 v3，铺出去等于给用户塞个残废壳。换成 react_v1。
   static const _templateDirs = <String>[
-    'assets/templates/bubei_dark',
+    'assets/templates/bubei_react_v1',
   ];
 
   /// 一个模板包固定这几个文件
@@ -48,6 +55,19 @@ class DeckRepository {
     'workflow.js',
   ];
 
+  /// 播种标记：铺内置模板时写在目录里的 `.builtin`。
+  ///
+  /// 内容是一份 JSON：`{"id": 模板 id, "sha": {文件名: 铺下去时的 sha256}}`。
+  /// 靠它区分两件事 ——
+  ///   * 目录里没有这个文件   → 用户自己建的模板，整个跳过，一根手指都不碰
+  ///   * 有标记               → 壳铺的。拿记录里的 sha 跟当前文件比：
+  ///                            对得上 = 用户没动过，可以安全覆盖成新版；
+  ///                            对不上 = 用户改过，保留用户的。
+  ///
+  /// 没有它，`目录非空就跳过` 那条规则会让模板改动**永远推不到已安装的用户**，
+  /// 只能靠卸载重装 —— 对一个「壳只发牌、模板随便热更」的项目来说等于自废武功。
+  static const _seedMark = '.builtin';
+
   /// 公共目录里的模板根目录
   static String get templatesPath => '${DataDir.publicPath}/templates';
 
@@ -58,8 +78,17 @@ class DeckRepository {
   // 模板
   // ===============================================================
 
-  /// 首次运行：把内置模板复制到公共目录（已存在的不覆盖）
-  /// 返回复制了多少个文件；公共目录不可用返回 -1
+  static String _sha(String s) => sha256.convert(utf8.encode(s)).toString();
+
+  /// 首次运行 / 每次启动：把内置模板同步到公共目录。
+  ///
+  /// 逐文件同步，而不是「目录存在就整个跳过」：
+  ///   * 缺的          → 补
+  ///   * 和 asset 一样 → 不写（省 IO）
+  ///   * 用户改过      → 留着（sha 对不上标记里记录的）
+  ///   * 壳铺的旧版    → 覆盖成新版（sha 对得上，说明用户没动过）
+  ///
+  /// 返回写入/更新的文件数；公共目录不可用返回 -1
   Future<int> seedPublicTemplates() async {
     final root = await DataDir.sub('templates');
     if (root == null) return -1;
@@ -67,20 +96,80 @@ class DeckRepository {
     for (final assetDir in _templateDirs) {
       final id = assetDir.split('/').last;
       final target = Directory('${root.path}/$id');
-      // 目录已存在且非空 → 这是用户自己的模板，整个跳过：不覆盖、也不补缺文件
-      if (await target.exists() && !(await target.list().isEmpty)) continue;
+      final mark = File('${target.path}/$_seedMark');
+
+      // 目录已存在但没有播种标记 → 用户自己的模板，整个跳过。
+      // 空目录例外：那多半是上次铺到一半留下的，直接接手。
+      if (await target.exists() && !await mark.exists()) {
+        if (!await target.list().isEmpty) continue;
+      }
+
+      // 上一次铺下去时的 sha 表（没有就是首次）
+      var seeded = <String, String>{};
+      try {
+        if (await mark.exists()) {
+          final j = json.decode(await mark.readAsString());
+          if (j is Map && j['sha'] is Map) {
+            (j['sha'] as Map).forEach((k, v) {
+              seeded[k.toString()] = v.toString();
+            });
+          }
+        }
+      } catch (_) {}
+
+      final fresh = <String, String>{};
       for (final name in _templateFiles) {
         try {
-          final f = File('${target.path}/$name');
-          if (await f.exists()) continue; // 用户改过的不动
           final content = await rootBundle.loadString('$assetDir/$name');
+          final hash = _sha(content);
+          fresh[name] = hash;
+
+          final f = File('${target.path}/$name');
+          if (await f.exists()) {
+            final local = await f.readAsString();
+            if (local == content) continue;              // 已经是这版，不写
+            // 有差异：只有「上次铺的 + 之后没人动过」才敢覆盖
+            final recorded = seeded[name];
+            if (recorded == null || _sha(local) != recorded) continue;
+          }
+
           if (!await target.exists()) await target.create(recursive: true);
           await f.writeAsString(content);
           copied++;
         } catch (_) {}
       }
+
+      try {
+        if (!await target.exists()) await target.create(recursive: true);
+        await mark.writeAsString(json.encode({'id': id, 'sha': fresh}));
+      } catch (_) {}
     }
     return copied;
+  }
+
+  /// 壳铺过、但已经不在内置清单里的模板目录（旧版本残留，比如 bubei_dark）。
+  ///
+  /// **只报告，不删** —— 删用户 Documents 下的东西得用户点头。
+  /// 结果进 status.json 的 diagnostics.stale_templates，想清就自己用
+  /// 文件管理器删掉那个目录（App 里没有模板删除入口）。
+  Future<List<String>> staleBuiltinTemplates() async {
+    final out = <String>[];
+    final root = await DataDir.sub('templates', create: false);
+    if (root == null) return out;
+    final builtin = _templateDirs.map((d) => d.split('/').last).toSet();
+    try {
+      if (!await root.exists()) return out;
+      for (final e in await root.list().toList()) {
+        if (e is! Directory) continue;
+        final segs = e.uri.pathSegments.where((s) => s.isNotEmpty).toList();
+        if (segs.isEmpty) continue;
+        final id = segs.last;
+        if (builtin.contains(id)) continue;
+        if (await File('${e.path}/$_seedMark').exists()) out.add(id);
+      }
+    } catch (_) {}
+    out.sort();
+    return out;
   }
 
   // ===============================================================

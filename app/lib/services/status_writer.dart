@@ -28,6 +28,15 @@ class StatusWriter {
 
   DateTime? _lastWrite;
 
+  /// 诊断段：崩溃记录 + 旧模板残留。由 main 在启动时填一次。
+  ///
+  /// 放在 status.json 里而不是只写日志文件 —— 这个文件的定位就是
+  /// 「给外部监工（AI）读」，崩过没崩过、有没有该清的残留，
+  /// 监工一眼就该看到，不用去翻 logs/ 目录。
+  Map<String, dynamic>? crashLast;
+  int crashCount = 0;
+  List<String> staleTemplates = const <String>[];
+
   void init({
     required StudySettings settings,
     required CardStore store,
@@ -140,6 +149,15 @@ class StatusWriter {
         'mastered': tMastered,
       },
       'books': bookDocs,
+      if (crashLast != null || crashCount > 0 || staleTemplates.isNotEmpty)
+        'diagnostics': {
+          'crash_count': crashCount,
+          // 上一次运行的崩溃（本次启动时读的 logs/crash/last_crash.json）
+          if (crashLast != null) 'last_crash': crashLast,
+          // 壳铺过、但已不在内置清单里的模板目录。只报告不删，
+          // 留着用户会在「模板」列表里看到一个残废模板。
+          if (staleTemplates.isNotEmpty) 'stale_templates': staleTemplates,
+        },
     };
   }
 }

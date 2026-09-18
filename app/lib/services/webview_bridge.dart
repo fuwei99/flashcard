@@ -39,6 +39,22 @@ class BridgeMessage {
   BridgeMessage(this.type, this.data);
 }
 
+/// WebView 资源加载失败 → `logs/js/`。
+///
+/// 以前 NavigationDelegate 里只接了 onPageFinished，资源错误一个都没接：
+/// 模板里的 `<img>` / 例句音频 / `fetch` 挂掉是**完全静默**的，
+/// 用户看到的现象只是「卡上少了一块」，描述不出来、也没法查。
+///
+/// 注意这个是**所有**子资源都报（含非主框架），所以偶发噪声正常；
+/// 排查时按 `code=` / `url=` grep 就行。
+void logWebResourceError(WebResourceError e) {
+  JsLog.write(
+    'WEBRES',
+    'code=${e.errorCode} type=${e.errorType} main=${e.isForMainFrame} '
+    'url=${e.url ?? "-"} desc=${e.description}',
+  );
+}
+
 class WebViewBridge {
   final CardStore store;
   final TtsService tts;

@@ -28,6 +28,10 @@ app/.metadata
 
 # 系统
 .DS_Store
+
+# AI 助手的本地工作区（会话记忆 / 临时状态）。
+# 项目真正要留档的工作日志在 text/worklogs/，那个是入库的 —— 这里只是工具状态。
+.workbuddy-ai/
 Thumbs.db
 
 # 临时

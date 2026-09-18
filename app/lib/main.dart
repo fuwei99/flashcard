@@ -2,6 +2,7 @@
 /// 书架 -> 书 -> 章 -> 页 -> 背诵
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'models/deck.dart';
 import 'screens/main_scaffold.dart';
 import 'services/card_store.dart';
+import 'services/crash_log.dart';
 import 'services/data_dir.dart';
 import 'services/deck_repository.dart';
 import 'services/plugin.dart';
@@ -19,8 +21,21 @@ import 'services/status_writer.dart';
 import 'services/study_settings.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const FlashcardApp());
+  // 全局错误钩子必须在 runApp 之前装 —— 启动阶段是最容易炸的一段，
+  // 装晚了这段的异常一条都留不下。
+  //
+  // runZonedGuarded 兜 zone 内逃逸的异常；框架层和引擎层各自还有
+  // FlutterError.onError / PlatformDispatcher.onError（见 CrashLog.install）。
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      CrashLog.install();
+      // 解析崩溃日志的兜底目录（公共目录没授权时用它）
+      unawaited(CrashLog.init());
+      runApp(const FlashcardApp());
+    },
+    (Object e, StackTrace s) => CrashLog.record('zone', e, s),
+  );
 }
 
 class FlashcardApp extends StatelessWidget {
@@ -85,6 +100,13 @@ class _BootstrapState extends State<_Bootstrap> {
         store: _store,
         loadBooks: _repo.loadAllBooks,
       );
+      // 诊断段：上一次运行崩没崩、有没有该清的旧模板残留。
+      // 读的是 logs/crash/last_crash.json（上一轮写的），所以放在 write 之前。
+      StatusWriter.I.crashLast = CrashLog.readLastCrash();
+      StatusWriter.I.crashCount = CrashLog.recent.length;
+      try {
+        StatusWriter.I.staleTemplates = await _repo.staleBuiltinTemplates();
+      } catch (_) {}
       // 公共目录变更指纹基线：首帧建立，之后回前台才比较
       await HotReload.resync();
 
@@ -95,7 +117,8 @@ class _BootstrapState extends State<_Bootstrap> {
         _askPermission();
         await StatusWriter.I.write();
       });
-    } catch (e) {
+    } catch (e, st) {
+      CrashLog.record('boot', e, st);
       if (!mounted) return;
       setState(() => _error = e);
     }
@@ -156,8 +179,26 @@ class _BootstrapState extends State<_Bootstrap> {
     if (_error != null) {
       return Scaffold(
         body: Center(
-          child: Text('初始化失败：$_error',
-              style: const TextStyle(color: Color(0xFFFF5C5C))),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('初始化失败',
+                    style: TextStyle(color: Color(0xFFFF5C5C), fontSize: 16)),
+                const SizedBox(height: 8),
+                Text('$_error',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Color(0xFFB7C4C8), fontSize: 12)),
+                const SizedBox(height: 16),
+                const Text('堆栈已落盘：Documents/Flashcard/logs/crash/',
+                    textAlign: TextAlign.center,
+                    style:
+                        TextStyle(color: Color(0xFF54666C), fontSize: 11)),
+              ],
+            ),
+          ),
         ),
       );
     }

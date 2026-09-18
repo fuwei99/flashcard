@@ -49,7 +49,10 @@ flutter:
   assets:
     - assets/decks/
     - assets/readme/
-    - assets/templates/bubei_dark/
+    # 内置模板：只打包「旗舰模板」这一个。
+    # 其余 templates/bubei_* 目录留在仓库里当参考/实验，不打进 APK ——
+    # 打进 APK 只会让包变大、还得替它们维护数据契约兼容。
+    - assets/templates/bubei_react_v1/
     # 内置插件（平铺，PluginManager 扫 assets/plugins/**/manifest.json）
     - assets/plugins/
     - assets/plugins/doubao/
