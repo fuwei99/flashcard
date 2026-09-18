@@ -34,7 +34,35 @@
     if (seq.length && FC.ttsSeq) { try { FC.ttsSeq(seq); return; } catch (e) {} }
     if (w) speak(w, TTS_WORD);
   }
+  /* 只读句子 —— 点「提示」时用，不再重复读单词 */
+  function speakSentence(card) {
+    var f = (card && card.fields) || {};
+    var s = String((f.sentence || {}).en || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+    if (s) speak(s, TTS_SENTENCE);
+  }
+  /* 进入卡片正面（认识 / 不认识）自动读单词。
+     paint() 会被反复调用，用 _spokenId 防同一张卡重复开口。 */
+  function maybeSpeakFront() {
+    if (S.phase !== "cards" || S.face !== "front" || !S.card) return;
+    var id = S.card.id;
+    if (!id || S._spokenId === id) return;
+    S._spokenId = id;
+    var w = String((S.card.fields || {}).word || "").trim();
+    if (w) speak(w, TTS_WORD);
+  }
   function call(m, p) { try { return FC.call ? FC.call(m, p) : Promise.resolve({}); } catch (e) { return Promise.resolve({}); } }
+  /* 插件统一入口：壳只认 plugin.call，具体插件在 Flashcard/plugins/*.js */
+  function pluginCall(id, method, args) {
+    return call("plugin.call", { id: id, method: method, args: args || {} });
+  }
+  /* 有道插件的配置状态（设置页显示用） */
+  function loadDictCfg() {
+    return pluginCall("youdao", "getConfig", {}).then(function (r) {
+      var d = (r && r.ok && r.data) ? r.data : null;
+      S.dictCfg = d ? { appKey: d.appKey || "", configured: !!(d.appKey && d.hasSecret) } : null;
+      if (d && d.appKey) S.dictKey = d.appKey;
+    }).catch(function () {});
+  }
   function log(m) { try { if (FC.log) FC.log("[v1]", m); } catch (e) {} }
   function orangeWord(text, word) { if (!word) return esc(text); var re = new RegExp("(" + word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\w*)", "ig"); return String(text || "").split(re).map(function (seg) { if (!seg) return ""; return seg.toLowerCase().indexOf(word.toLowerCase()) === 0 ? '<b class="font-bold text-[#f0a824]">' + esc(seg) + "</b>" : esc(seg); }).join(""); }
   function clickable(text, boldWord, selected, cls) { var toks = String(text || "").split(/([A-Za-z][A-Za-z'-]*)/g); return '<p class="' + (cls || "") + '">' + toks.map(function (tk) { if (!/^[A-Za-z]/.test(tk)) return esc(tk); var isBold = boldWord && tk.toLowerCase().indexOf(boldWord.toLowerCase()) === 0; var isSel = selected && tk.toLowerCase() === selected.toLowerCase(); return '<span data-word="' + esc(tk) + '" class="cursor-pointer rounded-[4px] transition-colors ' + (isSel ? "bg-[#4a5578]/80 px-[2px] -mx-[2px] " : "active:bg-white/15 ") + (isBold ? "font-bold text-white" : "") + '">' + esc(tk) + "</span>"; }).join("") + "</p>"; }
@@ -46,7 +74,7 @@
     prefs: { passage: true, cloze: true, confusion: true, syllable: true, clozeEx: false, topbar: true },
     favs: {}, notes: {}, learned: {}, due: [],
     missed: [], history: [],
-    dictWord: null, dictExpanded: false, dictFavs: {}, dictKey: "", dictSecret: "", dictCfg: null,
+    dictWord: null, dictExpanded: false, dictFavs: {}, dictKey: "", dictSecret: "", dictCfg: null, _spokenId: null,
     examOpen: false, noteOpen: false, noteDraft: "", spellOpen: false,
     spellInput: "", spellState: "idle",
     srAsk: 0, srItems: [], sr: null,
@@ -167,6 +195,7 @@
     } else if (S.phase === "done") { h += doneView(); }
     h += overlays() + "</div>";
     root.innerHTML = h;
+    maybeSpeakFront();
   }
 
   window.__FCV1 = { S: S, paint: paint, esc: esc, arr: arr, speak: speak, call: call, ico: ico, I: I, orangeWord: orangeWord, clickable: clickable, topBar: topBar, hero: hero, dashBtn: dashBtn, BG: BG, LEARN_BG: LEARN_BG, shuffle: shuffle };
@@ -420,9 +449,9 @@
       }
     }
 
-    // ② 有道（未配置 / 查不到 → null）
-    return call("dict.lookup", { w: key }).then(function (r) {
-      var e = (r && r.ok && r.entry) ? r.entry : null;
+    // ② 有道插件（未配置 / 查不到 → null）
+    return pluginCall("youdao", "lookup", { w: key }).then(function (r) {
+      var e = (r && r.ok && r.data) ? r.data : null;
       _dictCache[key] = e;
       return e;
     }).catch(function () { _dictCache[key] = null; return null; });
@@ -475,7 +504,7 @@
   }
   function startSession(mode) {
     S.screen = mode; S.phase = "cards"; S.idx = 0; S.face = "front"; S.tab = "colloc";
-    S.hinted = false; S.missed = []; S.wrongs = 0; S.history = []; S.learned = {};
+    S.hinted = false; S.missed = []; S.wrongs = 0; S.history = []; S.learned = {}; S._spokenId = null;
     S.queue = []; S.card = null; paint();
     log("startSession " + mode);
     call("session.plan", {}).then(function (plan) {
@@ -792,7 +821,7 @@
       case "flip-miss": flip(true); break;
       case "next": nextCard(false); break;
       case "next-miss": nextCard(true); break;
-      case "hint": S.hinted = true; speakWordThenSentence(S.card); paint(); break;
+      case "hint": S.hinted = true; speakSentence(S.card); paint(); break;
       case "known":
         call("state.kvPut", { id: S.card.id, key: "known", value: true });
         S.queue = S.queue.filter(function (c) { return c.id !== S.card.id; });
@@ -839,7 +868,7 @@
       case "menu-settings": S.menuOpen = false; S.settingsOpen = true; paint(); break;
       case "menu-noop": S.menuOpen = false; paint(); break;
       case "settings-close": S.settingsOpen = false; paint(); break;
-      case "dict-save": call("dict.setConfig", { appKey: S.dictKey || "", appSecret: S.dictSecret || "" }).then(function (r) { S.dictCfg = r || null; _dictCache = {}; paint(); }); break;
+      case "dict-save": pluginCall("youdao", "setConfig", { appKey: S.dictKey || "", appSecret: S.dictSecret || "" }).then(function () { loadDictCfg(); _dictCache = {}; paint(); }); break;
       case "pref-toggle": var k = el.getAttribute("data-k"); S.prefs[k] = !S.prefs[k]; if (k === "topbar") call("ui.setChrome", { top: !!S.prefs[k] }); paint(); break;
       case "order-open": S.settingsOpen = false; S.orderOpen = true; paint(); break;
       case "order-close": S.orderOpen = false; paint(); break;
@@ -969,7 +998,7 @@
     var c0 = FC.getCard();
     log("boot cardId=[" + ((c0 && c0.id) || "") + "]");
     /* 顶部栏偏好：问壳要盘上值，回填设置开关状态 */
-    call("dict.getConfig", {}).then(function (r) { S.dictCfg = r || null; });
+    loadDictCfg();
     call("ui.getChrome", {}).then(function (r) {
       if (r && r.top != null) { S.prefs.topbar = !!r.top; paint(); }
     }).catch(function () {});
