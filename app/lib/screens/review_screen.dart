@@ -340,6 +340,12 @@ class _ReviewScreenState extends State<ReviewScreen>
 
     final isPassage = modeKey == 'passage' || modeKey == 'passage_cloze';
     final stepMode = StudyMode.fromKey(modeKey);
+    // 统一场景 API：把「当前是什么状态」一次性告诉模板。
+    //   learn=背新词 / review=复习 / retest=背完再背一遍 / preview=查卡片（CardPreviewScreen）
+    // 模板读 session.scene 决定正反面、自评按钮、以及要不要收起底部动作条。
+    final scene = (stepMode == StudyMode.choice || stepMode == StudyMode.cloze)
+        ? 'retest'
+        : (unit.isReview ? 'review' : 'learn');
     final choices = (card != null &&
             (stepMode == StudyMode.choice || stepMode == StudyMode.cloze))
         ? _choicesFor(StudyStep(card, stepMode, round))
@@ -360,6 +366,7 @@ class _ReviewScreenState extends State<ReviewScreen>
         'mode': modeKey,
         'round': round,
         'review': unit.isReview ? 1 : 0,
+        'scene': scene,
       },
       choices: choices,
     );

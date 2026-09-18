@@ -50,6 +50,15 @@
     var w = String((S.card.fields || {}).word || "").trim();
     if (w) speak(w, TTS_WORD);
   }
+  /* 进入语篇通读自动朗读整段。同 maybeSpeakFront，用守卫防 paint() 反复触发。 */
+  function maybeSpeakPassage() {
+    if (S.phase !== "passage" || !S.passage) return;
+    if (S._passageSpoken) return;
+    S._passageSpoken = true;
+    var segs = arr(S.passage.segments);
+    var txt = segs.map(function (x) { return x.w || x.t || ""; }).join("");
+    if (txt) speak(txt, TTS_PASSAGE);
+  }
   function call(m, p) { try { return FC.call ? FC.call(m, p) : Promise.resolve({}); } catch (e) { return Promise.resolve({}); } }
   /* 插件统一入口：壳只认 plugin.call，具体插件在 Flashcard/plugins/*.js */
   function pluginCall(id, method, args) {
@@ -64,25 +73,83 @@
     }).catch(function () {});
   }
   function log(m) { try { if (FC.log) FC.log("[v1]", m); } catch (e) {} }
+  /* ===================== 会话断点续传 =====================
+     与 bubei_dark/workflow.js 同源：每一步 session.save 落盘到
+     /mnt/Flashcard/session.json，重进时 session.load 原地续上。
+     不存整张卡（几百 KB 会炸），只存 card id + 进度，恢复时 card.get 重拉。 */
+  var WF_NAME = "bubei_react_v1";
+  var _saveTimer = null;
+  /* 计划指纹：只有「同一章、同一批卡」才算同一次会话。
+     光存队列不存「这是哪章」，换章节就会把上一章的断点续上 —— 病根就在这。 */
+  function planKey(plan) {
+    var units = arr(plan && plan.units);
+    if (!units.length) return "";
+    var parts = units.map(function (u) {
+      return String(u.title || "") + ":" + arr(u.cards).map(function (c) { return c.id; }).join(",");
+    });
+    return String((plan && plan.mode) || "") + "|" + parts.join("|");
+  }
+  function snapshot() {
+    return {
+      screen: S.screen, phase: S.phase, idx: S.idx, face: S.face, tab: S.tab,
+      hinted: S.hinted, wrongs: S.wrongs, missed: S.missed.slice(),
+      history: S.history.slice(), learned: S.learned, ratings: S.ratings,
+      queueIds: S.queue.map(function (c) { return c.id; }),
+      planKey: planKey(S.plan)
+    };
+  }
+  function saveSession() {
+    if (!S.queue || !S.queue.length || S.phase === "done") return;
+    try { call("session.save", { workflow: WF_NAME, cursor: S.screen, session: snapshot() }); } catch (e) {}
+  }
+  function saveSoon() {
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(function () { _saveTimer = null; saveSession(); }, 200);
+  }
+  function clearSession() { try { call("session.clear", {}); } catch (e) {} }
+  function restoreSession(snap, plan) {
+    if (!snap || !snap.queueIds || !snap.queueIds.length || snap.phase !== "cards") return false;
+    if (plan) S.plan = plan;
+    S.screen = snap.screen === "review" ? "review" : "learn";
+    S.phase = "cards"; S.idx = snap.idx || 0; S.face = snap.face === "back" ? "back" : "front";
+    S.tab = snap.tab || "colloc"; S.hinted = !!snap.hinted; S.wrongs = snap.wrongs || 0;
+    S.missed = arr(snap.missed); S.history = arr(snap.history); S.learned = snap.learned || {}; S.ratings = snap.ratings || {};
+    S.queue = []; S.card = null;
+    fetchCards(snap.queueIds).then(function (cards) {
+      if (!cards.length) { log("restore -> 0 cards, 重开"); S.queue = []; startSession(S.screen); return; }
+      S.queue = cards; S.idx = Math.min(S.idx, cards.length - 1);
+      S.card = cards[S.idx] || null;
+      return hydrateKv(cards).then(function () {
+        log("restore ok idx=" + S.idx + "/" + cards.length + " face=" + S.face + " screen=" + S.screen);
+        reportProgress(); paint();
+      });
+    });
+    return true;
+  }
   function orangeWord(text, word) { if (!word) return esc(text); var re = new RegExp("(" + word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\w*)", "ig"); return String(text || "").split(re).map(function (seg) { if (!seg) return ""; return seg.toLowerCase().indexOf(word.toLowerCase()) === 0 ? '<b class="font-bold text-[#f0a824]">' + esc(seg) + "</b>" : esc(seg); }).join(""); }
   function clickable(text, boldWord, selected, cls) { var toks = String(text || "").split(/([A-Za-z][A-Za-z'-]*)/g); return '<p class="' + (cls || "") + '">' + toks.map(function (tk) { if (!/^[A-Za-z]/.test(tk)) return esc(tk); var isBold = boldWord && tk.toLowerCase().indexOf(boldWord.toLowerCase()) === 0; var isSel = selected && tk.toLowerCase() === selected.toLowerCase(); return '<span data-word="' + esc(tk) + '" class="cursor-pointer rounded-[4px] transition-colors ' + (isSel ? "bg-[#4a5578]/80 px-[2px] -mx-[2px] " : "active:bg-white/15 ") + (isBold ? "font-bold text-white" : "") + '">' + esc(tk) + "</span>"; }).join("") + "</p>"; }
 
   var S = {
     screen: "learn", phase: "cards", face: "front", tab: "colloc",
-    tabOrder: ["colloc", "deriv", "syn", "root"],
+    tabOrder: ["colloc", "deriv", "syn", "root", "mnem"],
     card: null, queue: [], idx: 0, hinted: false,
     prefs: { passage: true, cloze: true, confusion: true, syllable: true, clozeEx: false, topbar: true },
-    favs: {}, notes: {}, learned: {}, due: [],
+    favs: {}, notes: {}, learned: {}, due: [], ratings: {},
     missed: [], history: [],
-    dictWord: null, dictExpanded: false, dictFavs: {}, dictKey: "", dictSecret: "", dictCfg: null, _spokenId: null,
+    dictWord: null, dictAnchor: null, dictExpanded: false, dictFavs: {}, dictKey: "", dictSecret: "", dictCfg: null, _spokenId: null, _passageSpoken: false,
     examOpen: false, noteOpen: false, noteDraft: "", spellOpen: false,
     spellInput: "", spellState: "idle",
     srAsk: 0, srItems: [], sr: null,
     menuOpen: false, settingsOpen: false, orderOpen: false,
     sentView: null, rIdx: 0, revealed: false, picked: null, wrongs: 0,
-    passageStep: "read", clozeFilled: [], clozeErr: null
+    passageStep: "read", clozeFilled: [], clozeErr: null,
+    /* —— 纯渲染层驱动字段（workflow.js 通过 web.mount 灌入）—— */
+    mode: "read", pendingRating: "good", retestTotal: 0,
+    /* 统一场景（壳通过 session.scene 下发）：learn / review / retest / preview */
+    scene: "", browse: false,
+    choicePool: [], sentCloze: null
   };
-  var TABS = { colloc: "词组搭配", deriv: "派生", syn: "近义", root: "词根", note: "笔记" };
+  var TABS = { colloc: "词组", deriv: "派生", syn: "串记", root: "词根", mnem: "助记", note: "笔记" };
   var BG = "linear-gradient(168deg, #121214 0%, #131216 55%, #1a1522 100%)";
   var LEARN_BG = "linear-gradient(172deg, #131417 0%, #16151b 45%, #2a211d 100%)";
   function F() { return (S.card && S.card.fields) || {}; }
@@ -145,24 +212,109 @@
     if (tab === "colloc") {
       body = arr(f.collocations).map(function (c, ci) {
         var mIdx = c.m == null ? 0 : c.m; var bound = c.m !== -1 && details.length > mIdx && mIdx >= 0;
-        return '<p class="mb-[15px] flex items-baseline text-[16px] leading-snug"><span ' + (bound ? 'data-act="meaning" data-m="' + mIdx + '"' : "") + ' class="' + (bound ? "cursor-pointer pb-[4px] text-[#ececef] underline decoration-dashed decoration-[#5a5a60] decoration-[1.5px] underline-offset-[6px] " : "text-[#ececef]") + '">' + esc(c.en) + '</span><span class="ml-[13px] text-[#d5d5da]">' + esc(c.cn) + '</span><span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">' + esc(c.tag || (ci % 2 ? "核心高频" : "考研")) + "</span></p>";
-      }).join("") + '<button data-act="exam" class="mt-[10px] text-[14px] text-[#a8a8ae]">学习所有考研真题词组 <span class="text-[#7c7c82]">›</span></button>';
+        return '<p class="mb-[15px] flex items-baseline text-[16px] leading-snug"><span ' + (bound ? 'data-act="meaning" data-m="' + mIdx + '"' : "") + ' class="' + (bound ? "cursor-pointer pb-[4px] text-[#ececef] underline decoration-dashed decoration-[#5a5a60] decoration-[1.5px] underline-offset-[6px] " : "text-[#ececef]") + '">' + esc(c.en) + '</span><span class="ml-[13px] text-[#d5d5da]">' + esc(c.cn) + '</span>' + (c.tag ? '<span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">' + esc(c.tag) + "</span>" : "") + '</p>';
+      }).join("");
     } else if (tab === "deriv") {
-      body = arr(f.derivatives).map(function (d) {
-        return '<p class="mb-[15px] flex items-baseline text-[16px]">' + (d.word === f.word ? '<span class="mr-[8px] text-[10px] text-[#e3a83c]">▶</span>' : "") + '<span data-act="word" data-w="' + esc(d.word) + '" class="cursor-pointer text-[#ececef] underline decoration-dotted decoration-white/20 decoration-[1.5px] underline-offset-4">' + esc(d.word) + '</span><span class="ml-[13px] text-[14px] text-[#a8a8ae]">' + esc(d.pos || "") + '</span><span class="ml-[8px] truncate text-[#d5d5da]">' + esc(d.cn || "") + '</span><span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">考研</span></p>';
-      }).join("") + '<button class="mt-[6px] text-[14px] text-[#a8a8ae]">查看全部派生词 <span class="text-[#7c7c82]">›</span></button>';
+      var derivs = arr(f.derivatives);
+      var infl = arr(f.inflections);
+      var secTitle = function (t) {
+        return '<div style="margin-bottom:6px"><span style="border:1px solid #4a4a4f;border-radius:5px;padding:2px 7px;font-size:12px;color:#a8a8ae">' + t + '</span></div>';
+      };
+      var derivHtml = derivs.length ? derivs.map(function (d) {
+        return '<div style="display:flex;align-items:baseline;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">' +
+            (d.word === f.word ? '<span style="margin-right:8px;font-size:10px;color:#e3a83c">\u25b6</span>' : '') +
+            '<span data-act="word" data-w="' + esc(d.word) + '" style="cursor:pointer;font-size:16px;color:#ececef;border-bottom:1px dotted rgba(255,255,255,.25)">' + esc(d.word) + '</span>' +
+            '<span style="margin-left:11px;font-size:13.5px;color:#a8a8ae">' + esc(d.pos || "") + '</span>' +
+            '<span style="flex:1"></span>' +
+            (d.tag ? '<span style="margin-right:9px;border-radius:4px;background:#2e2e33;padding:2px 7px;font-size:11px;color:#8c8c92">' + esc(d.tag) + '</span>' : '') +
+            '<span style="font-size:14px;color:#d5d5da;text-align:right">' + esc(d.cn || "") + '</span>' +
+          '</div>';
+      }).join("") : '<p style="font-size:15px;color:#8c8c92">暂无派生词</p>';
+
+      body = '<div style="margin-bottom:20px">' + secTitle("\u6d3e\u751f") + derivHtml + '</div>';
+
+      if (infl.length) {
+        body += '<div>' + secTitle("\u53d8\u5f62") + infl.map(function (x) {
+          var isObj = x && typeof x === "object";
+          var pos = isObj ? String(x.pos || "") : "";
+          var label = isObj ? String(x.label || x.form || "") : "";
+          var text = isObj ? String(x.text || x.value || "") : String(x == null ? "" : x);
+          return '<div style="margin-bottom:10px;border-radius:11px;background:#28282c;padding:10px 13px">' +
+              ((pos || label) ? '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">' +
+                (pos ? '<span style="font-size:13px;color:#a8a8ae">' + esc(pos) + '</span>' : '') +
+                (label ? '<span style="border-radius:4px;background:#3a3a40;padding:2px 7px;font-size:11px;color:#c5c5ca">' + esc(label) + '</span>' : '') +
+              '</div>' : '') +
+              '<p style="font-size:15px;line-height:1.65;color:#ececef">' + esc(text) + '</p>' +
+            '</div>';
+        }).join("") + '</div>';
+      }
     } else if (tab === "syn") {
-      var syn = arr(f.synonyms), ant = arr(f.antonyms); body = '<div class="space-y-[15px]">';
-      if (syn.length) body += '<p class="flex flex-wrap items-baseline gap-x-[6px] text-[16px] leading-relaxed"><span class="mr-[4px] rounded-[5px] border border-[#4a4a4f] px-[7px] py-[2px] text-[12px] text-[#a8a8ae]">近义</span>' + syn.map(function (s, i) { return '<span data-act="word" data-w="' + esc(s) + '" class="cursor-pointer text-[#d5d5da] underline decoration-dotted decoration-white/20 decoration-[1.5px] underline-offset-4">' + esc(s) + (i < syn.length - 1 ? "," : "") + "</span>"; }).join("") + '<span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">核心高频</span></p>';
-      if (ant.length) body += '<p class="flex flex-wrap items-baseline gap-x-[6px] text-[16px] leading-relaxed"><span class="mr-[4px] rounded-[5px] border border-[#4a4a4f] px-[7px] py-[2px] text-[12px] text-[#a8a8ae]">反义</span>' + ant.map(function (s, i) { return '<span data-act="word" data-w="' + esc(s) + '" class="cursor-pointer text-[#d5d5da] underline decoration-dotted decoration-white/20 decoration-[1.5px] underline-offset-4">' + esc(s) + (i < ant.length - 1 ? "," : "") + "</span>"; }).join("") + '<span class="ml-auto shrink-0 rounded-[4px] bg-[#2e2e33] px-[7px] py-[2px] text-[11px] text-[#8c8c92]">易混辨析</span></p>';
-      body += "</div>";
+      var cnOf = function (v) { return Array.isArray(v) ? v.join("；") : String(v == null ? "" : v); };
+      var normOne = function (x, defG) {
+        if (x && typeof x === "object") {
+          var s0 = arr(x.senses)[0] || {};
+          return { g: String(x.group || defG), w: String(x.word || ""), pos: String(s0.pos || ""), cn: cnOf(s0.cn), tag: String(x.tag || "") };
+        }
+        return { g: defG, w: String(x == null ? "" : x), pos: "", cn: "", tag: "" };
+      };
+      var items = [];
+      if (arr(f.related).length) {
+        arr(f.related).forEach(function (x) { items.push(normOne(x, "串记")); });
+      } else {
+        arr(f.synonyms).forEach(function (x) { items.push(normOne(x, "近义")); });
+        arr(f.antonyms).forEach(function (x) { items.push(normOne(x, "反义")); });
+      }
+      items = items.filter(function (x) { return x.w; });
+
+      var groups = [], gmap = {};
+      items.forEach(function (x) {
+        if (!gmap[x.g]) { gmap[x.g] = []; groups.push(x.g); }
+        gmap[x.g].push(x);
+      });
+
+      body = groups.length ? groups.map(function (g) {
+        var list = gmap[g], tag = "";
+        for (var i = 0; i < list.length; i++) { if (list[i].tag) { tag = list[i].tag; break; } }
+        return '<div style="margin-bottom:18px">' +
+            '<div style="display:flex;align-items:center;margin-bottom:4px">' +
+              '<span style="border:1px solid #4a4a4f;border-radius:5px;padding:2px 7px;font-size:12px;color:#a8a8ae">' + esc(g) + '</span>' +
+              (tag ? '<span style="margin-left:auto;background:#2e2e33;border-radius:4px;padding:2px 7px;font-size:11px;color:#8c8c92">' + esc(tag) + '</span>' : '') +
+            '</div>' +
+            list.map(function (x) {
+              return '<div style="display:flex;align-items:baseline;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06)">' +
+                  '<span data-act="word" data-w="' + esc(x.w) + '" style="cursor:pointer;font-size:16px;color:#d5d5da;border-bottom:1px dotted rgba(255,255,255,.25)">' + esc(x.w) + '</span>' +
+                  '<span style="flex:1"></span>' +
+                  '<span style="font-size:14px;color:#c5c5ca;text-align:right;white-space:nowrap">' +
+                    (x.pos ? '<span style="color:#a8a8ae;margin-right:7px">' + esc(x.pos) + '</span>' : '') +
+                    esc(x.cn) +
+                  '</span>' +
+                '</div>';
+            }).join("") +
+          '</div>';
+      }).join("") : '<p style="font-size:15px;color:#8c8c92">暂无串记</p>';
     } else if (tab === "root") {
-      body = arr(f.root).map(function (r) { return '<p class="mb-[14px] text-[16px]"><span class="mr-[12px] rounded-[5px] border border-[#4a4a4f] px-[7px] py-[2px] text-[12px] text-[#a8a8ae]">' + esc(r.tag || "") + '</span><span class="text-[#ececef]">' + esc(r.text || "") + "</span></p>"; }).join("") + (f.rootSummary ? '<p class="mt-[4px] text-[16px] leading-[1.7] text-[#ececef]">' + esc(f.rootSummary) + "</p>" : "") + '<button class="mt-[16px] text-[14px] text-[#a8a8ae]">查看更多同根词 <span class="text-[#7c7c82]">›</span></button>';
+      body = arr(f.root).map(function (r) { return '<p class="mb-[14px] text-[16px]"><span class="mr-[12px] rounded-[5px] border border-[#4a4a4f] px-[7px] py-[2px] text-[12px] text-[#a8a8ae]">' + esc(r.tag || "") + '</span><span class="text-[#ececef]">' + esc(r.text || "") + "</span></p>"; }).join("") + (f.rootSummary ? '<p class="mt-[4px] text-[16px] leading-[1.7] text-[#ececef]">' + esc(f.rootSummary) + "</p>" : "");
+    } else if (tab === "mnem") {
+      var rawM = f.mnemonics != null ? f.mnemonics : (f.mnemonic != null ? [f.mnemonic] : []);
+      var mns = arr(rawM);
+      if (!mns.length) {
+        body = '<p style="font-size:15px;color:#8c8c92">暂无助记</p>';
+      } else {
+        body = mns.map(function (m) {
+          var isObj = m && typeof m === "object";
+          var txt = isObj ? String(m.text || "") : String(m == null ? "" : m);
+          var tag = isObj ? String(m.tag || "") : "";
+          return '<div style="margin-bottom:12px;border-radius:12px;background:#28282c;padding:12px 14px;border-left:3px solid #e3a83c">' +
+              (tag ? '<span style="display:inline-block;margin-bottom:7px;border-radius:4px;background:#3a3a40;padding:2px 7px;font-size:11px;color:#c5c5ca">' + esc(tag) + '</span>' : '') +
+              '<p style="font-size:15.5px;line-height:1.7;color:#ececef">' + esc(txt) + '</p>' +
+            '</div>';
+        }).join("");
+      }
     } else if (tab === "note") {
       body = '<p class="text-[16px] leading-relaxed text-[#ececef]">' + esc(S.notes[card.id] || "暂无笔记") + '</p><button data-act="note" class="mt-[16px] flex items-center gap-[6px] text-[14px] text-[#a8a8ae]">编辑笔记' + ico(I.noteadd, "h-[13px] w-[13px]") + "</button>";
     }
     return '<div class="relative mx-4 mt-[22px] rounded-[16px] bg-[#222226]/90 px-[18px] pb-[46px] pt-[17px]">' + clickable((f.sentence || {}).en, f.word, S.dictWord, "text-[17px] leading-[1.55] text-[#ececef]") + '<p class="mt-[6px] text-[15px] leading-relaxed text-[#c5c5ca]">' + esc((f.sentence || {}).cn) + '</p><button data-act="sentence-view" class="absolute bottom-[13px] right-[13px] flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#2e2e33] text-[#b9b9bf]">' + ico(I.sentswitch, "h-[17px] w-[17px]") + "</button></div>" +
-      '<div class="mx-4 mb-4 mt-[13px] flex min-h-[280px] flex-1 flex-col rounded-[16px] bg-[#222226]/90 px-[18px] pt-[19px]"><div class="flex-1">' + body + '</div><div class="flex flex-none items-center gap-[6px] pb-[15px] pt-3">' + tabHtml + '<span class="flex-1"></span>' + (!S.notes[card.id] ? '<button data-act="note" class="mr-[4px] text-[#a8a8ae]">' + ico(I.noteadd, "h-[18px] w-[18px]") + "</button>" : "") + '<button data-act="exam" class="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-[#2e2e33] text-[#b9b9bf]">' + ico(I.textsearch, "h-[16px] w-[16px]") + "</button></div></div>";
+      '<div class="mx-4 mb-4 mt-[13px] flex min-h-[280px] flex-1 flex-col rounded-[16px] bg-[#222226]/90 px-[18px] pt-[19px]"><div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain">' + body + '</div><div class="flex flex-none items-center gap-[6px] pb-[15px] pt-3">' + tabHtml + '<span class="flex-1"></span>' + (!S.notes[card.id] ? '<button data-act="note" class="mr-[4px] text-[#a8a8ae]">' + ico(I.noteadd, "h-[18px] w-[18px]") + "</button>" : "") + '<button data-act="exam" class="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-[#2e2e33] text-[#b9b9bf]">' + ico(I.textsearch, "h-[16px] w-[16px]") + "</button></div></div>";
   }
   /* 主页已删除 —— 模板只保留「学习 / 复习」两条线，进来直接开背。 */
   function sentenceText(card) { var en = String((card.fields.sentence || {}).en || ""); if (S.prefs.clozeEx) { var w = String(card.fields.word || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); en = en.replace(new RegExp(w + "\\w*", "i"), "______"); } return en; }
@@ -175,67 +327,124 @@
   }
   function overlays() { return ""; }
 
+  /* 全量重绘会把滚动位置和输入焦点冲掉 —— 重绘前抓、重绘后还原。
+     滚动容器统一打 data-scroll="key" 标记。 */
+  function captureScroll() {
+    var m = {}, els = root.querySelectorAll("[data-scroll]");
+    for (var i = 0; i < els.length; i++) { var k = els[i].getAttribute("data-scroll"); if (k) m[k] = els[i].scrollTop; }
+    return m;
+  }
+  function restoreScroll(m) {
+    if (!m) return;
+    var els = root.querySelectorAll("[data-scroll]");
+    for (var i = 0; i < els.length; i++) { var k = els[i].getAttribute("data-scroll"); if (k && m[k] != null) els[i].scrollTop = m[k]; }
+  }
+  function captureFocus() {
+    var a = document.activeElement;
+    if (!a || !a.getAttribute) return null;
+    var role = a.getAttribute("data-role");
+    if (!role) return null;
+    var f = { role: role };
+    try { f.start = a.selectionStart; f.end = a.selectionEnd; } catch (e) {}
+    return f;
+  }
+  function restoreFocus(f) {
+    if (!f) return;
+    var el = root.querySelector('[data-role="' + f.role + '"]');
+    if (el && el.focus) { try { el.focus(); if (f.start != null && el.setSelectionRange) el.setSelectionRange(f.start, f.end); } catch (e) {} }
+  }
+
   function paint() {
     var card = S.card;
     if (!card) { root.innerHTML = '<div class="flex h-full items-center justify-center p-8 text-center text-[15px] text-[#8a8a90]">' + (S.phase === "done" ? "没有可学的卡（已学完 / 已标熟）" : "加载中…") + "</div>"; return; }
+    var _sc = captureScroll(); var _fc = captureFocus();
     var bg = S.screen === "learn" ? LEARN_BG : BG;
-    var counter = Math.min(S.idx, S.queue.length) + "/" + S.queue.length;
+    var counter = ((S.idx || 0) + 1) + "/" + (S.retestTotal || 1);
     var h = '<div class="relative flex h-full flex-col overflow-hidden text-[#f0f0f2]" style="background:' + bg + '">';
-    if (S.phase === "cards") h += topBar(counter, { canUndo: S.face === "back" && S.history.length > 0, fav: !!S.favs[card.id], showKnown: S.face === "front" });
+    if (S.phase === "cards" && !S.browse) h += topBar(counter, { canUndo: S.face === "back" && S.history.length > 0, fav: !!S.favs[card.id], showKnown: S.face === "front" });
     if (S.phase === "cards" && S.face === "front") {
       if (S.screen === "learn") {
-        h += '<div class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="mt-[26px] space-y-[13px] px-[34px]"><div class="h-[26px] w-[168px] rounded-full bg-[#222226]"></div><div class="h-[26px] w-[100px] rounded-full bg-[#222226]"></div></div><div class="mx-4 mt-[56px] rounded-[16px] bg-[#28282c]/80 px-[18px] py-[19px]">' + clickable(sentenceText(card), card.fields.word, S.dictWord, "text-[17px] leading-[1.6] text-[#ececef]") + (S.hinted ? '<p class="mt-[8px] text-[15px] leading-relaxed text-[#c5c5ca]">' + esc((card.fields.sentence || {}).cn) + "</p>" : "") + "</div></div>";
+        h += '<div data-scroll="learn-front" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="mt-[26px] space-y-[13px] px-[34px]"><div class="h-[26px] w-[168px] rounded-full bg-[#222226]"></div><div class="h-[26px] w-[100px] rounded-full bg-[#222226]"></div></div><div class="mx-4 mt-[56px] rounded-[16px] bg-[#28282c]/80 px-[18px] py-[19px]">' + clickable(sentenceText(card), card.fields.word, S.dictWord, "text-[17px] leading-[1.6] text-[#ececef]") + (S.hinted ? '<p class="mt-[8px] text-[15px] leading-relaxed text-[#c5c5ca]">' + esc((card.fields.sentence || {}).cn) + "</p>" : "") + "</div></div>";
         if (!S.hinted) h += '<div class="mb-[26px] flex flex-none flex-col items-center gap-[10px]"><button data-act="hint" class="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#2e2e33]/90 text-[#c9c9ce]">' + ico(I.bulb, "h-[22px] w-[22px]") + '</button><span class="text-[14px] text-[#7c7c82]">提示一下</span></div>';
-        h += '<footer class="grid flex-none grid-cols-2 pb-[34px]">' + dashBtn("认识", "bg-[#2ec4a5]", "flip-ok") + dashBtn("不认识", "bg-[#e34d64]", "flip-miss") + "</footer>";
+        h += '<footer class="grid flex-none grid-cols-2 pb-[34px]">' + dashBtn("不认识", "bg-[#e34d64]", "rate-again") + dashBtn("认识", "bg-[#2ec4a5]", "rate-good") + "</footer>";
       } else {
-        h += '<div class="mt-[52px] flex-1">' + hero(card) + '<div class="mt-[26px] space-y-[13px] px-[34px]"><div class="h-[26px] w-[168px] rounded-full bg-[#222226]"></div><div class="h-[26px] w-[100px] rounded-full bg-[#222226]"></div></div></div><p class="mb-[30px] text-center text-[14px] leading-[1.9] text-[#7c7c82]">瞬间想起词义，选「认识」<br>思考后想起词义，选「模糊」</p><footer class="grid flex-none grid-cols-3 pb-[34px]">' + dashBtn("认识", "bg-[#2ec4a5]", "flip-ok") + dashBtn("模糊", "bg-[#e3a83c]", "flip-miss") + dashBtn("忘记了", "bg-[#e34d64]", "flip-miss") + "</footer>";
+        h += '<div class="mt-[52px] flex-1">' + hero(card) + '<div class="mt-[26px] space-y-[13px] px-[34px]"><div class="h-[26px] w-[168px] rounded-full bg-[#222226]"></div><div class="h-[26px] w-[100px] rounded-full bg-[#222226]"></div></div></div><p class="mb-[30px] text-center text-[14px] leading-[1.9] text-[#7c7c82]">瞬间想起词义，选「记得」<br>思考后想起词义，选「模糊」</p><footer class="grid flex-none grid-cols-3 pb-[34px]">' + dashBtn("忘记了", "bg-[#e34d64]", "rate-again") + dashBtn("模糊", "bg-[#e3a83c]", "rate-hard") + dashBtn("记得", "bg-[#2ec4a5]", "rate-good") + "</footer>";
       }
     } else if (S.phase === "cards" && S.face === "back") {
-      h += '<div class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[46px]">' + hero(card, { syllable: S.prefs.syllable }) + senseLine(card) + detailBody(card, S.tab) + '</div><footer class="grid flex-none grid-cols-2 pb-[34px] pt-[6px]">' + dashBtn("下一词", "bg-[#2ec4a5]", "next") + dashBtn("记错了", "bg-[#e34d64]", "next-miss") + "</footer>";
+      /* preview（查词）只读：不渲染任何底部动作条 */
+      var backFoot = S.browse ? "" : (((S.pendingRating === "again") || S.postChoice)
+        ? '<footer class="flex flex-none justify-center pb-[34px] pt-[6px]">' + dashBtn("下一词", "bg-[#2ec4a5]", "next") + "</footer>"
+        : '<footer class="grid flex-none grid-cols-2 pb-[34px] pt-[6px]">' + dashBtn("记错了", "bg-[#e34d64]", "next-miss") + dashBtn("下一词", "bg-[#2ec4a5]", "next") + "</footer>");
+      h += '<div data-scroll="back" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[46px]" style="overscroll-behavior:contain">' + hero(card, { syllable: S.prefs.syllable }) + senseLine(card) + detailBody(card, S.tab) + '</div>' + backFoot;
     } else if (S.phase === "done") { h += doneView(); }
     h += overlays() + "</div>";
     root.innerHTML = h;
+    restoreScroll(_sc); restoreFocus(_fc);
     maybeSpeakFront();
+    maybeSpeakPassage();
   }
 
   window.__FCV1 = { S: S, paint: paint, esc: esc, arr: arr, speak: speak, call: call, ico: ico, I: I, orangeWord: orangeWord, clickable: clickable, topBar: topBar, hero: hero, dashBtn: dashBtn, BG: BG, LEARN_BG: LEARN_BG, shuffle: shuffle };
   /* ===================== PART2-A：浮层渲染 ===================== */
+  /* 中文译文目标词：数据格式 [中文](english) -> 中文划线高亮、点按查词 */
+  function cnHtml(cn) {
+    var s = String(cn || ""); var re = /\[([^\[\]]+)\]\(([^()]+)\)/g;
+    var out = "", last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      if (m.index > last) out += esc(s.slice(last, m.index));
+      var en = String(m[2]).split("|")[0];
+      out += '<span data-act="word" data-w="' + esc(en) + '" class="cursor-pointer font-semibold text-[#f0a824] underline decoration-dashed decoration-[#f0a824]/50 decoration-[1.5px] underline-offset-[5px]">' + esc(m[1]) + "</span>";
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) out += esc(s.slice(last));
+    return out;
+  }
+
   function ovPassage() {
-    var p = S.passage || {}; var parts = arr(p.parts);
-    var body = parts.map(function (x) {
-      if (x.word) return '<span data-act="word" data-w="' + esc(x.word) + '" class="mx-[2px] cursor-pointer pb-[3px] font-bold text-[#f0a824] underline decoration-dashed decoration-[#f0a824]/50 decoration-[1.5px] underline-offset-[6px]">' + esc(x.word) + "</span>";
-      return clickable(x.t || "", null, S.dictWord, "inline");
+    var p = S.passage || {}; var segs = arr(p.segments);
+    var body = segs.map(function (x) {
+      if (x.w) return '<span data-act="word" data-w="' + esc(x.w) + '" class="mx-[2px] cursor-pointer pb-[3px] font-bold text-[#f0a824] underline decoration-dashed decoration-[#f0a824]/50 decoration-[1.5px] underline-offset-[6px]">' + esc(x.w) + "</span>";
+      return esc(x.t || "");
     }).join("");
     return '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2"><button data-act="home" class="flex items-center gap-2 text-[#c9c9ce]">' + ico(I.chevron, "h-[22px] w-[22px]") + '<span class="text-[15px] font-medium text-[#b9b9bf]">语篇通读</span></button>' +
       '<button data-act="passage-speak" class="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-[#29292e] text-[#b9b9bf]">' + ico(I.speaker, "h-[16px] w-[16px]") + "</button></header>" +
-      '<div class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-4"><div class="mt-[10px] flex items-baseline gap-3"><h1 class="text-[26px] font-extrabold text-[#f5f5f7]">' + esc(p.title || "") + '</h1><span class="rounded-[5px] bg-[#29292e] px-[8px] py-[3px] text-[12px] text-[#a8a8ae]">' + esc(p.tag || "") + '</span></div>' +
+      '<div data-scroll="passage" class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-4"><div class="mt-[10px] flex items-baseline gap-3"><h1 class="text-[26px] font-extrabold text-[#f5f5f7]">' + esc(p.title || "") + '</h1><span class="rounded-[5px] bg-[#29292e] px-[8px] py-[3px] text-[12px] text-[#a8a8ae]">' + esc(p.tag || "") + '</span></div>' +
       '<p class="mt-[20px] text-[18px] leading-[1.85] text-[#d5d5da]">' + body + "</p>" +
-      '<p class="mt-[22px] border-t border-white/[0.07] pt-[18px] text-[15px] leading-[1.9] text-[#8c8c92]">' + esc(p.cn || "") + "</p></div>" +
+      '<p class="mt-[22px] border-t border-white/[0.07] pt-[18px] text-[15px] leading-[1.9] text-[#8c8c92]">' + cnHtml(p.cn) + "</p></div>" +
       '<footer class="grid flex-none ' + (S.prefs.cloze ? "grid-cols-2" : "grid-cols-1") + ' pb-[30px] pt-[10px]">' +
       (S.prefs.cloze ? dashBtn("语篇填空", "bg-[#e3a83c]", "cloze-start") : "") + dashBtn("进入单词背诵", "bg-[#2ec4a5]", "cards-start") + "</footer>";
   }
 
   function ovCloze() {
-    var p = S.passage || {}; var parts = arr(p.parts); var bank = S.clozeBank || []; var filled = S.clozeFilled || [];
+    var p = S.passage || {}; var segs = arr(p.segments); var bank = S.clozeBank || []; var filled = S.clozeFilled || [];
+    var blanks = arr(S.clozeBlanks);
     var bi = -1; var nextBlank = filled.indexOf(null);
-    var body = parts.map(function (x) {
-      if (!x.word) return esc(x.t || "");
+    var body = segs.map(function (x) {
+      if (!x.w) return esc(x.t || "");
+      if (x.blank === false) return '<span data-act="word" data-w="' + esc(x.lemma || x.w) + '" class="mx-[2px] cursor-pointer font-semibold text-[#d5d5da] underline decoration-dotted decoration-white/25 decoration-[1.5px] underline-offset-4">' + esc(x.w) + "</span>";
       bi += 1; var idx = bi; var val = filled[idx];
-      var isActive = idx === nextBlank;
-      return '<span class="mx-[3px] inline-block min-w-[92px] border-b-2 pb-[1px] text-center font-bold ' + (val ? "border-[#2ec4a5]/60 text-[#2ec4a5]" : isActive ? "border-[#e3a83c] text-transparent" : "border-[#4a4a4f] text-transparent") + '">' + esc(val || "____") + "</span>";
+      var isActive = idx === S.clozeActive;
+      return '<span data-act="cloze-blank" data-i="' + idx + '" class="mx-[3px] inline-block min-w-[92px] cursor-pointer border-b-2 pb-[1px] text-center font-bold ' + (val ? "border-[#2ec4a5]/60 text-[#2ec4a5]" : isActive ? "border-[#e3a83c] text-transparent" : "border-[#4a4a4f] text-transparent") + '">' + esc(val || "____") + "</span>";
     }).join("");
     var used = filled.filter(Boolean);
     var done = nextBlank === -1;
+    var activeIdx = S.clozeActive;
+    if (activeIdx == null || activeIdx < 0 || filled[activeIdx] !== null) activeIdx = nextBlank;
+    var b = done ? null : (blanks[activeIdx] || {});
+    var hint = done
+      ? '<div style="border-radius:10px;background:rgba(29,66,57,.55);padding:10px 14px;text-align:center;font-size:14px;color:#3fe0b4">✓ 全部填好，点「进入单词背诵」过关</div>'
+      : '<div style="border-radius:10px;background:#222226;padding:10px 14px;text-align:center;font-size:14px;color:#a8a8ae">当前空：<span style="font-weight:600;color:#ececef">' + esc((b.pos ? b.pos + " " : "") + (b.plain || b.meaning || "（无语义）")) + "</span></div>";
     var chips = bank.map(function (w) {
       var u = used.indexOf(w) >= 0; var err = S.clozeErr === w;
-      return '<button data-act="cloze-chip" data-w="' + esc(w) + '" ' + (u ? "disabled" : "") + ' class="rounded-[12px] px-[16px] py-[9px] text-[16px] font-semibold ' + (u ? "bg-[#1c1c20] text-[#4a4a4f]" : err ? "animate-pulse bg-[#4a1a24] text-[#ff8a8a]" : "bg-[#26262b] text-[#ececef]") + '">' + esc(w) + "</button>";
+      return '<button data-act="cloze-chip" data-w="' + esc(w) + '" ' + (u ? "disabled" : "") + ' class="flex-none rounded-[12px] px-[16px] py-[9px] text-[16px] font-semibold ' + (u ? "bg-[#1c1c20] text-[#4a4a4f]" : err ? "animate-pulse bg-[#4a1a24] text-[#ff8a8a]" : "bg-[#26262b] text-[#ececef]") + '">' + esc(w) + "</button>";
     }).join("");
     return '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2"><button data-act="cloze-back" class="flex items-center gap-2 text-[#c9c9ce]">' + ico(I.chevron, "h-[22px] w-[22px]") + '<span class="text-[15px] font-medium text-[#b9b9bf]">语篇填空</span></button></header>' +
-      '<div class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-4"><div class="mt-[10px] flex items-baseline justify-between"><h1 class="text-[26px] font-extrabold text-[#f5f5f7]">' + esc(p.title || "") + '</h1><span class="text-[13px] tabular-nums text-[#8c8c92]">' + used.length + "/" + (S.clozeTargets || []).length + "</span></div>" +
+      '<div data-scroll="cloze" class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-2 [scrollbar-width:none]"><div class="mt-[10px] flex items-baseline justify-between"><h1 class="text-[26px] font-extrabold text-[#f5f5f7]">' + esc(p.title || "") + '</h1><span class="text-[13px] tabular-nums text-[#8c8c92]">' + used.length + "/" + (S.clozeTargets || []).length + "</span></div>" +
       '<p class="mt-[20px] text-[18px] leading-[2.05] text-[#d5d5da]">' + body + "</p>" +
-      (done ? '<div class="mt-[26px] rounded-[14px] bg-[#1d4239]/60 px-[18px] py-[14px]"><p class="text-[15px] font-semibold text-[#3fe0b4]">✓ 全部填对！</p><p class="mt-[4px] text-[13px] text-[#8fccc4]">出错 ' + (S.clozeWrongs || 0) + " 次 · 建议现在进入单词背诵巩固</p></div>" : '<p class="mt-[20px] text-center text-[12.5px] text-[#5a5a60]">按顺序为琥珀色空格选择正确的单词</p>') +
-      '<div class="mt-[18px] flex flex-wrap justify-center gap-[10px] pb-2">' + chips + "</div></div>" +
-      '<footer class="grid flex-none grid-cols-2 pb-[30px] pt-[10px]">' + dashBtn("返回语篇", "bg-[#5a5a60]", "cloze-back", true) + dashBtn(done ? "进入单词背诵" : "跳过填空", "bg-[#2ec4a5]", "cards-start") + "</footer>";
+      (done ? '<div style="margin-top:22px;border-radius:14px;background:rgba(29,66,57,.6);padding:14px 18px"><p style="font-size:15px;font-weight:600;color:#3fe0b4">✓ 全部填对！</p><p style="margin-top:4px;font-size:13px;color:#8fccc4">出错 ' + (S.clozeWrongs || 0) + " 次 · 建议现在进入单词背诵巩固</p></div>" : "") +
+      "</div>" +
+      '<div style="flex:none;border-top:1px solid rgba(255,255,255,.07);padding:12px 16px 0">' + hint + '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:10px;max-height:32vh;overflow-y:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none">' + chips + "</div></div>" +
+      '<footer class="grid flex-none grid-cols-2 pb-[30px] pt-[6px]">' + dashBtn("返回语篇", "bg-[#5a5a60]", "cloze-back", true) + dashBtn(done ? "进入单词背诵" : "跳过填空", "bg-[#2ec4a5]", "cards-start") + "</footer>";
   }
 
   function ovChoice() {
@@ -257,7 +466,7 @@
       return '<button data-act="choice-pick" data-i="' + i + '" class="relative block w-full rounded-[16px] px-[18px] text-left transition-colors ' + cls + " " + (S.revealed ? "py-[17px]" : "py-[21px]") + '">' + inner + "</button>";
     }).join("");
     return topBar((S.rIdx + 1) + "/" + (S.retestCards || []).length, { canUndo: false, fav: !!S.favs[card.id], showKnown: false }) +
-      '<div class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="min-h-[60px] flex-1"></div><div class="space-y-[13px] px-4 pb-5 pt-8">' + optsHtml + "</div></div>" +
+      '<div data-scroll="choice" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="min-h-[60px] flex-1"></div><div class="space-y-[13px] px-4 pb-5 pt-8">' + optsHtml + "</div></div>" +
       '<footer class="flex flex-none justify-center pb-[34px] pt-[6px]">' + (S.revealed ? dashBtn("继续", "bg-[#2ec4a5]", "choice-next") : dashBtn("看答案", "bg-[#e34d64]", "choice-reveal")) + "</footer>";
   }
 
@@ -276,13 +485,37 @@
         '<div class="flex flex-none items-center justify-between px-[20px] pt-[16px]"><span class="text-[15px] text-[#a9b0c8]">' + esc(ex.src || "") + '</span><span class="flex flex-col gap-[4px]"><i class="h-[2.5px] w-[18px] rounded-full bg-[#a9b0c8]"></i><i class="h-[2.5px] w-[18px] rounded-full bg-[#a9b0c8]"></i></span></div>' +
         '<div data-act="sv-speak" class="flex min-h-[150px] flex-1 cursor-pointer flex-col justify-end px-[20px] pb-[12px]"><p class="text-[20px] font-bold leading-[1.5] text-[#f0f0f2]">' + orangeWord(ex.en, f.word) + '</p><p class="mt-[8px] text-[15px] leading-relaxed text-[#8a91a8]">' + esc(ex.cn || "") + '</p>' +
           '<div class="mt-[16px] flex items-center"><button data-act="sv-star" class="text-[#8a91a8]">' + ico(I.star(!!v.star), "h-[20px] w-[20px]") + '</button><span class="flex flex-1 justify-center gap-[8px]">' + dotsEx + '</span><span class="w-[20px]"></span></div></div>' +
-        '<div class="relative h-[212px] flex-none border-t border-white/[0.05] bg-[#232a48]"><div class="h-full overflow-y-auto px-[20px] pb-[40px] pt-[18px] ' + (v.revealed ? "" : "blur-[10px] opacity-50") + '">' +
+        '<div class="relative h-[212px] flex-none border-t border-white/[0.05] bg-[#232a48]"><div data-scroll="sent" class="h-full overflow-y-auto px-[20px] pb-[40px] pt-[18px] ' + (v.revealed ? "" : "blur-[10px] opacity-50") + '">' +
           '<p class="text-[17px] leading-[1.6] text-[#ececef]"><b class="mr-2 font-bold">' + esc(pos) + "</b>" + esc(detail.enDef || detail.meaning || "") + "</p>" +
           (detail.pattern ? '<span class="mt-[14px] inline-block rounded-[10px] border border-[#4a5578] px-[13px] py-[7px] text-[15px] font-semibold text-[#c9cfdf]">' + esc(detail.pattern) + "</span>" : "") +
         "</div>" + (v.revealed ? "" : '<button data-act="sv-reveal" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-[18px] py-[10px] text-[16px] text-[#c9cfdf]">查看双语释义</button>') +
         '<span class="absolute bottom-[12px] right-[18px] text-[14px] tabular-nums text-[#8a91a8]">' + (exIdx + 1) + "/" + exs.length + "</span></div></div>" +
-      '<div class="flex flex-none items-center justify-center gap-[10px] pt-[12px]"><span class="rounded-full bg-[#e3a83c] px-[11px] py-[3px] text-[12px] font-semibold text-[#241a05]">考义</span>' + dotsM + "</div>" +
       '<footer class="grid flex-none grid-cols-2 pb-[26px] pt-[16px]">' + dashBtn("下一词", "bg-[#2ec4a5]", "sv-next") + dashBtn("收起卡片", "bg-[#e3a83c]", "sv-close") + "</footer></div>";
+  }
+
+  /* 词卡：贴着点中的词弹，小卡，尽量不挡视线 */
+  /* 词卡：贴着点中的词弹，小卡 + 小尖角，不挡视线 */
+  /* 词卡：钉在所选词下方；样式全内联，不依赖 Tailwind 产物 */
+  function dictPopup(inner) {
+    var vw = window.innerWidth || 360, vh = window.innerHeight || 640;
+    var CW = Math.min(300, vw - 24);
+    var a = S.dictAnchor;
+    var left, top, estH = 210;
+    if (a) {
+      left = a.left + a.width / 2 - CW / 2;
+      if (left < 12) left = 12;
+      if (left + CW > vw - 12) left = vw - 12 - CW;
+      top = a.bottom + 12;
+      if (top + estH > vh - 12) {
+        top = a.top - 12 - estH;
+        if (top < 12) top = Math.max(12, vh - 12 - estH);
+      }
+    } else {
+      left = (vw - CW) / 2; top = Math.round(vh * 0.38);
+    }
+    var st = "position:fixed;z-index:71;width:" + CW + "px;left:" + Math.round(left) + "px;top:" + Math.round(top) + "px;" +
+             "background:#262c44;border-radius:18px;padding:16px 20px 18px;box-shadow:0 18px 60px rgba(0,0,0,0.55);";
+    return '<div data-stop="1" style="' + st + '">' + inner + "</div>";
   }
 
   function ovDict() {
@@ -297,7 +530,7 @@
       var senses = arr(e.senses).map(function (s, i) { return '<p class="text-[17px] leading-relaxed text-[#ececef]"><span class="mr-2 text-[15px] text-[#a9b0c8]">' + esc(s.pos) + '</span><span class="' + (i === 0 ? "font-bold" : "") + '">' + esc(s.cn) + "</span></p>"; }).join("");
       return '<div data-act="dict-close" class="absolute inset-0 z-[70] flex flex-col justify-end bg-black/55"><div data-stop="1" class="flex h-[94%] flex-col rounded-t-[24px] bg-[#1e2338] px-[22px]">' +
         '<div class="flex flex-none justify-center pb-1 pt-[10px]"><span class="h-[4px] w-[44px] rounded-full bg-white/20"></span></div>' +
-        '<div class="min-h-0 flex-1 overflow-y-auto pb-24"><div class="flex items-start justify-between pt-[10px]"><h2 class="text-[34px] font-extrabold leading-tight text-[#f0a824]">' + esc(w) + '</h2>' +
+        '<div data-scroll="dict" class="min-h-0 flex-1 overflow-y-auto pb-24"><div class="flex items-start justify-between pt-[10px]"><h2 class="text-[34px] font-extrabold leading-tight text-[#f0a824]">' + esc(w) + '</h2>' +
         '<button data-act="dict-fav" class="mt-2 ' + (S.dictFavs[w] ? "text-[#f0a824]" : "text-[#a9b0c8]") + '">' + ico(I.star(!!S.dictFavs[w]), "h-[22px] w-[22px]") + "</button></div>" +
         (e.phonetic ? '<button data-act="dict-speak" class="mt-[10px] flex items-center gap-2"><span class="flex items-center gap-[6px] rounded-full bg-[#2c3350] px-[12px] py-[5px]"><span class="text-[11px] text-[#a9b0c8]">美</span>' + ico(I.speaker, "h-[11px] w-[11px] text-[#a9b0c8]") + '</span><span class="text-[15px] text-[#a9b0c8]">' + esc(e.phonetic) + "</span></button>" : "") +
         '<div class="mt-[18px] space-y-[6px]">' + senses + "</div>" +
@@ -306,12 +539,19 @@
         '<button data-act="dict-close" class="absolute bottom-[26px] right-[22px] flex h-[54px] w-[54px] items-center justify-center rounded-full bg-[#2b3152]/95 text-[#ececef]">' + ico(I.close, "h-[20px] w-[20px]") + "</button></div></div>";
     }
     var inner;
-    if (!e) inner = '<div class="py-6 text-center"><p class="text-[20px] font-bold text-[#f0a824]">' + esc(S.dictWord.toLowerCase()) + '</p><p class="mt-3 text-[14px] text-[#8a91a8]">没有查到这个词 🤔</p></div>';
-    else inner = '<div class="flex items-start justify-between"><h2 class="text-[30px] font-extrabold leading-tight text-[#f0a824]">' + esc(w) + '</h2><button data-act="dict-fav" class="mt-1 ' + (S.dictFavs[w] ? "text-[#f0a824]" : "text-[#a9b0c8]") + '">' + ico(I.star(!!S.dictFavs[w]), "h-[22px] w-[22px]") + "</button></div>" +
-      (e.phonetic ? '<button data-act="dict-speak" class="mt-[10px] flex items-center gap-2"><span class="flex items-center gap-[6px] rounded-full bg-[#2c3350] px-[12px] py-[5px]"><span class="text-[11px] text-[#a9b0c8]">美</span>' + ico(I.speaker, "h-[11px] w-[11px] text-[#a9b0c8]") + '</span><span class="text-[15px] text-[#a9b0c8]">' + esc(e.phonetic) + "</span></button>" : "") +
-      '<div class="mt-[22px] space-y-[5px]">' + arr(e.senses).slice(0, 2).map(function (s, i) { return '<p class="text-[17px] leading-relaxed text-[#ececef]"><span class="mr-2 text-[15px] text-[#a9b0c8]">' + esc(s.pos) + '</span><span class="' + (i === 0 ? "font-bold" : "") + '">' + esc(s.cn) + "</span></p>"; }).join("") + "</div>" +
-      '<button data-act="dict-expand" class="mt-[18px] text-[15px] text-[#a9b0c8]">查看详细释义 <span class="text-[#7a8098]">›</span></button>';
-    return '<div data-act="dict-close" class="absolute inset-0 z-[70]"><div data-stop="1" class="absolute left-[22px] right-[22px] top-[38%] rounded-[18px] bg-[#262c44] px-[22px] pb-[22px] pt-[20px] shadow-[0_18px_60px_rgba(0,0,0,0.55)]">' + inner + "</div></div>";
+    if (!e) {
+      inner = '<p style="font-size:18px;font-weight:700;color:#f0a824">' + esc(S.dictWord.toLowerCase()) + '</p>' +
+              '<p style="margin-top:8px;font-size:13px;color:#8a91a8">没有查到这个词 🤔</p>';
+    } else {
+      inner = '<div style="display:flex;align-items:flex-start;justify-content:space-between">' +
+                '<h2 style="font-size:25px;font-weight:800;line-height:1.15;color:#f0a824">' + esc(w) + '</h2>' +
+                '<button data-act="dict-fav" style="margin-top:2px;' + (S.dictFavs[w] ? "color:#f0a824" : "color:#a9b0c8") + '">' + ico(I.star(!!S.dictFavs[w]), "h-[22px] w-[22px]") + "</button>" +
+              "</div>" +
+              (e.phonetic ? '<button data-act="dict-speak" style="margin-top:9px;display:flex;align-items:center;gap:8px"><span style="display:flex;align-items:center;gap:5px;border-radius:999px;background:#2c3350;padding:3px 9px"><span style="font-size:10px;color:#a9b0c8">美</span>' + ico(I.speaker, "h-[11px] w-[11px] text-[#a9b0c8]") + '</span><span style="font-size:14px;color:#a9b0c8">' + esc(e.phonetic) + "</span></button>" : "") +
+              '<div style="margin-top:13px">' + arr(e.senses).slice(0, 2).map(function (s, i) { return '<p style="margin-top:5px;font-size:15.5px;line-height:1.35;color:#ececef"><span style="margin-right:6px;font-size:13px;color:#a9b0c8">' + esc(s.pos) + '</span><span style="' + (i === 0 ? "font-weight:600" : "") + '">' + esc(s.cn) + "</span></p>"; }).join("") + "</div>" +
+              '<button data-act="dict-expand" style="margin-top:13px;font-size:13.5px;color:#a9b0c8">查看详细释义 <span style="color:#7a8098">›</span></button>';
+    }
+    return '<div data-act="dict-close" class="absolute inset-0 z-[70]">' + dictPopup(inner) + "</div>";
   }
 
   function ovExam() {
@@ -323,7 +563,7 @@
     return '<div class="absolute inset-0 z-50 flex flex-col" style="background:' + BG + '">' +
       '<div class="flex flex-none items-center gap-3 px-4 pt-[22px]"><div class="flex flex-1 items-center gap-2.5 rounded-full bg-[#26262b] px-4 py-[10px]"><span class="flex-1 text-[17px] text-[#ececef]">' + esc(f.word) + '</span></div><button data-act="exam-close" class="text-[16px] text-[#c9c9ce]">取消</button></div>' +
       '<div class="mt-[16px] flex flex-none flex-wrap gap-[10px] px-4">' + chips + "</div>" +
-      '<div class="mt-[18px] min-h-0 flex-1 overflow-y-auto px-5 pb-24"><p class="mb-[18px] text-[14px] text-[#a8a8ae]">在历年真题中出现 <b class="text-[#e3a83c]">' + exams.length + "</b> 次</p>" + list + "</div>" +
+      '<div data-scroll="exam" class="mt-[18px] min-h-0 flex-1 overflow-y-auto px-5 pb-24"><p class="mb-[18px] text-[14px] text-[#a8a8ae]">在历年真题中出现 <b class="text-[#e3a83c]">' + exams.length + "</b> 次</p>" + list + "</div>" +
       '<button data-act="exam-close" class="absolute bottom-[26px] right-[22px] flex h-[54px] w-[54px] items-center justify-center rounded-full bg-[#2b2b3a]/90 text-[#ececef]">' + ico(I.close, "h-[20px] w-[20px]") + "</button></div>";
   }
 
@@ -386,6 +626,7 @@
     if (S.phase === "passage") h += ovPassage();
     else if (S.phase === "cloze") h += ovCloze();
     else if (S.phase === "choice") h += ovChoice();
+    else if (S.phase === "sentCloze") h += ovSentCloze();
     if (S.sentView) h += ovSentence();
     if (S.dictWord) h += ovDict();
     if (S.examOpen) h += ovExam();
@@ -456,8 +697,13 @@
       return e;
     }).catch(function () { _dictCache[key] = null; return null; });
   }
-  function openDict(w) {
-    S.dictWord = w; S.dictExpanded = false; S.dictEntry = null; paint();
+  function openDict(w, el) {
+    S.dictWord = w; S.dictExpanded = false; S.dictEntry = null; S.dictAnchor = null;
+    if (el && el.getBoundingClientRect) {
+      var r = el.getBoundingClientRect();
+      if (r) S.dictAnchor = { top: r.top, left: r.left, bottom: r.bottom, width: r.width };
+    }
+    paint();
     lookup(w).then(function (e) { S.dictEntry = e; if (S.dictWord === w) paint(); });
   }
 
@@ -504,12 +750,16 @@
   }
   function startSession(mode) {
     S.screen = mode; S.phase = "cards"; S.idx = 0; S.face = "front"; S.tab = "colloc";
-    S.hinted = false; S.missed = []; S.wrongs = 0; S.history = []; S.learned = {}; S._spokenId = null;
+    S.browse = false; S.scene = mode;
+    S.hinted = false; S.missed = []; S.wrongs = 0; S.history = []; S.learned = {}; S._spokenId = null; S._passageSpoken = false;
+    S.ratings = {}; S.passage = null; S.retestCards = []; S.rIdx = 0; S.revealed = false; S.picked = null; S.plan = null;
+    S.clozeBlanks = []; S.clozeFilled = []; S.clozeWrong = []; S.clozeFailed = []; S.clozeActive = 0;
     S.queue = []; S.card = null; paint();
     log("startSession " + mode);
     call("session.plan", {}).then(function (plan) {
+      S.plan = plan || null;
       var ids = extractIds(plan);
-      log("session.plan -> ids=" + ids.length);
+      log("session.plan -> ids=" + ids.length + " units=" + arr(plan && plan.units).length);
       if (ids.length) return ids;
       var m2 = mode === "learn" ? "card.new" : "card.due";
       return call(m2, { limit: 50 }).then(function (r) {
@@ -525,7 +775,15 @@
         if (!S.card) S.phase = "done";
         return hydrateKv(cards);
       }).then(function () {
-        reportProgress(); paint();
+        /* 语篇：仅「学习」模式 + 开关开 + 计划第一单元带语篇 → 先通读 */
+        var u0 = arr(S.plan && S.plan.units)[0];
+        if (mode === "learn" && S.prefs.passage && u0 && u0.hasPassage && u0.passage) {
+          S.passage = u0.passage; S.phase = "passage";
+          log("startSession -> 语篇通读 segments=" + arr(u0.passage.segments).length);
+        } else {
+          S.phase = "cards";
+        }
+        reportProgress(); paint(); saveSession();
       });
     }).catch(function (e) { log("startSession ERR " + (e && e.message ? e.message : e)); });
   }
@@ -590,7 +848,8 @@
 
   function srEnd() {
     S.sr = null; S.srItems = [];
-    endSession();
+    if (FC.onSpellDone) FC.onSpellDone();
+    else { S.phase = "done"; paint(); }
   }
 
   function srNext() {
@@ -744,10 +1003,8 @@
     }
 
     var actions = st.pending
-      ? '<button data-act="sr-next" class="col-span-2 rounded-[16px] bg-[#2ec4a5] py-[15px] text-[17px] font-semibold text-[#0c2620]">继续</button>'
-      : '<button data-act="sr-skip" class="rounded-[16px] bg-[#26262b] py-[15px] text-[16px] font-semibold text-[#c9c9ce]">跳过</button>' +
-        '<button data-act="sr-hint" class="rounded-[16px] bg-[#26262b] py-[15px] text-[16px] font-semibold text-[#c9c9ce]">提示</button>' +
-        '<button data-act="sr-forget" class="col-span-2 rounded-[16px] bg-[#26262b] py-[15px] text-[16px] font-semibold text-[#c9c9ce]">忘记了</button>';
+      ? '<div class="col-span-2 flex justify-center">' + dashBtn("继续", "bg-[#2ec4a5]", "sr-next") + '</div>'
+      : dashBtn("忘记了", "bg-[#e34d64]", "sr-forget") + dashBtn("跳过", "bg-[#5a5a60]", "sr-skip", true);
 
     return '<div class="absolute inset-0 z-[76] flex flex-col" style="background:' + BG + '">' +
       '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2">' +
@@ -763,73 +1020,167 @@
           '<input data-role="sr" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="' + esc(st.typed) + '" class="absolute inset-0 h-full w-full cursor-text bg-transparent text-transparent caret-transparent opacity-0 outline-none" />' +
         "</div>" +
         result +
+        (st.pending ? "" : '<div class="mt-[14px] flex flex-col items-center gap-[8px]"><button data-act="sr-hint" class="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-[#2e2e33]/90 text-[#c9c9ce] active:scale-95">' + ico(I.bulb, "h-[20px] w-[20px]") + '</button><span class="text-[13px] text-[#7c7c82]">提示一下</span></div>') +
         '<p class="mt-[14px] text-[12.5px] text-[#5a5a60]">剩余机会 ' + left + " / " + SR_MAX_TRIES + "</p>" +
         '<div class="flex-1"></div>' +
       "</div>" +
       '<footer class="grid flex-none grid-cols-2 gap-[12px] px-4 pb-[30px] pt-[10px]">' + actions + "</footer></div>";
   }
 
-  function reportProgress() {
-    try { FC.post("web.progress", { phase: S.phase, done: S.idx, total: S.queue.length, graduated: S.queue.length - S.missed.length }); } catch (e) {}
-  }
-  function finish() {
-    S.queue.forEach(function (c) {
-      call("review.commit", { id: c.id, rating: S.missed.indexOf(c.id) >= 0 ? "again" : "good" });
-    });
-    // 背完一轮 → 先问要不要拼写（纯加练，不写 FSRS）。
-    // web.finish 必须等拼写轮结束再发，否则壳立刻切完成页，拼写轮弹不出来。
-    var items = buildSpellItems(S.queue);
-    if (items.length) { S.srItems = items; S.srAsk = items.length; paint(); return; }
-    endSession();
-  }
+  /* workflow.js 接管进度上报与落账；本层不再自报 */
+  function reportProgress() {}
 
-  function endSession() {
-    S.phase = "done";
-    try { FC.post("web.finish", { graduated: S.queue.length - S.missed.length }); } catch (e) {}
-    paint();
-  }
-
-  /* ---- 卡片流转 ---- */
-  function flip(miss) {
-    if (miss && S.missed.indexOf(S.card.id) < 0) S.missed.push(S.card.id);
-    S.history.push({ idx: S.idx, face: "front" });
+  /* ---- 卡片流转（纯渲染：作答即回 workflow）---- */
+  function flip(r) {
+    S.pendingRating = r || "good";
     S.face = "back"; S.tab = "colloc";
     speakWordThenSentence(S.card);
     paint();
   }
   function nextCard(miss) {
-    if (miss && S.missed.indexOf(S.card.id) < 0) S.missed.push(S.card.id);
-    S.history.push({ idx: S.idx, face: "back" });
-    S.face = "front"; S.tab = "colloc"; S.hinted = false;
-    if (S.idx + 1 < S.queue.length) { S.idx++; S.card = S.queue[S.idx]; }
-    else { finish(); return; }
-    reportProgress(); paint();
+    var r = miss ? "again" : (S.pendingRating || "good");
+    if (FC.answer) FC.answer(r, answerMeta());
   }
 
   /* ---- 事件总入口 ---- */
+  /* ===================== 纯渲染层：由 workflow.js 驱动 =====================
+     workflow 通过 web.mount 把 (cardId, mode) 推下来。本层只画，
+     作答回 FC.answer(rating, meta)；不再自管队列 / 重考 / 拼写决策。
+     mode 取值：read / choice / cloze / passage / passage_cloze */
+  function answerMeta() {
+    if (S.clozeBlanks && S.clozeBlanks.length) {
+      try { return { passageTag: exportPassageTag() }; } catch (e) {}
+    }
+    return null;
+  }
+  function mountFromCard(c) {
+    if (!c) return;
+    var mode = (c.session && c.session.mode) || "read";
+    /* 统一场景 API：壳在 session.scene 里说明「当前是什么状态」——
+       learn=背新词 / review=复习 / retest=背完再背一遍 / preview=查卡片(只读)。
+       模板据此决定正反面、自评按钮，以及要不要收起底部动作条。 */
+    var scene = (c.session && c.session.scene) || "";
+    S.mode = mode; S.scene = scene;
+    S.browse = (scene === "preview");
+    if (scene === "learn") S.screen = "learn";
+    else if (scene) S.screen = "review";
+    S.idx = (c.index != null) ? c.index : 0;
+    S.retestTotal = (c.total != null) ? c.total : 0;
+    S.card = c;
+    if (!S.seenCards) S.seenCards = {};
+    if (c.id) S.seenCards[c.id] = c;
+    S.face = (S.browse && mode === "read") ? "back" : "front"; S.tab = "colloc"; S.hinted = false;
+    S.revealed = false; S.picked = null; S.postChoice = false;
+    S._spokenId = null; S._passageSpoken = false;
+    if (mode === "read") {
+      S.phase = "cards";
+      hydrateKv([c]);
+    } else if (mode === "choice") {
+      S.rCur = c; S.phase = "choice"; buildChoice(c);
+    } else if (mode === "cloze") {
+      S.rCur = c; S.phase = "sentCloze"; initSentCloze(c);
+    } else if (mode === "passage") {
+      S.passage = c.passage || (c.session && c.session.passage) || FC._wfPassage || S.passage;
+      S.phase = "passage";
+    } else if (mode === "passage_cloze") {
+      S.passage = c.passage || (c.session && c.session.passage) || FC._wfPassage || S.passage;
+      S.phase = "cloze"; initCloze();
+    } else {
+      S.phase = "cards";
+    }
+    paint();
+  }
+
+  /* 例句填空（重考 cloze 模式）：例句挖空 + 选词填入 */
+  function initSentCloze(c) {
+    var f = c.fields || {};
+    var se = String((f.sentence && f.sentence.en) || "").trim();
+    var w = String(f.word || "").trim();
+    var hit = null;
+    if (w) {
+      var re = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\w*", "i");
+      hit = se.match(re);
+    }
+    S.sentCloze = {
+      word: w, sentence: se, cn: spellCnOf(f), sentenceCn: String((f.sentence && f.sentence.cn) || "").trim(),
+      blanked: hit ? se.slice(0, hit.index) + "______" + se.slice(hit.index + hit[0].length) : "",
+      answer: hit ? hit[0] : w, revealed: false, picked: null, hint: false
+    };
+    var byId = {}, cands = [];
+    function add(o) {
+      if (!o || !o.id || o.id === c.id) return;
+      if (!o.fields || !Object.keys(o.fields).length) return;
+      if (byId[o.id]) return;
+      byId[o.id] = 1; cands.push(o);
+    }
+    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
+    arr(c.choices).forEach(add);
+    var opts = shuffle(cands, ((String(c.id || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
+    opts.push(c);
+    S.sentCloze.opts = shuffle(opts, 99);
+  }
+  function ovSentCloze() {
+    var sc = S.sentCloze; if (!sc) return "";
+    var card = S.rCur || {};
+    var opts = (sc.opts && sc.opts.length) ? sc.opts.slice() : [card];
+    if (opts.indexOf(card) < 0) opts.push(card);
+    var optsHtml = opts.map(function (o, i) {
+      var of = (o && o.fields) || {};
+      var isRight = !!(o && o.id === card.id);
+      // 正确项用「例句里的实际词形」（如 condemned），干扰项用各自原形；不再拿变形词硬比
+      var label = isRight ? (sc.answer || of.word || "") : String(of.word || "");
+      var cls = "bg-[#222226]/90";
+      if (sc.revealed) cls = isRight ? "bg-[#1d4239]" : (sc.picked === i ? "bg-[#4a1a24]" : "bg-[#222226]/90");
+      var inner = '<span class="block text-[19px] font-semibold text-[#f0f0f2]">' + esc(label) + "</span>";
+      if (sc.revealed) {
+        // 揭示后所有选项都给中文释义，跟「看英文选中文」一致
+        var s0 = (arr(of.senses)[0]) || { pos: "", cn: [] };
+        inner += '<span class="mt-[3px] block text-[15.5px] leading-snug text-[#d5d5da]/85">' + esc(s0.pos || "") + " " + esc(arr(s0.cn).join("；")) + "</span>";
+      }
+      return '<button data-act="sc-pick" data-i="' + i + '" data-right="' + (isRight ? 1 : 0) + '" class="relative block w-full rounded-[16px] px-[18px] text-left transition-colors ' + cls + " " + (sc.revealed ? "py-[17px]" : "py-[21px]") + '">' + inner + "</button>";
+    }).join("");
+    return topBar(((S.idx || 0) + 1) + "/" + (S.retestTotal || 1), { canUndo: false, fav: !!S.favs[card.id], showKnown: false }) +
+      '<div data-scroll="sentcloze" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' +
+        '<div class="px-[26px] pt-1"><span class="text-[13px] text-[#8c8c92]">例句填空 · 选词填入</span>' +
+        (sc.blanked
+          ? '<p class="mt-[16px] text-[20px] font-bold leading-[1.7] text-[#f0f0f2]">' + esc(sc.blanked) + "</p>"
+          : '<p class="mt-[16px] text-[17px] leading-[1.7] text-[#c5c5ca]">看中文选词：<b class="text-[#f0f0f2]">' + esc(sc.cn || "") + "</b></p>") +
+        (sc.revealed ? '<p class="mt-[10px] text-[16px] leading-relaxed text-[#d5d5da]">' + esc(sc.sentenceCn || sc.cn || "") + "</p>" : "") +
+        (sc.hint && !sc.revealed ? '<p class="mt-[10px] text-[15px] text-[#e3a83c]">提示：' + esc(sc.cn || "") + "</p>" : "") + "</div>" +
+        '<div class="min-h-[40px] flex-1"></div><div class="space-y-[13px] px-4 pb-5 pt-8">' + optsHtml + "</div></div>" +
+      (sc.revealed ? "" : '<div class="mb-[14px] flex flex-none flex-col items-center gap-[10px]"><button data-act="sc-hint" class="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#2e2e33]/90 text-[#c9c9ce] active:scale-95">' + ico(I.bulb, "h-[22px] w-[22px]") + '</button><span class="text-[14px] text-[#7c7c82]">提示一下</span></div>') +
+      '<footer class="flex flex-none justify-center pb-[34px] pt-[6px]">' + (sc.revealed ? dashBtn("继续", "bg-[#2ec4a5]", "sc-next") : dashBtn("看答案", "bg-[#e34d64]", "sc-reveal")) + "</footer>";
+  }
+
+  /* —— workflow.js 复用原语 —— */
+  FC.helpers = { speak: speak, blankSentence: srBlankSentence, ttsWord: TTS_WORD, ttsSentence: TTS_SENTENCE };
+  /* —— 拼写轮：workflow.js 决策，本层渲染 —— */
+  FC.spell = {
+    ask: function (n) { S.srAsk = n; S.sr = null; paint(); },
+    start: function (items) { S.srAsk = 0; S.srItems = items; srBegin(); }
+  };
+
   function handle(act, el, e) {
     var i, m;
     switch (act) {
       case "home": case "exit":
-        // 主页已删：语篇/填空点返回 → 回卡片；卡片点返回 → 退出本次会话
-        if (S.phase === "passage" || S.phase === "cloze") { S.phase = "cards"; paint(); }
+        // 语篇点返回 = 进入下一阶段；其余 = 退出本次会话
+        if (S.phase === "passage") { if (FC.answer) FC.answer("good", answerMeta()); }
         else { try { FC.post("web.finish", {}); } catch (e) {} }
         break;
-      case "start-learn": startSession("learn"); break;
-      case "start-review": startSession("review"); break;
-      case "flip-ok": flip(false); break;
-      case "flip-miss": flip(true); break;
+      case "rate-good": flip("good"); break;
+      case "rate-hard": flip("hard"); break;
+      case "rate-again": flip("again"); break;
       case "next": nextCard(false); break;
       case "next-miss": nextCard(true); break;
       case "hint": S.hinted = true; speakSentence(S.card); paint(); break;
       case "known":
         call("state.kvPut", { id: S.card.id, key: "known", value: true });
-        S.queue = S.queue.filter(function (c) { return c.id !== S.card.id; });
-        S.face = "front"; S.hinted = false;
-        if (S.idx >= S.queue.length) { finish(); } else { S.card = S.queue[S.idx]; paint(); }
+        S.learned[S.card.id] = true;
+        if (FC.answer) FC.answer("good", answerMeta());
         break;
       case "undo":
-        if (S.history.length) { var last = S.history.pop(); S.idx = last.idx; S.face = last.face; S.tab = "colloc"; S.hinted = false; S.card = S.queue[S.idx]; paint(); }
+        if (S.face === "back") { S.face = "front"; S.hinted = false; paint(); }
         break;
       case "fav":
         S.favs[S.card.id] = !S.favs[S.card.id];
@@ -838,7 +1189,7 @@
       case "tab": S.tab = el.getAttribute("data-t"); paint(); break;
       case "meaning": openSV(parseInt(el.getAttribute("data-m"), 10) || 0); break;
       case "sentence-view": openSV(0); break;
-      case "word": openDict(el.getAttribute("data-w")); break;
+      case "word": openDict(el.getAttribute("data-w"), el); break;
       case "exam": S.examOpen = true; paint(); break;
       case "exam-close": S.examOpen = false; paint(); break;
       case "note": S.noteDraft = S.notes[S.card.id] || ""; S.noteOpen = true; paint(); break;
@@ -856,8 +1207,8 @@
         if (String(S.spellInput).trim().toLowerCase() === String((S.card.fields || {}).word || "").toLowerCase()) { S.spellState = "right"; speak((S.card.fields || {}).word); }
         else S.spellState = "wrong";
         paint(); break;
-      case "sr-go": srBegin(); break;
-      case "sr-no": S.srAsk = 0; endSession(); break;
+      case "sr-go": if (FC.onSpellDecision) FC.onSpellDecision(true); else srBegin(); break;
+      case "sr-no": if (FC.onSpellDecision) FC.onSpellDecision(false); else { S.srAsk = 0; paint(); } break;
       case "sr-quit": srEnd(); break;
       case "sr-skip": srAction("skip"); break;
       case "sr-forget": srAction("forget"); break;
@@ -880,16 +1231,20 @@
       case "tts-word": if (S.card) speak(String((S.card.fields || {}).word || "").trim(), TTS_WORD); break;
       case "dict-speak": if (S.dictEntry) speak(S.dictEntry.word); break;
       case "sv-close": S.sentView = null; paint(); break;
-      case "sv-next": S.sentView = null; nextCard(false); break;
+      case "sv-next": S.sentView = null; paint(); break;
       case "sv-reveal": if (S.sentView) { S.sentView.revealed = true; paint(); } break;
       case "sv-m": if (S.sentView) { S.sentView.m = parseInt(el.getAttribute("data-m"), 10) || 0; S.sentView.ex = 0; S.sentView.revealed = false; paint(); } break;
       case "sv-star": if (S.sentView) { S.sentView.star = !S.sentView.star; paint(); } break;
       case "sv-speak": var d = S.sentView && arr((S.sentView.card.fields || {}).meaningDetails)[S.sentView.m]; var ex0 = d && arr(d.examples)[S.sentView.ex]; if (ex0) speak(ex0.en, TTS_PASSAGE); break;
       case "passage-speak": if (S.passage) speak(S.passage.plain || ""); break;
-      case "cloze-start": if (S.passage) { S.phase = "cloze"; initCloze(); paint(); } break;
+      case "cloze-start":
+        if (S.clozeBlanks && S.clozeBlanks.length) { S.phase = "cloze"; paint(); }
+        else if (FC.answer) FC.answer("good", answerMeta());
+        break;
       case "cloze-back": S.phase = "passage"; paint(); break;
       case "cloze-chip": tapChip(el.getAttribute("data-w")); break;
-      case "cards-start": S.phase = "cards"; paint(); break;
+      case "cloze-blank": var bi2 = parseInt(el.getAttribute("data-i"), 10); if (S.clozeFilled[bi2] === null) { S.clozeActive = bi2; paint(); } break;
+      case "cards-start": if (FC.answer) FC.answer("good", answerMeta()); break;
       case "choice-pick":
         if (S.revealed) break;
         i = parseInt(el.getAttribute("data-i"), 10);
@@ -898,39 +1253,142 @@
         speak((S.rCur.fields || {}).word); paint(); break;
       case "choice-reveal": S.revealed = true; S.wrongs++; speak((S.rCur.fields || {}).word); paint(); break;
       case "choice-next":
-        S.revealed = false; S.picked = null;
-        if (S.rIdx + 1 < (S.retestCards || []).length) { S.rIdx++; S.rCur = S.retestCards[S.rIdx]; buildChoice(); }
-        else { finish(); return; }
-        paint(); break;
+        { var okCh = (S.picked != null && S.choiceOpts[S.picked] && S.choiceOpts[S.picked].id === S.rCur.id);
+          S.revealed = false; S.picked = null;
+          S.card = S.rCur; S.postChoice = true;
+          S.pendingRating = okCh ? "good" : "again";
+          S.face = "back"; S.tab = "colloc"; S.phase = "cards";
+          paint(); }
+        break;
+      case "sc-pick":
+        if (S.sentCloze && !S.sentCloze.revealed) {
+          S.sentCloze.picked = parseInt(el.getAttribute("data-i"), 10);
+          S.sentCloze._right = (el.getAttribute("data-right") === "1");
+          S.sentCloze.revealed = true; paint();
+        }
+        break;
+      case "sc-reveal":
+        if (S.sentCloze) { S.sentCloze.revealed = true; S.sentCloze._right = false; paint(); }
+        break;
+      case "sc-hint":
+        if (S.sentCloze) { S.sentCloze.hint = true; paint(); }
+        break;
+      case "sc-forget":
+        if (S.sentCloze) {
+          if (!S.sentCloze.revealed) { S.sentCloze.revealed = true; S.sentCloze._right = false; paint(); }
+          else { S.sentCloze = null; if (FC.answer) FC.answer("again", answerMeta()); }
+        }
+        break;
+      case "sc-skip":
+        if (S.sentCloze) {
+          if (!S.sentCloze.revealed) { S.sentCloze.revealed = true; S.sentCloze._right = false; paint(); }
+          else { S.sentCloze = null; if (FC.answer) FC.answer("good", answerMeta()); }
+        }
+        break;
+      case "sc-next":
+        { var okSc = !!(S.sentCloze && S.sentCloze._right === true);
+          S.sentCloze = null;
+          if (FC.answer) FC.answer(okSc ? "good" : "again", answerMeta()); }
+        break;
     }
   }
 
   function initCloze() {
-    var parts = arr((S.passage || {}).parts);
-    S.clozeTargets = parts.filter(function (x) { return x.word; }).map(function (x) { return x.word; });
+    var segs = arr((S.passage || {}).segments);
+    S.clozeBlanks = segs.filter(function (x) { return x.w && x.blank !== false; }).map(function (x) { return { w: x.w, lemma: x.lemma || x.w, pos: x.pos || "", plain: x.plain || "", meaning: x.meaning || "" }; });
+    S.clozeTargets = S.clozeBlanks.map(function (x) { return x.w; });
     S.clozeBank = shuffle(S.clozeTargets, 42);
     S.clozeFilled = S.clozeTargets.map(function () { return null; });
     S.clozeErr = null; S.clozeWrongs = 0;
-  }
-  function tapChip(w) {
-    var filled = S.clozeFilled, next = filled.indexOf(null);
-    if (next === -1 || filled.indexOf(w) >= 0) return;
-    if (S.clozeTargets[next] === w) { filled[next] = w; speak(w); }
-    else { S.clozeErr = w; S.clozeWrongs++; setTimeout(function () { S.clozeErr = null; paint(); }, 550); }
-    paint();
-  }
-  function buildChoice() {
-    var pool = S.queue.slice();
-    S.choiceOpts = shuffle(pool, (S.rCur.id.charCodeAt(1) || 7) * 17).slice(0, Math.min(4, pool.length));
-    if (S.choiceOpts.indexOf(S.rCur) < 0) S.choiceOpts[0] = S.rCur;
+    S.clozeActive = 0;
+    S.clozeWrong = S.clozeTargets.map(function () { return 0; });
+    S.clozeFailed = S.clozeTargets.map(function () { return false; });
   }
 
+  /* 导出语篇每个目标词的检验状态：failed / tested / untested
+     key = lemma 小写，跟壳里 plan 的 card.word 归一化后一一对应 */
+  function exportPassageTag() {
+    var tag = {};
+    arr(S.clozeBlanks).forEach(function (b, i) {
+      var k = String(b.lemma || b.w || "").trim().toLowerCase();
+      if (!k) return;
+      tag[k] = (S.clozeFailed || [])[i] ? "failed" : (S.clozeFilled[i] !== null ? "tested" : "untested");
+    });
+    return tag;
+  }
+
+  /* 选词填一个空。支持跳着填：先点空选中（S.clozeActive），再点词；
+     没选中时退回「第一个未填空」——两种习惯都照顾。同一个空错满 3 次标 failed。 */
+  function tapChip(w) {
+    var filled = S.clozeFilled;
+    if (filled.indexOf(w) >= 0) return;
+    var idx = S.clozeActive;
+    if (idx == null || idx < 0 || filled[idx] !== null) idx = filled.indexOf(null);
+    if (idx === -1) return;
+    if (String(S.clozeTargets[idx]).toLowerCase() === String(w).toLowerCase()) {
+      filled[idx] = w;
+      speak(w, TTS_WORD);
+      S.clozeActive = filled.indexOf(null);
+    } else {
+      S.clozeErr = w; S.clozeWrongs++;
+      S.clozeWrong[idx] = (S.clozeWrong[idx] || 0) + 1;
+      if (S.clozeWrong[idx] >= 3) S.clozeFailed[idx] = true;
+      setTimeout(function () { S.clozeErr = null; paint(); }, 550);
+    }
+    paint();
+  }
+  function buildChoice(c) {
+    var cur = c || S.rCur;
+    var byId = {}, cands = [];
+    function add(o) {
+      if (!o || !o.id || o.id === cur.id) return;
+      if (!o.fields || !Object.keys(o.fields).length) return;   // 必须有字段，否则中文释义是空的
+      if (byId[o.id]) return;
+      byId[o.id] = 1; cands.push(o);
+    }
+    // 优先用本会话学过的完整卡（learn 阶段 mount 过，带 fields）
+    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
+    // 再用壳给的 choices 补足
+    arr(cur && cur.choices).forEach(add);
+    var opts = shuffle(cands, ((String((cur && cur.id) || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
+    opts.push(cur);
+    S.choiceOpts = shuffle(opts, 99);
+    if (S.choiceOpts.indexOf(cur) < 0) S.choiceOpts[0] = cur;
+  }
+
+  var _swipeAt = 0, _tch = null;
   root.addEventListener("click", function (e) {
+    if (Date.now() - _swipeAt < 400) return;
     var hit = closestAct(e.target);
     if (!hit) return;
-    if (hit.word) { openDict(hit.word); return; }
+    if (hit.word) { openDict(hit.word, hit.el); return; }
     handle(hit.act, hit.el, e);
   });
+  /* 例句轮播卡：左右滑动切换例句 */
+  root.addEventListener("touchstart", function (e) {
+    if (!S.sentView || !e.touches || e.touches.length !== 1) { _tch = null; return; }
+    _tch = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+  }, { passive: true });
+  root.addEventListener("touchend", function (e) {
+    if (!_tch || !S.sentView) { _tch = null; return; }
+    var t = e.changedTouches && e.changedTouches[0];
+    var st = _tch; _tch = null;
+    if (!t) return;
+    var dx = t.clientX - st.x, dy = t.clientY - st.y;
+    if (Date.now() - st.t > 700) return;
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    var v = S.sentView; if (!v) return;
+    var d = arr((v.card.fields || {}).meaningDetails)[v.m || 0];
+    var list = arr(d && d.examples), n = list.length;
+    if (n <= 1) return;
+    var nx = (v.ex || 0) + (dx < 0 ? 1 : -1);
+    if (nx < 0) nx = n - 1;
+    if (nx >= n) nx = 0;
+    v.ex = nx; v.revealed = false;
+    if (list[nx]) speak(list[nx].en, TTS_PASSAGE);
+    _swipeAt = Date.now();
+    paint();
+  }, { passive: true });
   root.addEventListener("input", function (e) {
     var t = e.target;
     if (!t || !t.getAttribute) return;
@@ -960,12 +1418,7 @@
 
   /* ---- 壳回调 ---- */
   if (FC.onMount) FC.onMount(function () {
-    var c = FC.getCard();
-    if (c && c.id) {
-      if (c.passage) S.passage = c.passage;
-      if (S.phase === "cards") { S.card = c; }
-      paint();
-    }
+    mountFromCard(FC.getCard());
   });
 
   /* ---- 启动 ----
@@ -978,7 +1431,24 @@
   function autoStart() {
     if (started) return;
     started = true;
-    call("session.plan", {}).then(function (plan) {
+    /* 先看有没有上次没背完的断点；有就原地续上，没有才开新会话。 */
+    var savedP = null;
+    try { savedP = call("session.load", {}); } catch (e) { savedP = null; }
+    Promise.all([
+      call("session.plan", {}),
+      savedP ? savedP.catch(function () { return null; }) : Promise.resolve(null)
+    ]).then(function (rs) {
+      var plan = rs[0], saved = rs[1];
+      var pk = planKey(plan);
+      if (saved && saved.workflow === WF_NAME && saved.session && pk &&
+          saved.session.phase && saved.session.phase !== "done" &&
+          saved.session.planKey === pk) {
+        log("autoStart: 断点命中 phase=" + saved.session.phase + " idx=" + saved.session.idx);
+        if (restoreSession(saved.session, plan)) return;
+      } else if (saved && saved.session && saved.session.planKey !== pk) {
+        log("autoStart: 计划变了(旧=" + String(saved.session.planKey).slice(0, 30) + " 新=" + pk.slice(0, 30) + ")，丢弃旧断点");
+        clearSession();
+      }
       var units = arr(plan && plan.units);
       /* 模式由壳直给（plan.mode）。老壳没这字段时退回本地聚合兜底。 */
       var mode = plan && plan.mode;
@@ -994,7 +1464,6 @@
       startSession("learn");
     });
   }
-  if (FC.on) FC.on("web.start", function () { log("event web.start"); autoStart(); });
   (function boot() {
     var c0 = FC.getCard();
     log("boot cardId=[" + ((c0 && c0.id) || "") + "]");
@@ -1003,9 +1472,8 @@
     call("ui.getChrome", {}).then(function (r) {
       if (r && r.top != null) { S.prefs.topbar = !!r.top; paint(); }
     }).catch(function () {});
-    if (c0 && c0.id) { S.card = c0; S.screen = "learn"; started = true; }
-    paint();
+    if (c0 && c0.id) { mountFromCard(c0); }
+    else { paint(); }
     try { if (FC.ready) FC.ready(); } catch (e) {}
-    if (!started) autoStart();
   })();
 })();

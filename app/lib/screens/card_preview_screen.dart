@@ -70,7 +70,7 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
       card: widget.card,
       index: 0,
       total: 1,
-      session: const {'phase': 'read', 'mode': 'read', 'round': 1},
+      session: const {'phase': 'read', 'mode': 'read', 'round': 1, 'scene': 'preview'},
     );
     // mount() 结束会把 data-state 重置成 front；预览要的是词义页。
     // data-preview 交给 CSS 收掉所有底部动作条。
@@ -104,7 +104,7 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
       card: widget.card,
       index: 0,
       total: 1,
-      session: const {'phase': 'read', 'mode': 'read', 'round': 1},
+      session: const {'phase': 'read', 'mode': 'read', 'round': 1, 'scene': 'preview'},
     ));
     return c;
   }
