@@ -1092,6 +1092,95 @@
   }
 
   /* 例句填空（重考 cloze 模式）：例句挖空 + 选词填入 */
+  /* —— 整本书干扰池：壳只告诉我们「在哪本书」(session.book)，
+        池子模板自己用 Flashcard.fs 读盘建，不占壳、不改壳逻辑。 —— */
+  var _poolByBook = {};   // bookId -> [{id,word,senses}]
+  var _poolWait = {};     // bookId -> [callback]
+
+  function bookIdOf(c) {
+    var cc = c || (FC.getCard && FC.getCard()) || {};
+    return String((cc.session && cc.session.book) || "");
+  }
+
+  function loadPool(bookId, done) {
+    if (!bookId || !FC.fs || !FC.fs.read) { if (done) done([]); return; }
+    if (_poolByBook[bookId]) { if (done) done(_poolByBook[bookId]); return; }
+    var q = _poolWait[bookId] || (_poolWait[bookId] = []);
+    if (done) q.push(done);
+    if (q._started) return;
+    q._started = true;
+    var base = "books/" + bookId;
+    function finish(cards) {
+      _poolByBook[bookId] = cards;
+      var ws = _poolWait[bookId] || []; _poolWait[bookId] = [];
+      ws.forEach(function (fn) { try { if (fn) fn(cards); } catch (e) {} });
+    }
+    FC.fs.list(base).then(function (r) {
+      var names = arr(r && r.entries).filter(function (e) {
+        return e && !e.dir && /^ch_.*\.json$/i.test(String(e.name || ""));
+      }).map(function (e) { return e.name; }).sort();
+      return Promise.all(names.map(function (n) {
+        return FC.fs.read(base + "/" + n).catch(function () { return null; });
+      }));
+    }).then(function (files) {
+      var cards = [], seen = {};
+      arr(files).forEach(function (fp) {
+        if (!fp || !fp.content) return;
+        var d; try { d = JSON.parse(fp.content); } catch (e) { return; }
+        arr(d.cards).forEach(function (c) {
+          if (!c || !c.word) return;
+          var id = String(c.id || c.word);
+          if (seen[id]) return; seen[id] = 1;
+          var senses = c.senses;
+          if (!(senses && senses.length) && (c.cn || c.meaning)) {
+            senses = [{ pos: c.pos || "", cn: [String(c.cn || c.meaning)] }];
+          }
+          cards.push({ id: id, word: String(c.word), senses: senses || [] });
+        });
+      });
+      if (FC.log) { try { FC.log("[pool]", bookId + " cards=" + cards.length); } catch (e) {} }
+      finish(cards);
+    }).catch(function () { finish([]); });
+  }
+
+  /* 卡上预备的易混项 -> 伪卡选项 */
+  function confOpts(cur) {
+    var f = (cur && cur.fields) || {};
+    return arr(f.confusions).map(function (e, i) {
+      var w = String((e && e.word) || "").trim();
+      if (!w) return null;
+      var senses = e.senses;
+      if (!(senses && senses.length) && (e.cn || e.meaning)) {
+        senses = [{ pos: e.pos || "", cn: [String(e.cn || e.meaning)] }];
+      }
+      return { id: "conf_" + ((cur && cur.id) || "x") + "_" + i,
+               fields: { word: w, senses: senses || [] } };
+    }).filter(Boolean);
+  }
+
+  /* 干扰项候选：易混项 > 壳 choices > 本会话见到的卡 > 整本书池 */
+  function distractorCands(cur) {
+    var byId = {}, cands = [];
+    function add(o) {
+      if (!o || !o.id || (cur && o.id === cur.id)) return;
+      if (!o.fields || !Object.keys(o.fields).length) return;
+      if (byId[o.id]) return;
+      byId[o.id] = 1; cands.push(o);
+    }
+    confOpts(cur).forEach(add);
+    arr(cur && cur.choices).forEach(add);
+    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
+    var pool = _poolByBook[bookIdOf(cur)];
+    if (pool && cands.length < 3) {
+      shuffle(pool, ((String((cur && cur.id) || "x")).charCodeAt(1) || 7) * 17)
+        .forEach(function (p) {
+          if (cands.length >= 3) return;
+          add({ id: p.id, fields: { word: p.word, senses: p.senses } });
+        });
+    }
+    return cands;
+  }
+
   function initSentCloze(c) {
     var f = c.fields || {};
     var se = String((f.sentence && f.sentence.en) || "").trim();
@@ -1106,19 +1195,19 @@
       blanked: hit ? se.slice(0, hit.index) + "______" + se.slice(hit.index + hit[0].length) : "",
       answer: hit ? hit[0] : w, revealed: false, picked: null, hint: false
     };
-    var byId = {}, cands = [];
-    function add(o) {
-      if (!o || !o.id || o.id === c.id) return;
-      if (!o.fields || !Object.keys(o.fields).length) return;
-      if (byId[o.id]) return;
-      byId[o.id] = 1; cands.push(o);
+    // 干扰项：易混项 / 壳 choices / 整本书池（不足则异步补一次）
+    function buildOpts() {
+      var opts = shuffle(distractorCands(c),
+        ((String(c.id || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
+      opts.push(c);
+      S.sentCloze.opts = shuffle(opts, 99);
     }
-    // 壳给的 choices（易混项 / 整本书池）优先
-    arr(c.choices).forEach(add);
-    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
-    var opts = shuffle(cands, ((String(c.id || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
-    opts.push(c);
-    S.sentCloze.opts = shuffle(opts, 99);
+    buildOpts();
+    if ((S.sentCloze.opts || []).length < 4) {
+      loadPool(bookIdOf(c), function () {
+        if (S.rCur === c && S.phase === "sentCloze") { buildOpts(); paint(); }
+      });
+    }
   }
   function ovSentCloze() {
     var sc = S.sentCloze; if (!sc) return "";
@@ -1340,21 +1429,19 @@
   }
   function buildChoice(c) {
     var cur = c || S.rCur;
-    var byId = {}, cands = [];
-    function add(o) {
-      if (!o || !o.id || o.id === cur.id) return;
-      if (!o.fields || !Object.keys(o.fields).length) return;   // 必须有字段，否则中文释义是空的
-      if (byId[o.id]) return;
-      byId[o.id] = 1; cands.push(o);
+    function build() {
+      var opts = shuffle(distractorCands(cur),
+        ((String((cur && cur.id) || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
+      opts.push(cur);
+      S.choiceOpts = shuffle(opts, 99);
+      if (S.choiceOpts.indexOf(cur) < 0) S.choiceOpts[0] = cur;
     }
-    // 壳给的 choices 是「卡上易混项 / 整本书池」里挑好的干扰项，优先用
-    arr(cur && cur.choices).forEach(add);
-    // 不够再用本会话学过的卡补足（learn 阶段 mount 过，带 fields）
-    Object.keys(S.seenCards || {}).forEach(function (k) { add(S.seenCards[k]); });
-    var opts = shuffle(cands, ((String((cur && cur.id) || "x")).charCodeAt(1) || 7) * 17).slice(0, 3);
-    opts.push(cur);
-    S.choiceOpts = shuffle(opts, 99);
-    if (S.choiceOpts.indexOf(cur) < 0) S.choiceOpts[0] = cur;
+    build();
+    if (S.choiceOpts.length < 4) {
+      loadPool(bookIdOf(cur), function () {
+        if (S.rCur === cur && S.phase === "choice") { build(); paint(); }
+      });
+    }
   }
 
   var _swipeAt = 0, _tch = null;

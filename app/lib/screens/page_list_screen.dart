@@ -162,6 +162,7 @@ class PageListBody extends StatelessWidget {
           fieldsOrder: book.fieldsOrder,
           // 干扰池 = 整本书（不再只限本章）：一个词的章节也出得了题
           distractorPool: book.allCards,
+          bookId: book.bookId,
           store: store,
           settings: settings,
           isCard: template!.engine == 'srs_basic',

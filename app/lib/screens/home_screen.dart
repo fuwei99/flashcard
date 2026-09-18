@@ -180,6 +180,7 @@ class HomeScreenState extends State<HomeScreen> {
           template: tpl,
           fieldsOrder: b?.fieldsOrder ?? const <String>[],
           distractorPool: _poolFromUnits(us, bookOfCard),
+          bookId: b?.bookId ?? '',
           store: widget.store,
           settings: widget.settings,
           isCard: isCard,

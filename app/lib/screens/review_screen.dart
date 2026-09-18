@@ -47,6 +47,10 @@ class ReviewScreen extends StatefulWidget {
   /// 是否卡牌（Card Tab）：决定今日进度算进「单词」还是「卡牌」
   final bool isCard;
 
+  /// 当前所在的书（书目录名）。壳通过 session.book 告诉模板，
+  /// 模板据此用 fs.* 自己去读整本书建干扰池 —— 壳只给身份，不代劳出题。
+  final String bookId;
+
   const ReviewScreen({
     super.key,
     required this.title,
@@ -57,6 +61,7 @@ class ReviewScreen extends StatefulWidget {
     required this.store,
     required this.settings,
     this.isCard = false,
+    this.bookId = '',
   });
 
   @override
@@ -367,6 +372,8 @@ class _ReviewScreenState extends State<ReviewScreen>
         'round': round,
         'review': unit.isReview ? 1 : 0,
         'scene': scene,
+        'book': widget.bookId,
+        'chapter': unit.title,
       },
       choices: choices,
     );
@@ -650,6 +657,8 @@ class _ReviewScreenState extends State<ReviewScreen>
       'mode': step.mode.key,
       'round': step.round,
       'review': (unit?.isReview ?? false) ? 1 : 0,
+      'book': widget.bookId,
+      'chapter': unit?.title ?? '',
     };
     final idx = isPassage ? 0 : _session.doneInRound;
     final total = isPassage ? 1 : _session.roundTotal;
