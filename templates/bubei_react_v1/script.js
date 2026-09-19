@@ -710,10 +710,46 @@
   }
 
   /* ---- 例句轮播卡 ---- */
-  function openSV(m) {
-    S.sentView = { card: S.card, m: m || 0, ex: 0, revealed: false, star: false, exs: [] };
+  /* 卡片主例句 f.sentence 落在哪个义项/第几句：归一化后做前缀匹配
+     （数据里主例句常是某条例句的加长版，精确相等会漏），找不到退回 0/0。
+     给 ▶️ 按钮锚定用，别再写死 meaningDetails[0]。 */
+  function svAnchor(f) {
+    var sen = String((f.sentence || {}).en || "").trim();
+    var ds = arr(f.meaningDetails);
+    if (!sen) return { m: 0, ex: 0 };
+    var norm = function (s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); };
+    var key = norm(sen);
+    for (var i = 0; i < ds.length; i++) {
+      var exs = arr(ds[i].examples);
+      for (var j = 0; j < exs.length; j++) {
+        var e = norm(exs[j].en);
+        if (!e) continue;
+        if (key === e || key.indexOf(e) === 0 || e.indexOf(key) === 0) return { m: i, ex: j };
+      }
+    }
+    return { m: 0, ex: 0 };
+  }
+  /* 例句轮播的扁平序列（跨义项连续翻页）：
+     词组卡 = 词组自身例句（没有则回退到所绑义项）；普通卡 = 全部义项的全部例句。 */
+  function svFlat(v) {
+    if (!v) return [];
+    var out = [], i, j, exs;
+    if (v.phr) {
+      exs = arr(v.exs);
+      if (!exs.length) exs = arr((arr((v.card.fields || {}).meaningDetails)[v.m || 0] || {}).examples);
+      for (i = 0; i < exs.length; i++) out.push({ m: v.m || 0, ex: i });
+      return out;
+    }
+    var ds = arr((v.card.fields || {}).meaningDetails);
+    for (i = 0; i < ds.length; i++) { exs = arr(ds[i].examples); for (j = 0; j < exs.length; j++) out.push({ m: i, ex: j }); }
+    return out;
+  }
+  function openSV(m, ex) {
+    S.sentView = { card: S.card, m: m || 0, ex: ex || 0, revealed: false, star: false, exs: [] };
     var d = arr((S.card.fields || {}).meaningDetails)[m || 0];
-    if (d && arr(d.examples)[0]) speak(arr(d.examples)[0].en, TTS_PASSAGE);
+    var list = arr(d && d.examples);
+    var e0 = list[S.sentView.ex] || list[0];
+    if (e0) speak(e0.en, TTS_PASSAGE);
     paint();
   }
   /* 词组点开例句轮播：优先词组专属例句 collocations[i].examples，
@@ -1320,7 +1356,7 @@
       case "tab": S.tab = el.getAttribute("data-t"); paint(); break;
       case "meaning": openSV(parseInt(el.getAttribute("data-m"), 10) || 0); break;
       case "phr": openPhr(parseInt(el.getAttribute("data-i"), 10) || 0); break;
-      case "sentence-view": openSV(0); break;
+      case "sentence-view": var _svA = svAnchor(S.card.fields || {}); openSV(_svA.m, _svA.ex); break;
       case "word": openDict(el.getAttribute("data-w"), el); break;
       case "exam": S.examOpen = true; paint(); break;
       case "exam-close": S.examOpen = false; paint(); break;
@@ -1508,13 +1544,16 @@
     if (Date.now() - st.t > 700) return;
     if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
     var v = S.sentView; if (!v) return;
-    var list = svExs(v), n = list.length;
+    var flat = svFlat(v), n = flat.length;
     if (n <= 1) return;
-    var nx = (v.ex || 0) + (dx < 0 ? 1 : -1);
+    var cur = 0;
+    for (var i = 0; i < n; i++) { if (flat[i].m === (v.m || 0) && flat[i].ex === (v.ex || 0)) { cur = i; break; } }
+    var nx = cur + (dx < 0 ? 1 : -1);
     if (nx < 0) nx = n - 1;
     if (nx >= n) nx = 0;
-    v.ex = nx; v.revealed = false;
-    if (list[nx]) speak(list[nx].en, TTS_PASSAGE);
+    v.m = flat[nx].m; v.ex = flat[nx].ex; v.revealed = false;
+    var list = svExs(v);
+    if (list[v.ex]) speak(list[v.ex].en, TTS_PASSAGE);
     _swipeAt = Date.now();
     paint();
   }, { passive: true });
