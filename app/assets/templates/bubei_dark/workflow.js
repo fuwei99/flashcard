@@ -28,9 +28,9 @@
     if (H.blankSentence) return H.blankSentence(raw, word);
     return { text: String(raw || ""), answer: String(word || "") };
   }
-  var TTS_WORD = H.ttsWord || { cache: true };
+  var TTS_WORD = H.ttsWord || { cache: true, play: "file" };
   var TTS_SENTENCE = H.ttsSentence || {
-    plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", cache: false
+    plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", cache: false, play: "stream"
   };
 
   // ---------- TTS 预取（阶段 5）：把「后面几张」的单词+例句先落盘 ----------

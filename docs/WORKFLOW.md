@@ -274,20 +274,25 @@ AI 定时查岗 → 读快照 → 知道今天背了几个、正确率、连续�
 
 ---
 
-## 9. TTS 架构（v0.9 已实现）
+## 9. TTS 架构（v0.10，2026-09-20 改造）
 
 ```
-Flashcard.tts(text, lang)      ← 牌组只发这一句，不关心底下是谁
+Flashcard.tts(text, opts)      ← 模板说了算：读不读 / 怎么出声 / 存不存 / 存哪里
         │
    WebViewBridge（剥 HTML 标签）
         │
-   TtsService.speak(text, lang)          ← lib/services/tts_service.dart
-        ├── 单个英文词 → cache/tts/ 命中 → just_audio 秒播（零延迟）
-        │                 未命中 → 引擎收全字节落盘 → 播
-        ├── 长句       → 引擎字节流直接喂 StreamAudioSource
-        │                 → 边收边播，不攒完整包
-        └── 兜底       → flutter_tts（没选插件 / 合成失败时）
+   TtsService.speak(text, lang, options)   ← lib/services/tts_service.dart
+        ├── 命中缓存     → just_audio 直接播本地文件（零延迟）
+        ├── play:"file"  → 引擎收全字节 →（要存就落 cache）→ 文件播放
+        ├── play:"stream"→ 引擎字节流直接喂 StreamAudioSource → 边收边播
+        ├── play:false   → 只收回来落盘（后台串行队列），不出声
+        └── 兜底         → flutter_tts（没选插件 / 合成失败时）
 ```
+
+**壳不判断文本类别**：以前壳里用正则猜「单个英文词 → 落盘、其它 → 流式」，词组
+（`high street` 带空格）被误判成长句，直接哑掉。2026-09-20 起这个判断从壳里**删掉了**
+—— 类别与策略全部由模板（`script.js`）用 `play` / `cache` / `dir` / `sidecar` 声明，
+壳只当执行器。接口细节见 `docs/PLUGINS.md` 第 6 节。
 
 **底下换成插件系统了（v0.10）**：不再是「写死 OpenAI」，一切皆插件。
 

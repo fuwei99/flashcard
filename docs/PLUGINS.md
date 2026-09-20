@@ -80,40 +80,58 @@ let PluginJS = {
 - **JS 脚本**：新建目录放 `manifest.json` + `plugin.js`，`engine` 写 `js`。
   也可以 App 里「插件管理 → 安装（选 .js）」，会自动生成一份带 `cookie/voice/rate` 的清单。
 
-## 6. 模板怎么调 TTS（2026-09-15 起）
+## 6. 模板怎么调 TTS（2026-09-20 起）
 
-模板 `script.js` 通过注入的 `window.Flashcard` 调用，**第二参从 lang 升级为 lang 或 options 对象**，老写法完全兼容：
+模板 `script.js` 通过注入的 `window.Flashcard` 调用，**第二参从 lang 升级为 lang 或 options 对象**，老写法完全兼容。
+
+> **壳是执行器，不是判断器。** 「这是单词 / 词组 / 句子」、读不读、存不存、存哪里、怎么存，
+> 全部是模板自己的事 —— 模板用下面的参数告诉壳，壳不看文本内容、不猜类别，来什么读什么。
+> （2026-09-20 之前壳里有个 `isSingleWord()` 正则在做这个判断，已从壳里删除。）
 
 ```js
-FC.tts("word");                         // 老写法，用当前选中插件
-FC.tts("word", "en-US");                // 老写法，显式 lang
+FC.tts("word");                          // 老写法：当前选中插件，play 缺省 = "stream"
 
 // 新写法：逐条指定
-FC.tts("word", {
+FC.tts("high street", {                  // 词组照样由模板说了算
   plugin: "doubao",      // 用哪个 TTS 插件；"system" = 系统 TTS；缺省 = 当前选中
   voice:  "zh_female_wenroutaozi_v2_mars_bigtts",
   rate:   1.2,           // 语速倍率，1.0 正常
   pitch:  0.9,           // 音调倍率，1.0 正常
-  cache:  true,          // 落盘开关，见下
+  play:   "file",        // 出声方式，见下
+  cache:  true,          // 存不存 + 文件名主干，见下
+  dir:    "tts",         // 存哪里：cache/<dir>/，缺省 tts
+  sidecar: false,        // 怎么存：要不要旁挂 .txt（全文 + 参数）
+  ttlDays: 7,            // 存多久（天），缺省永久
   extra:  { style: "chat" }  // 附件参数，原样并进插件 getAudioV2 的 request
 });
 
-// 顺序朗读：每条各用各的插件/音色
+// 顺序朗读：每条各用各的插件 / 音色 / 策略
 FC.ttsSeq([
-  { text: "word",     plugin: "doubao",       voice: "A" },
-  { text: "sentence", plugin: "openai-tts",   voice: "alloy", rate: 0.9 }
+  { text: "word",     plugin: "doubao",     voice: "A", play: "file",   cache: true  },
+  { text: "sentence", plugin: "openai-tts", voice: "alloy", rate: 0.9, play: "stream", cache: false }
 ]);
 ```
 
-### 落盘（cache）
+### 出声方式（play）
 
 | 写法 | 行为 |
 |---|---|
-| 不传 | **默认不落盘**；只有单词跟随全局设置 `ttsWordCacheEnabled`，长句一律流式 |
-| `cache: true` | 强制落盘（单词、长句都落） |
-| `cache: "name"` | 强制落盘，文件名主干用 `name` |
+| `play: "file"` | 收全整段 →（要存就落盘）→ 文件播放。短音频 / 词条最稳；起播前要等一次完整合成 |
+| `play: "stream"` | 引擎字节流直接喂播放器，边收边播；要存就播完搭车落盘。长句 / 语篇首字最快 |
+| `play: false`（或 `"none"`） | 只把音频取回来落盘，不出声（后台串行预取）；`cache:false` 时等于什么都不做 |
+| 不传 | 等同 `"stream"` |
+
+### 存取（cache / dir / sidecar）
+
+| 写法 | 行为 |
+|---|---|
+| 不传 | **不落盘** |
+| `cache: true` | 落盘 |
+| `cache: "name"` | 落盘，文件名主干用 `name` |
 | `cache: {name:"x"}` | 同上，对象写法 |
-| `cache: false` | 强制不落盘 |
+| `cache: false` | 不落盘 |
+| `dir` | 存哪里：`cache/<dir>/`，缺省 `tts` |
+| `sidecar: true` | 怎么存：额外旁挂 `.txt`（全文 + 参数） |
 
 ### 缓存文件名
 

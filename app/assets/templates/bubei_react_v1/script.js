@@ -16,11 +16,17 @@
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
   function arr(v) { return Array.isArray(v) ? v : (v == null ? [] : [v]); }
   function shuffle(a, seed) { var r = a.slice(), s = seed || 1; for (var i = r.length - 1; i > 0; i--) { s = (s * 9301 + 49297) % 233280; var j = Math.floor((s / 233280) * (i + 1)); var t = r[i]; r[i] = r[j]; r[j] = t; } return r; }
-  /* TTS 路由：照抄 bubei_dark —— 词和句各走各的插件/音色。
+  /* TTS 路由：词 / 句 / 文章各走各的插件、音色，以及**出声方式和存取策略**。
+     壳不做任何判断 —— 判断是单词还是句子、读不读、存不存、存哪里、怎么存，
+     全部在这里用参数声明，壳只执行：
+       play:"file"   收全整段 → 落 cache → 文件播放（词条：短、要稳、要秒播）
+       play:"stream" 边收边播、不落盘（句子/文章：长，首字快最重要）
+       play:false    只取回来落盘、不出声（后台预取）
+       cache:true/false 存不存；dir → 存哪里（缺省 cache/tts）；sidecar 旁挂 .txt
      不传 plugin 时壳会用「当前选中插件」，音色不受控；显式点名更稳。 */
-  var TTS_WORD     = { lang: "en-US", plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true };
-  var TTS_SENTENCE = { lang: "en-US", plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", cache: false };
-  var TTS_PASSAGE  = { lang: "en-US", plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: false };
+  var TTS_WORD     = { lang: "en-US", plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true,  play: "file" };
+  var TTS_SENTENCE = { lang: "en-US", plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", cache: false, play: "stream" };
+  var TTS_PASSAGE  = { lang: "en-US", plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: false, play: "stream" };
   function speak(text, opts) { var say = String(text || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim(); if (!say) return; try { FC.tts(say, opts || TTS_WORD); } catch (e) {} }
   /* 读完单词自动接例句：走壳的 ttsSeq 顺序播 —— 单词一开口就去合成例句，几乎无缝。
      壳没给 ttsSeq 就退回只读单词。 */

@@ -67,9 +67,11 @@
   var spellChecked = false;   // 本次拼写是否已经检查过
 
   // ---------- TTS 路由（改这里就能换：词 / 句 / 文章各走各的）----------
-  var TTS_WORD     = { plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true };   // 单词：豆包·温柔桃子，落盘
-  var TTS_SENTENCE = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts",  cache: false };  // 例句：豆包·磁性君语，不落盘
-  var TTS_PASSAGE  = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: false };  // 文章：豆包·磁性俊宇，1.2x / 音高 0.9，不落盘 —— 长文本走流式，别全收完才播
+  // 壳不做任何判断：读不读（play）、存不存（cache）、存哪里（dir）、怎么存（sidecar）
+  // 全部在这里声明。play:"file" = 收全落盘后文件播放；play:"stream" = 边收边播。
+  var TTS_WORD     = { plugin: "doubao", voice: "zh_female_wenroutaozi_v2_mars_bigtts", cache: true,  play: "file" };   // 单词/词组：豆包·温柔桃子，落盘 + 收全文件播放
+  var TTS_SENTENCE = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts",  cache: false, play: "stream" };  // 例句：豆包·磁性君语，不落盘，边收边播
+  var TTS_PASSAGE  = { plugin: "doubao", voice: "zh_male_cixingjunyu_uranus_bigtts", rate: 1.2, pitch: 0.9, cache: false, play: "stream" };  // 文章：1.2x / 音高 0.9，不落盘，长文本边收边播，别全收完才出声
 
   // ---------- 朗读纯文本 ----------
   function speak(text, lang, opts) {

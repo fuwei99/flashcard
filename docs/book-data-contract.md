@@ -207,7 +207,7 @@ interface DictEntry {
   "book_id": "english_zhenti_shengciben",
   "title": "英语一真题生词本",
   "subtitle": "江锋 · 历年真题生词分年收录",
-  "template": "bubei_ref",
+  "template": "bubei_react_v1",
   "fields_order": ["word", "syllable", "phonetic", "senses", "sentence", "collocations", "derivatives", "synonyms", "antonyms", "root", "exams", "meaningDetails"],
   "defaults": { "tts": { "lang": "en-US", "rate": 0.95 } }
 }
@@ -217,7 +217,7 @@ interface DictEntry {
 |---|---|
 | `format` | `flashcard.book.v3`（当前壳认这个；卡形归契约管，不靠 format 版本区分） |
 | `book_id` | 目录名，壳主键 |
-| `template` | 用哪个模板，如 `bubei_ref` |
+| `template` | 用哪个模板，如 `bubei_react_v1`（当前只维护 `bubei_react_v1` / `bubei_dark`） |
 | `fields_order` | 只当**壳拼空字段的种子**；`fromJson` 会把卡里所有键都收进 `fields`，不限于此 |
 | `defaults.tts` | 语音默认参数 |
 

@@ -20,8 +20,8 @@
     if (H.speak) { H.speak(text, opts); return; }
     try { if (FC.tts) FC.tts(text, opts); } catch (e) {}
   }
-  var TTS_WORD = H.ttsWord || { lang: "en-US", cache: true };
-  var TTS_SENTENCE = H.ttsSentence || { lang: "en-US", cache: false };
+  var TTS_WORD = H.ttsWord || { lang: "en-US", cache: true, play: "file" };
+  var TTS_SENTENCE = H.ttsSentence || { lang: "en-US", cache: false, play: "stream" };
 
   function log(msg) { if (FC.log) { try { FC.log("[WF]", msg); } catch (e) {} } }
 
