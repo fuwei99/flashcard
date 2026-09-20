@@ -313,6 +313,11 @@ class TtsService {
       final long = !isSingleWord(text);
       final wantCache = explicit == true ||
           (explicit == null && !long && settings.ttsWordCacheEnabled);
+      // 模板显式点名 cache:true = 「这条就是读词」→ 一律走「收全→落盘→文件播放」。
+      // 词组（"high street"）带空格，isSingleWord 判 false → 以前被当长句扔进流式，
+      // 而这台机上流式对短音频不稳（just_audio Connection aborted / 插件 20s 超时）
+      // → 单词有声音、词组全哑。文件播放这条路径从来没炸过，读词统一走它。
+      final forceFile = explicit == true;
       final wantPlay = opts?.shouldPlay ?? true;
 
       // ① 本地已有 → 直接用。**不管 wantCache**：预取落盘的例句也要能被播放命中。
@@ -333,12 +338,13 @@ class TtsService {
       }
 
       // ③ 出声：三条路
+      //   显式 cache:true → 无视长短，一律全收落盘再播（读词：单词和词组同一条路）
       //   要落盘 + 长文本 → 流式播 + 搭车落盘（首字快，播完自动存）
       //   要落盘 + 短文本 → 全收落盘再播（字节小，收得快）
       //   不落盘          → 流式，失败再兜底全收
       // 偶发中断不惩罚，连续失败达阈值才认定本机流式不可用。
       final streamOk = _streamFails < _kStreamFailLimit;
-      if (wantCache && long && streamOk) {
+      if (wantCache && long && streamOk && !forceFile) {
         if (await _speakStreamedCached(engine, text, lang, gen, opts,
             onStarted: onStarted)) {
           _streamFails = 0;

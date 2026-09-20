@@ -474,15 +474,17 @@
   function ovSentence() {
     var v = S.sentView; if (!v) return "";
     var card = v.card, f = card.fields || {}; var details = arr(f.meaningDetails);
+    var list = svList(v); var total = list.length;
+    if (!total) return "";
+    var i = svPick(v, list); v.i = i;
+    var ex = list[i];
+    if (!ex) return "";
     var mIdx = Math.min(v.m || 0, Math.max(0, details.length - 1));
     var detail = (v.phr && arr(v.exs).length) ? { meaning: v.phr.cn || v.phr.en, examples: arr(v.exs) } : (details[mIdx] || { examples: [] });
-    var exs = svExs(v);
-    var exIdx = Math.min(v.ex || 0, Math.max(0, exs.length - 1)); var ex = exs[exIdx];
-    if (!ex) return "";
     var pos = ""; arr(f.senses).forEach(function (s) { if (arr(s.cn).indexOf(detail.meaning) >= 0) pos = s.pos; });
-    var dotsEx = exs.map(function (_, i) { return '<i class="h-[6px] w-[6px] rounded-full ' + (i === exIdx ? "bg-[#c9cfdf]" : "bg-[#454e6b]") + '"></i>'; }).join("");
+    var dotsEx = total > 12 ? "" : list.map(function (_, k) { return '<i class="h-[6px] w-[6px] rounded-full ' + (k === i ? "bg-[#c9cfdf]" : "bg-[#454e6b]") + '"></i>'; }).join("");
     var dotsM = details.map(function (_, i) { return '<button data-act="sv-m" data-m="' + i + '" class="h-[8px] w-[8px] rounded-full ' + (i === mIdx ? "bg-[#e3a83c]" : "bg-[#5a5a60]") + '"></button>'; }).join("");
-    return '<div class="absolute inset-0 z-[60] flex flex-col" style="background:' + BG + '">' +
+    return '<div class="fc-sv-wrap absolute inset-0 z-[60] flex flex-col" style="background:' + BG + '">' +
       '<div class="mx-4 mt-[40px] flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] bg-[#1d2337] shadow-[0_18px_60px_rgba(0,0,0,0.5)]">' +
         '<div class="flex flex-none items-center justify-between px-[20px] pt-[16px]"><span class="text-[15px] text-[#a9b0c8]">' + esc(ex.src || "") + '</span><span class="flex flex-col gap-[4px]"><i class="h-[2.5px] w-[18px] rounded-full bg-[#a9b0c8]"></i><i class="h-[2.5px] w-[18px] rounded-full bg-[#a9b0c8]"></i></span></div>' +
         '<div data-act="sv-speak" class="flex min-h-[150px] flex-1 cursor-pointer flex-col justify-end px-[20px] pb-[12px]"><p class="text-[20px] font-bold leading-[1.5] text-[#f0f0f2]">' + orangeWord(ex.en, f.word) + '</p><p class="mt-[8px] text-[15px] leading-relaxed text-[#8a91a8]">' + esc(ex.cn || "") + '</p>' +
@@ -491,7 +493,7 @@
           '<p class="text-[17px] leading-[1.6] text-[#ececef]"><b class="mr-2 font-bold">' + esc(pos) + "</b>" + esc(detail.enDef || detail.meaning || "") + "</p>" +
           (detail.pattern ? '<span class="mt-[14px] inline-block rounded-[10px] border border-[#4a5578] px-[13px] py-[7px] text-[15px] font-semibold text-[#c9cfdf]">' + esc(detail.pattern) + "</span>" : "") +
         "</div>" + (v.revealed ? "" : '<button data-act="sv-reveal" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-[18px] py-[10px] text-[16px] text-[#c9cfdf]">查看双语释义</button>') +
-        '<span class="absolute bottom-[12px] right-[18px] text-[14px] tabular-nums text-[#8a91a8]">' + (exIdx + 1) + "/" + exs.length + "</span></div></div>" +
+        '<span class="absolute bottom-[12px] right-[18px] text-[14px] tabular-nums text-[#8a91a8]">' + (i + 1) + "/" + total + "</span></div></div>" +
       '<footer class="grid flex-none grid-cols-2 pb-[26px] pt-[16px]">' + dashBtn("下一词", "bg-[#2ec4a5]", "sv-next") + dashBtn("收起卡片", "bg-[#e3a83c]", "sv-close") + "</footer></div>";
   }
 
@@ -710,66 +712,89 @@
   }
 
   /* ---- 例句轮播卡 ---- */
-  /* 卡片主例句 f.sentence 落在哪个义项/第几句：归一化后做前缀匹配
-     （数据里主例句常是某条例句的加长版，精确相等会漏），找不到退回 0/0。
-     给 ▶️ 按钮锚定用，别再写死 meaningDetails[0]。 */
+  /* 卡面主例句 f.sentence 绑在哪个义项：归一化后按 token 交集打分取最高分。
+     真题书里卡面主例句常是库里例句的改写加长版（插词 / 单复数 / 增减 the），
+     前缀匹配会整片落空 —— 实测 english_zhenti_shengciben 162 张卡里 66 张（41%）
+     落空，于是点 ▶️ 弹出的是义项 0 的另一句话。打分 <0.5 退回义项 0：
+     反正轮播第 0 条永远是卡面原句，绑定只决定下面那块释义面板显示哪个义项。 */
+  function svNorm(s) { return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+  function svToks(s) {
+    var t = svNorm(s).split(" "), o = {};
+    for (var i = 0; i < t.length; i++) if (t[i]) o[t[i]] = 1;
+    return o;
+  }
   function svAnchor(f) {
-    var sen = String((f.sentence || {}).en || "").trim();
-    var ds = arr(f.meaningDetails);
-    if (!sen) return { m: 0, ex: 0 };
-    var norm = function (s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); };
-    var key = norm(sen);
+    var key = svNorm((f.sentence || {}).en);
+    if (!key) return 0;
+    var kt = svToks(key), ds = arr(f.meaningDetails), best = 0, bestS = 0;
     for (var i = 0; i < ds.length; i++) {
       var exs = arr(ds[i].examples);
       for (var j = 0; j < exs.length; j++) {
-        var e = norm(exs[j].en);
+        var e = svNorm(exs[j].en);
         if (!e) continue;
-        if (key === e || key.indexOf(e) === 0 || e.indexOf(key) === 0) return { m: i, ex: j };
+        if (e === key) return i;
+        var et = svToks(e), hit = 0, n = 0, k;
+        for (k in kt) { n++; if (et[k]) hit++; }
+        var sc = n ? hit / n : 0;
+        if (sc > bestS) { bestS = sc; best = i; }
       }
     }
-    return { m: 0, ex: 0 };
+    return bestS >= 0.5 ? best : 0;
   }
-  /* 例句轮播的扁平序列（跨义项连续翻页）：
-     词组卡 = 词组自身例句（没有则回退到所绑义项）；普通卡 = 全部义项的全部例句。 */
-  function svFlat(v) {
+  /* 轮播序列：第 0 条 = 卡面原句（src 标「词书例句」），其后按义项顺序铺全部例句。
+     → ▶️ 点开先看到的就是卡面那句话；跨义项首尾相接翻页；只有一个义项一句话的卡
+       也至少有 2 条可滑（以前拍平后 length===1 直接 return，手势全程无反应）。
+     词组卡只放词组自身例句（没有就回退所绑义项）—— 卡面原句讲的是这个词本身，
+     跟词组不是一回事，别往里塞。 */
+  function svList(v) {
     if (!v) return [];
-    var out = [], i, j, exs;
+    var f = (v.card && v.card.fields) || {};
+    var out = [], i, j, xs;
     if (v.phr) {
-      exs = arr(v.exs);
-      if (!exs.length) exs = arr((arr((v.card.fields || {}).meaningDetails)[v.m || 0] || {}).examples);
-      for (i = 0; i < exs.length; i++) out.push({ m: v.m || 0, ex: i });
+      xs = arr(v.exs);
+      if (!xs.length) xs = arr((arr(f.meaningDetails)[v.m || 0] || {}).examples);
+      for (i = 0; i < xs.length; i++) out.push({ m: v.m || 0, ex: i, en: xs[i].en, cn: xs[i].cn, src: xs[i].src });
       return out;
     }
-    var ds = arr((v.card.fields || {}).meaningDetails);
-    for (i = 0; i < ds.length; i++) { exs = arr(ds[i].examples); for (j = 0; j < exs.length; j++) out.push({ m: i, ex: j }); }
+    var own = String((f.sentence || {}).en || "").trim();
+    if (own) out.push({ m: svAnchor(f), ex: -1, en: own, cn: (f.sentence || {}).cn, src: "词书例句" });
+    var ds = arr(f.meaningDetails);
+    for (i = 0; i < ds.length; i++) {
+      xs = arr(ds[i].examples);
+      for (j = 0; j < xs.length; j++) out.push({ m: i, ex: j, en: xs[j].en, cn: xs[j].cn, src: xs[j].src });
+    }
     return out;
   }
-  function openSV(m, ex) {
-    S.sentView = { card: S.card, m: m || 0, ex: ex || 0, revealed: false, star: false, exs: [] };
-    var d = arr((S.card.fields || {}).meaningDetails)[m || 0];
-    var list = arr(d && d.examples);
-    var e0 = list[S.sentView.ex] || list[0];
-    if (e0) speak(e0.en, TTS_PASSAGE);
+  /* 当前应显示的下标：i>=0 直接用；i===-1 = 「跳到 v.m 的第一条例句」 */
+  function svPick(v, list) {
+    if (!list || !list.length) return -1;
+    var i = v.i == null ? 0 : v.i;
+    if (i >= 0) return Math.min(i, list.length - 1);
+    for (var k = 0; k < list.length; k++) {
+      if (list[k].m === (v.m || 0) && list[k].ex >= 0) return k;
+    }
+    return 0;
+  }
+  function svGo(v) {
+    var list = svList(v);
+    var k = svPick(v, list);
+    v.i = k < 0 ? 0 : k;
+    if (list[v.i]) speak(list[v.i].en, TTS_PASSAGE);
+  }
+  /* ▶️：m = 锚定义项，i 缺省 0 = 从第 0 条（卡面原句）开；i=-1 = 从该义项第一条例句开 */
+  function openSV(m, i) {
+    S.sentView = { card: S.card, m: m || 0, i: i == null ? 0 : i, revealed: false, star: false, exs: [] };
+    svGo(S.sentView);
     paint();
   }
   /* 词组点开例句轮播：优先词组专属例句 collocations[i].examples，
-     否则回退到所绑义项 meaningDetails[m].examples（ex 指定第几句，复用现成例句）。 */
+     否则回退到所绑义项 meaningDetails[m].examples。 */
   function openPhr(i) {
     var f = S.card.fields || {};
     var c = arr(f.collocations)[i] || {};
-    var m = c.m == null ? 0 : c.m;
-    var exs = arr(c.examples);
-    S.sentView = { card: S.card, m: m, ex: c.ex || 0, revealed: false, star: false, phr: c, exs: exs };
-    var list = exs.length ? exs : arr((arr(f.meaningDetails)[m] || {}).examples);
-    if (list[S.sentView.ex]) speak(list[S.sentView.ex].en, TTS_PASSAGE);
+    S.sentView = { card: S.card, m: c.m == null ? 0 : c.m, i: 0, revealed: false, star: false, phr: c, exs: arr(c.examples) };
+    svGo(S.sentView);
     paint();
-  }
-  /* 例句轮播卡当前实际展示的例句数组：词组专属 > 所绑义项 */
-  function svExs(v) {
-    if (!v) return [];
-    if (arr(v.exs).length) return arr(v.exs);
-    var d = arr((v.card.fields || {}).meaningDetails)[v.m || 0];
-    return arr(d && d.examples);
   }
 
   /* ---- 会话：拉队列 ---- */
@@ -1354,9 +1379,11 @@
         call("state.kvPut", { id: S.card.id, key: "fav", value: !!S.favs[S.card.id] });
         paint(); break;
       case "tab": S.tab = el.getAttribute("data-t"); paint(); break;
-      case "meaning": openSV(parseInt(el.getAttribute("data-m"), 10) || 0); break;
+      case "meaning": openSV(parseInt(el.getAttribute("data-m"), 10) || 0, -1); break;
       case "phr": openPhr(parseInt(el.getAttribute("data-i"), 10) || 0); break;
-      case "sentence-view": var _svA = svAnchor(S.card.fields || {}); openSV(_svA.m, _svA.ex); break;
+      /* ▶️：锚定卡面主例句所属义项，但**从第 0 条（卡面原句）开** —— 点句子旁边这个钮，
+         弹出来必须先是这句话本身，而不是库里任选的一条例句。 */
+      case "sentence-view": openSV(svAnchor(S.card.fields || {}), 0); break;
       case "word": openDict(el.getAttribute("data-w"), el); break;
       case "exam": S.examOpen = true; paint(); break;
       case "exam-close": S.examOpen = false; paint(); break;
@@ -1401,9 +1428,9 @@
       case "sv-close": S.sentView = null; paint(); break;
       case "sv-next": S.sentView = null; paint(); break;
       case "sv-reveal": if (S.sentView) { S.sentView.revealed = true; paint(); } break;
-      case "sv-m": if (S.sentView) { S.sentView.m = parseInt(el.getAttribute("data-m"), 10) || 0; S.sentView.ex = 0; S.sentView.revealed = false; S.sentView.phr = null; S.sentView.exs = []; paint(); } break;
+      case "sv-m": if (S.sentView) { S.sentView.m = parseInt(el.getAttribute("data-m"), 10) || 0; S.sentView.i = -1; S.sentView.revealed = false; S.sentView.phr = null; S.sentView.exs = []; paint(); } break;
       case "sv-star": if (S.sentView) { S.sentView.star = !S.sentView.star; paint(); } break;
-      case "sv-speak": var _exs = svExs(S.sentView); var ex0 = _exs[(S.sentView && S.sentView.ex) || 0]; if (ex0) speak(ex0.en, TTS_PASSAGE); break;
+      case "sv-speak": var _sl = svList(S.sentView); var _sx = _sl[svPick(S.sentView, _sl)]; if (_sx) speak(_sx.en, TTS_PASSAGE); break;
       case "passage-speak": if (S.passage) speak(S.passage.plain || ""); break;
       case "cloze-start":
         if (S.clozeBlanks && S.clozeBlanks.length) { S.phase = "cloze"; paint(); }
@@ -1530,12 +1557,11 @@
     if (hit.word) { openDict(hit.word, hit.el); return; }
     handle(hit.act, hit.el, e);
   });
-  /* 例句轮播卡：左右滑动切换例句 */
-  root.addEventListener("touchstart", function (e) {
-    if (!S.sentView || !e.touches || e.touches.length !== 1) { _tch = null; return; }
-    _tch = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
-  }, { passive: true });
-  root.addEventListener("touchend", function (e) {
+  /* 例句轮播卡：左右滑动切换例句（首尾相接，天然跨义项）
+     touchcancel 也得接：横向拖动若被 WebView 认成滚动手势，它会吞掉 touchend 只发
+     touchcancel，表现出来就是「划不动」。`.fc-sv-wrap{touch-action:pan-y}`
+     （style.css 末尾）是第一道防线，这里兼作兜底。 */
+  function svSwipeEnd(e) {
     if (!_tch || !S.sentView) { _tch = null; return; }
     var t = e.changedTouches && e.changedTouches[0];
     var st = _tch; _tch = null;
@@ -1544,19 +1570,23 @@
     if (Date.now() - st.t > 700) return;
     if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
     var v = S.sentView; if (!v) return;
-    var flat = svFlat(v), n = flat.length;
+    var list = svList(v), n = list.length;
     if (n <= 1) return;
-    var cur = 0;
-    for (var i = 0; i < n; i++) { if (flat[i].m === (v.m || 0) && flat[i].ex === (v.ex || 0)) { cur = i; break; } }
+    var cur = svPick(v, list);
     var nx = cur + (dx < 0 ? 1 : -1);
     if (nx < 0) nx = n - 1;
     if (nx >= n) nx = 0;
-    v.m = flat[nx].m; v.ex = flat[nx].ex; v.revealed = false;
-    var list = svExs(v);
-    if (list[v.ex]) speak(list[v.ex].en, TTS_PASSAGE);
+    v.i = nx; v.m = list[nx].m; v.revealed = false;
+    speak(list[nx].en, TTS_PASSAGE);
     _swipeAt = Date.now();
     paint();
+  }
+  root.addEventListener("touchstart", function (e) {
+    if (!S.sentView || !e.touches || e.touches.length !== 1) { _tch = null; return; }
+    _tch = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
   }, { passive: true });
+  root.addEventListener("touchend", svSwipeEnd, { passive: true });
+  root.addEventListener("touchcancel", svSwipeEnd, { passive: true });
   root.addEventListener("input", function (e) {
     var t = e.target;
     if (!t || !t.getAttribute) return;

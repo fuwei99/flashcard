@@ -35,3 +35,7 @@ html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;overscroll-b
 .fc-blank{display:inline-block;min-width:56px;text-align:center;color:#58686e;border-bottom:2px solid rgba(255,255,255,.16);margin:0 2px;padding:0 2px;font-weight:700;cursor:pointer;transition:all .15s}
 .fc-blank.is-active{color:#00c795;border-bottom-color:#00c795;background:rgba(0,199,149,.16);border-radius:4px 4px 0 0}
 .fc-blank.is-filled{color:#fff;border-bottom-color:#00c795}
+
+/* 例句轮播卡：横向手势留给页面（左右滑切例句），别被 WebView 的滚动手势认领，
+   否则它会吞掉 touchend 只发 touchcancel。未分层 CSS，优先级高于 @layer utilities。 */
+.fc-sv-wrap{touch-action:pan-y}
