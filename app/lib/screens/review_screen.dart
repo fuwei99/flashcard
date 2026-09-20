@@ -119,7 +119,7 @@ class _ReviewScreenState extends State<ReviewScreen>
   /// 壳**一个都不算、一个都不发**。壳只负责告诉它「在哪本书」(session.book)
   /// 和放行 fs.* —— 出题要判题型，题型属于流程，流程归模板。
   ///
-  /// 没声明这个的老模板（bubei_dark / bubei_replica 等）仍走壳侧兜底，
+  /// 没声明这个的老模板（bubei_dark 等）仍走壳侧兜底，
   /// 因为它们的 script.js 只认 `card.choices`，自己不会建池。
   late final bool _selfDistractors;
 

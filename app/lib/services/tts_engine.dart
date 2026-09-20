@@ -17,6 +17,16 @@ import 'js_tts_host.dart';
 import 'plugin.dart';
 import 'tts_log.dart';
 
+/// 出声方式 —— **调用方（模板 script.js）声明，壳只执行**。
+///
+/// 壳不看文本内容、不猜「这是单词还是句子」：判断是单词 / 读不读 / 存不存 /
+/// 存哪里 / 怎么存，全部由模板通过 API 参数给出。
+///   play: false | "none"  → [none]   只把音频取回来（可落盘），不出声
+///   play: "file"          → [file]   收全整段 →（要存就落盘）→ 文件播放
+///   play: "stream"        → [stream] 边收边播；要存就搭车落盘
+///   没声明                → [stream]
+enum TtsPlay { none, file, stream }
+
 /// 一次朗读的覆盖参数 —— 模板可以逐条指定用哪个插件、什么音色/语速/音调。
 ///
 /// 全部可空，null = 「用插件配置里的值」：
@@ -31,16 +41,21 @@ class TtsOptions {
   final double? rate;
   final double? pitch;
 
-  /// 是否落盘缓存：null = 跟随全局设置（单词）/ 不落盘（长句）
-  /// true = 强制落盘；由 parse 从 cache 字段归一化而来
+  /// 存不存：true = 落盘；false = 不落；null = 调用方没声明 → 不落。
+  /// 由 parse 从 cache(true|false|"name"|{name}) 归一化而来
   final bool? cache;
 
   /// 自定义缓存文件名前缀（cache 为字符串时）
   final String? cacheName;
 
-  /// 要不要现在出声：null = true。
-  /// false = 只把音频取回来落盘（预取），不碰播放器。
-  final bool? play;
+  /// 存哪里：`cache/<dir>/`。null = "tts"。调用方说了算，壳不猜。
+  final String? dir;
+
+  /// 怎么存：要不要旁挂 `.txt`（全文 + 合成参数）。缺省 false。
+  final bool sidecar;
+
+  /// 出声方式：null = 调用方没声明 → 缺省 [TtsPlay.stream]
+  final TtsPlay? play;
 
   /// 落盘有效期（天）：null = 永久。只在 cache 生效时有意义。
   final int? ttlDays;
@@ -55,6 +70,8 @@ class TtsOptions {
     this.pitch,
     this.cache,
     this.cacheName,
+    this.dir,
+    this.sidecar = false,
     this.play,
     this.ttlDays,
     this.extra = const {},
@@ -63,8 +80,11 @@ class TtsOptions {
   /// 走系统 TTS（flutter_tts）：plugin: "system"
   bool get system => pluginId == 'system';
 
-  /// 现在要不要出声（缺省要）
-  bool get shouldPlay => play ?? true;
+  /// 出声方式（没声明 = stream）
+  TtsPlay get mode => play ?? TtsPlay.stream;
+
+  /// 现在要不要出声：只有 play:false/none 才是「只要落盘」
+  bool get shouldPlay => play != TtsPlay.none;
 
   bool get isEmpty =>
       pluginId == null &&
@@ -73,12 +93,15 @@ class TtsOptions {
       pitch == null &&
       cache == null &&
       cacheName == null &&
+      dir == null &&
+      !sidecar &&
       play == null &&
       ttlDays == null &&
       extra.isEmpty;
 
   /// 从 bridge 收到的 JSON map 解析
   ///   plugin/voice/rate/pitch/extra + cache(true|"name"|{name})
+  ///   + play(true|false|"file"|"stream") + dir + sidecar + ttlDays
   static TtsOptions? parse(Object? j) {
     if (j is! Map) return null;
     String? s(String k) {
@@ -110,9 +133,35 @@ class TtsOptions {
     final e = j['extra'];
     if (e is Map) e.forEach((k, v) => extra['$k'] = '$v');
 
-    // play：要不要现在出声（缺省 true）
-    bool? play;
-    if (j['play'] is bool) play = j['play'] as bool;
+    // play：出声方式。bool 与字符串都认，壳只做归一化，不做判断。
+    //   true  / "stream" → stream（边收边播）
+    //   false / "none"   → none（只取回来，不出声）
+    //   "file"           → 收全 → 文件播放
+    TtsPlay? play;
+    final pv = j['play'];
+    if (pv is bool) {
+      play = pv ? TtsPlay.stream : TtsPlay.none;
+    } else if (pv is String) {
+      switch (pv.trim().toLowerCase()) {
+        case 'file':
+          play = TtsPlay.file;
+          break;
+        case 'stream':
+        case 'true':
+          play = TtsPlay.stream;
+          break;
+        case 'none':
+        case 'false':
+          play = TtsPlay.none;
+          break;
+      }
+    }
+
+    // sidecar：怎么存（要不要旁挂 .txt）
+    final sv = j['sidecar'];
+    final sidecar = sv is bool
+        ? sv
+        : (sv is String ? sv.trim().toLowerCase() == 'true' : false);
 
     // ttlDays：落盘有效期（天）。null/缺省 = 永久；<=0 也当永久
     int? ttlDays;
@@ -131,6 +180,8 @@ class TtsOptions {
       pitch: d('pitch'),
       cache: cache,
       cacheName: cacheName,
+      dir: s('dir'),
+      sidecar: sidecar,
       play: play,
       ttlDays: ttlDays,
       extra: extra,

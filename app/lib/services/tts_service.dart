@@ -2,13 +2,17 @@
 /// ================================================================
 ///   Flashcard.tts(text, lang)
 ///        │
-///   TtsService.speak(text, lang)
+///   TtsService.speak(text, lang, options)
 ///        │
 ///   选中插件（PluginManager.active(tts)）
-///        ├── 单个英文词 → cache/tts/ 命中秒播；未命中收全字节落盘再播
-///        ├── 长句       → 音频流直接喂 StreamAudioSource，边收边播
-///        └── 没插件/失败 → flutter_tts（系统 TTS）兜底
+///        ├── 命中缓存     → 直接播本地文件
+///        ├── play:"file"  → 收全 →（要存就落盘）→ 文件播放
+///        ├── play:"stream"→ 音频流直接喂 StreamAudioSource，边收边播（要存就搭车落盘）
+///        ├── play:false   → 只取回来落盘，不出声（预取）
+///        └── 没插件/失败   → flutter_tts（系统 TTS）兜底
 ///
+/// **壳是执行器，不是判断器**：读不读 / 怎么出声 / 存不存 / 存哪里 / 怎么存，
+/// 全部由模板（script.js）通过 opts 声明；壳不看文本内容，不猜「这是单词还是句子」。
 /// 插件怎么合成（HTTP / JS 脚本）由 tts_engine.dart 决定，这里只管调度 + 缓存 + 兜底。
 library;
 
@@ -28,6 +32,10 @@ import 'tts_engine.dart';
 import 'tts_log.dart';
 
 class TtsService {
+  /// 全局设置（StudySettings）。
+  /// 注：`ttsWordCacheEnabled` 自 2026-09-20 起**没有消费者**了 —— 缓存/出声策略
+  /// 全部由模板（FC.tts 的 cache/play/dir/sidecar）声明，壳不再按文本类别推断。
+  /// TODO: 决定这个开关的去留（删设置项 / 改成模板级开关）。
   final StudySettings settings;
 
   /// 兜底引擎（没插件 / 插件失败时用；不是主力）
@@ -166,21 +174,16 @@ class TtsService {
     }
   }
 
-  /// 是不是「单个英文词」（决定走缓存还是流式）
-  static bool isSingleWord(String s) {
-    final t = s.trim();
-    if (t.isEmpty || t.length > 40) return false;
-    return RegExp(r"^[A-Za-z][A-Za-z'\-]*$").hasMatch(t);
-  }
-
-  /// 朗读一段文本：单词走缓存，长句走流式；没插件时退系统 TTS
+  /// 朗读一段文本：一切按 options 声明执行（读不读 / 怎么出声 / 存不存 / 存哪里 /
+  /// 怎么存都是调用方的决定）；没插件时退系统 TTS
   ///
   /// [options] 是模板级覆盖：指定插件 / 音色 / 语速 / 音调 / 附件参数。
   Future<void> speak(String text, String lang, {TtsOptions? options}) async {
     final t = text.trim();
     if (t.isEmpty) return;
-    // 统一接口的 play:false 分支：只落盘、不出声 → 丢后台队列
+    // play:false 分支：只落盘、不出声 → 丢后台队列（串行，让路给播放）
     if (options?.shouldPlay == false) {
+      if (options?.cache == false) return; // 不读又不存 = 调用方啥也不要
       _enqueueCache(_CacheJob(t, lang, options));
       return;
     }
@@ -269,13 +272,9 @@ class TtsService {
   }
 
   /// 这条会不会走「落盘缓存」——决定要不要预取（会走缓存的别抢引擎，
-  /// 否则预取和它自己的合成会打架，白烧两次）
-  bool _willCache(_SeqItem it) {
-    final explicit = it.opts?.cache;
-    final long = !isSingleWord(it.text);
-    return explicit == true ||
-        (explicit == null && !long && settings.ttsWordCacheEnabled);
-  }
+  /// 否则预取和它自己的合成会打架，白烧两次）。
+  /// 只看调用方声明的 cache，不看文本长短 —— 壳不判断。
+  bool _willCache(_SeqItem it) => it.opts?.cache == true;
 
   /// 后台预合成：只收字节，不碰播放器
   _Prefetch _startPrefetch(_SeqItem it, int gen) {
@@ -305,19 +304,13 @@ class TtsService {
     if (engine != null) {
       _lastEngine = engine; // 供 _stopAll 打断在途合成
 
-      // 落盘三态：
-      //   显式 true / "name" → 强制落盘
-      //   显式 false        → 强制不落（流式）
-      //   没传              → 单词看全局设置；长句不落（流式）
-      final explicit = opts?.cache;
-      final long = !isSingleWord(text);
-      final wantCache = explicit == true ||
-          (explicit == null && !long && settings.ttsWordCacheEnabled);
-      // 模板显式点名 cache:true = 「这条就是读词」→ 一律走「收全→落盘→文件播放」。
-      // 词组（"high street"）带空格，isSingleWord 判 false → 以前被当长句扔进流式，
-      // 而这台机上流式对短音频不稳（just_audio Connection aborted / 插件 20s 超时）
-      // → 单词有声音、词组全哑。文件播放这条路径从来没炸过，读词统一走它。
-      final forceFile = explicit == true;
+      // 壳只执行调用方声明的策略，不看文本内容：
+      //   cache   → 存不存 / 文件名主干（true 才存）
+      //   play    → 出声方式（缺省 stream）
+      //   dir     → 存哪里
+      //   sidecar → 怎么存（要不要旁挂 .txt）
+      final wantCache = opts?.cache == true;
+      final mode = opts?.mode ?? TtsPlay.stream;
       final wantPlay = opts?.shouldPlay ?? true;
 
       // ① 本地已有 → 直接用。**不管 wantCache**：预取落盘的例句也要能被播放命中。
@@ -337,34 +330,37 @@ class TtsService {
         return;
       }
 
-      // ③ 出声：三条路
-      //   显式 cache:true → 无视长短，一律全收落盘再播（读词：单词和词组同一条路）
-      //   要落盘 + 长文本 → 流式播 + 搭车落盘（首字快，播完自动存）
-      //   要落盘 + 短文本 → 全收落盘再播（字节小，收得快）
-      //   不落盘          → 流式，失败再兜底全收
-      // 偶发中断不惩罚，连续失败达阈值才认定本机流式不可用。
+      // ③ 出声：完全按 play 声明走
+      //   "file"   → 收全 →（要存就落 cache，不存就落 .tmp）→ 文件播放
+      //   "stream" → 边收边播（要存就搭车落盘）
+      // 流式偶发中断不惩罚，连续失败达阈值才认定本机流式不可用。
       final streamOk = _streamFails < _kStreamFailLimit;
-      if (wantCache && long && streamOk && !forceFile) {
-        if (await _speakStreamedCached(engine, text, lang, gen, opts,
+      var collectFallback = true; // 失败后要不要再「收全兜底」（不白烧第二次合成）
+      if (mode == TtsPlay.file) {
+        if (wantCache) {
+          if (await _speakCached(engine, text, lang, gen, opts,
+              onStarted: onStarted)) {
+            return;
+          }
+          collectFallback = false; // _speakCached 内部已经收全过一次
+        } else if (await _speakCollected(engine, text, lang, gen, opts,
             onStarted: onStarted)) {
-          _streamFails = 0;
+          return;
+        }
+      } else if (streamOk) {
+        final ok = wantCache
+            ? await _speakStreamedCached(engine, text, lang, gen, opts,
+                onStarted: onStarted)
+            : await _speakStreamed(engine, text, gen, opts);
+        if (ok) {
+          _streamFails = 0; // 成功即清零，别让偶发失败累积成「不可用」
           return;
         }
         _streamFails++; // 流式又炸了，记一笔，继续往下走全收兜底
       }
-      final tryStream = !wantCache && streamOk;
-      final ok = wantCache
-          ? await _speakCached(engine, text, lang, gen, opts,
-              onStarted: onStarted)
-          : (tryStream ? await _speakStreamed(engine, text, gen, opts) : false);
-      if (ok) {
-        if (tryStream) _streamFails = 0; // 成功即清零，别让偶发失败累积成「不可用」
-        return;
-      }
-      if (tryStream) _streamFails++;
-      // 流式失败：把整段收下来落临时文件再播（词条同款路径），
+      // 出声失败（流式炸 / 本机流式已判不可用）：把整段收下来落临时文件再播，
       // 别直接跳系统 TTS —— 那样音色全变了。
-      if (!wantCache && gen == _gen) {
+      if (collectFallback && gen == _gen) {
         if (await _speakCollected(engine, text, lang, gen, opts,
                 onStarted: onStarted)) {
           return;
@@ -394,7 +390,8 @@ class TtsService {
   }
 
   /// 落盘缓存：命中直接播；未命中收全字节落盘再播。
-  /// 长句额外旁挂一个 .txt 存全文 + 参数，文件名只留前 20 字也认得出。
+  /// 调用方声明 sidecar:true 时额外旁挂一个 .txt 存全文 + 参数
+  /// （文件名只留前 20 字也认得出）。
   Future<bool> _speakCached(TtsEngine engine, String text, String lang,
       int gen, TtsOptions? opts, {void Function()? onStarted}) async {
     try {
@@ -411,7 +408,7 @@ class TtsService {
         await file.parent.create(recursive: true);
         await file.writeAsBytes(bytes, flush: true);
         await _writeTtl(file, opts?.ttlDays);
-        if (!isSingleWord(text)) {
+        if (opts?.sidecar == true) {
           await _writeSidecar(file, text, lang, opts);
         }
         await TtsLog.write('cache',
@@ -519,69 +516,77 @@ class TtsService {
   }
 
   /// 清理 TTS 缓存。
+  /// 扫 `cache/` 下**所有**子目录（存哪里由模板的 dir 决定，清理不能只认 tts）：
   ///   · 有 .ttl 标记的：按标记的过期时间删（永久的不删）
   ///   · 没有标记的：若给了 [olderThanDays]，按最后访问时间（mtime）删
   Future<Map<String, dynamic>> purgeCache({int? olderThanDays}) async {
-    final dir = await DataDir.sub('cache/tts');
-    if (dir == null || !await dir.exists()) {
+    final root = await DataDir.sub('cache', create: false);
+    if (root == null || !await root.exists()) {
       return {'removed': 0, 'freedBytes': 0};
     }
     final now = DateTime.now();
     final nowSec = now.millisecondsSinceEpoch ~/ 1000;
     var removed = 0;
     var freed = 0;
-    await for (final e in dir.list()) {
-      if (e is! File) continue;
-      final p = e.path;
-      if (p.endsWith('.txt') || p.endsWith('.ttl') || p.endsWith('.tmp')) {
-        continue;
-      }
-      var dead = false;
-      final t = File('$p.ttl');
-      if (await t.exists()) {
+
+    final dirs = <Directory>[];
+    await for (final e in root.list()) {
+      if (e is Directory) dirs.add(e);
+    }
+    for (final dir in dirs) {
+      await for (final e in dir.list()) {
+        if (e is! File) continue;
+        final p = e.path;
+        if (p.endsWith('.txt') || p.endsWith('.ttl') || p.endsWith('.tmp')) {
+          continue;
+        }
+        var dead = false;
+        final t = File('$p.ttl');
+        if (await t.exists()) {
+          try {
+            final m = jsonDecode(await t.readAsString());
+            if (m is Map) {
+              final at = (m['expireAt'] as num?)?.toInt();
+              if (at != null && nowSec > at) dead = true;
+            }
+          } catch (_) {}
+        } else if (olderThanDays != null && olderThanDays > 0) {
+          final st = await e.stat();
+          if (now.difference(st.modified).inDays >= olderThanDays) dead = true;
+        }
+        if (!dead) continue;
         try {
-          final m = jsonDecode(await t.readAsString());
-          if (m is Map) {
-            final at = (m['expireAt'] as num?)?.toInt();
-            if (at != null && nowSec > at) dead = true;
+          freed += await e.length();
+          await e.delete();
+          removed++;
+          for (final ext in ['.txt', '.ttl']) {
+            final s = File('$p$ext');
+            if (await s.exists()) await s.delete();
           }
         } catch (_) {}
-      } else if (olderThanDays != null && olderThanDays > 0) {
-        final st = await e.stat();
-        if (now.difference(st.modified).inDays >= olderThanDays) dead = true;
       }
-      if (!dead) continue;
-      try {
-        freed += await e.length();
-        await e.delete();
-        removed++;
-        for (final ext in ['.txt', '.ttl']) {
-          final s = File('$p$ext');
-          if (await s.exists()) await s.delete();
-        }
-      } catch (_) {}
-    }
-    // .tmp 是 _writeTmp 落临时音频的子目录（流式失败兜底、预取命中播放都走它）。
-    // 以前它是清理盲区：list() 非递归 + 主循环显式 skip .tmp 后缀，
-    // 两道过滤叠起来导致这些文件永远删不掉，用得越久占得越多。
-    // 这里单独扫一遍：临时文件活不过一个会话，默认 1 天前的直接删。
-    final tmpDir = Directory('${dir.path}/.tmp');
-    if (await tmpDir.exists()) {
-      final cutoff =
-          now.subtract(Duration(days: olderThanDays != null && olderThanDays > 0 ? olderThanDays : 1));
-      try {
-        await for (final e in tmpDir.list()) {
-          if (e is! File) continue;
-          try {
-            final st = await e.stat();
-            if (!st.modified.isBefore(cutoff)) continue;
-            freed += st.size;
-            await e.delete();
-            removed++;
-          } catch (_) {}
-        }
-      } catch (_) {}
-    }
+      // .tmp 是 _writeTmp 落临时音频的子目录（流式失败兜底、收全播放都走它）。
+      // 以前它是清理盲区：list() 非递归 + 主循环显式 skip .tmp 后缀，
+      // 两道过滤叠起来导致这些文件永远删不掉，用得越久占得越多。
+      // 这里单独扫一遍：临时文件活不过一个会话，默认 1 天前的直接删。
+      final tmpDir = Directory('${dir.path}/.tmp');
+      if (await tmpDir.exists()) {
+        final cutoff =
+            now.subtract(Duration(days: olderThanDays != null && olderThanDays > 0 ? olderThanDays : 1));
+        try {
+          await for (final e in tmpDir.list()) {
+            if (e is! File) continue;
+            try {
+              final st = await e.stat();
+              if (!st.modified.isBefore(cutoff)) continue;
+              freed += st.size;
+              await e.delete();
+              removed++;
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+      }
 
     await TtsLog.write('cache',
         'purge removed=$removed freed=${freed}B olderThan=$olderThanDays');
@@ -638,7 +643,7 @@ class TtsService {
     }
   }
 
-  /// 等引擎流收完 → 把 [source] 攒下的字节写进 cache/tts/。
+  /// 等引擎流收完 → 把 [source] 攒下的字节写进调用方声明的缓存目录。
   /// gen 变了（切卡 / 新朗读打断）就丢弃，别写半截缓存。
   Future<void> _saveAfterStream(_EngineStreamSource source, String text,
       String lang, int gen, TtsOptions? opts) async {
@@ -652,7 +657,7 @@ class TtsService {
       await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes, flush: true);
       await _writeTtl(file, opts?.ttlDays);
-      if (!isSingleWord(text)) {
+      if (opts?.sidecar == true) {
         await _writeSidecar(file, text, lang, opts);
       }
       await TtsLog.write('cache',
@@ -662,10 +667,10 @@ class TtsService {
     }
   }
 
-  /// 字节落 cache/tts/.tmp（同名覆盖），返回文件
+  /// 字节落 `cache/<dir>/.tmp`（同名覆盖），返回文件
   Future<File?> _writeTmp(Uint8List bytes, String text, String lang,
       TtsOptions? opts, TtsEngine engine) async {
-    final dir = await DataDir.sub('cache/tts/.tmp');
+    final dir = await DataDir.sub('cache/${_dirOf(opts)}/.tmp');
     if (dir == null) return null;
     await dir.create(recursive: true);
     final hash = sha1
@@ -723,8 +728,17 @@ class TtsService {
   /// 缓存文件路径：<stem>-<speaker>-<sha1前12位>.<ext>
   ///   stem = 自定义 cacheName > 文本本身；长文本只取前 20 字
   ///   hash = plugin|text|lang|voice|rate|pitch|extra —— 判定复用只看它
+  /// 存哪里：模板用 `dir` 声明，落到 `cache/<dir>/`；缺省 `tts`。
+  /// 只做路径清洗（去 `..`、合并/裁剪分隔符），不做判断。
+  static String _dirOf(TtsOptions? opts) {
+    var d = (opts?.dir ?? '').trim().replaceAll('\\', '/');
+    d = d.replaceAll('..', '').replaceAll(RegExp(r'/{2,}'), '/');
+    d = d.replaceAll(RegExp(r'^/+|/+$'), '').trim();
+    return d.isEmpty ? 'tts' : d;
+  }
+
   Future<File?> _cacheFile(String text, String lang, TtsOptions? opts) async {
-    final dir = await DataDir.sub('cache/tts');
+    final dir = await DataDir.sub('cache/${_dirOf(opts)}');
     if (dir == null) return null;
     final pid = opts?.pluginId;
     final m = (pid != null && pid != 'system')
