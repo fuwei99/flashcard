@@ -104,8 +104,16 @@
     var base = (c && c.modes) ? c.modes.slice() : [];
     // 兜底：壳对 v4 卡（sentence 是对象，不是 v3 的 sentence_en）可能算不出 cloze，
     // 只要本次开了 cloze 重考且这卡能考 choice，就补上 cloze —— 否则「例句填空」永不出现。
+    // 但**得有例句才补**：没例句的卡硬塞 cloze，那页只能退化成「看中文选词」（2026-09-28）。
     if (S && S.retestModes.indexOf("cloze") >= 0 && base.indexOf("choice") >= 0 && base.indexOf("cloze") < 0) {
-      base.push("cloze");
+      var H = FC.helpers || {};
+      var f = (c && (c.fields || c)) || {};
+      var se = "";
+      try {
+        if (H.sentenceOf) se = H.sentenceOf(H.normalizeFields ? H.normalizeFields(f) : f, f.word);
+        else se = String((f.sentence && f.sentence.en) || f.sentence_en || "").trim();
+      } catch (e) { se = ""; }
+      if (se) base.push("cloze");
     }
     return base;
   }

@@ -1,15 +1,22 @@
 // 有道词典 · 宿主插件
 // ---------------------------------------------------------------
 // 壳只给原语（logger / http / kv / registerPlugin），业务全在这。
-// 换 key、改解析、加字段 —— 改这个文件就行，不用动壳、不用重编 APK。
+// 改解析、加字段 —— 改这个文件就行，不用动壳、不用重编 APK。
+//
+// 两条路，**免密钥优先**：
+//   ① 网页版 jsonapi（默认，不需要任何 key）
+//      GET https://dict.youdao.com/jsonapi?q=<词>
+//      User-Agent 必须带，别用 Dart 默认 UA。
+//      字段：ec.word[0].usphone / trs / exam_type、phrs、blng_sents_part、rel_word
+//   ② 有道智云 v3（可选兜底，需 appKey + appSecret，走签名 POST）
+//      sha256(appKey + input + salt + curtime + appSecret)
+//      input = q 长度 <= 20 ? q : q[:10] + len(q) + q[-10:]
+// ①拿到义项就直接回；①拿不到才试②（②没配 key 就跳过）。
 //
 // 依赖宿主原语：
-//   kv.get(key) / kv.set(key, val)      存 appKey / appSecret
-//                                       （落 Flashcard/plugins/youdao/kv.json）
-//   http.post(url, {contentType, body}, cb)
-//
-// 有道智云 v3 签名：sha256(appKey + input + salt + curtime + appSecret)
-//   input = q 长度 <= 20 ? q : q[:10] + len(q) + q[-10:]
+//   kv.get(key) / kv.set(key, val)      存 appKey / appSecret（落 plugins/youdao/kv.json）
+//   http.get(url, {headers}, cb) / http.post(url, {contentType, body}, cb)
+//                                       真 HTTP 由壳代发，绕开 WebView CORS
 
 /* ---- SHA-256（纯 JS，QuickJS 没有 WebCrypto）---- */
 var _K = [
@@ -89,15 +96,117 @@ function _sign(q, salt, curtime, appKey, appSecret) {
   return _sha256(appKey + input + salt + curtime + appSecret);
 }
 
-/* ---- 有道返回 → 模板要的 dictEntry 形状 ---- */
-function _normalize(j) {
+/* ================= 小工具 ================= */
+
+function _strip(s) {
+  return String(s == null ? '' : s).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+/* l.i 可能是字符串也可能是数组 —— 统一压成一行 */
+function _txt(x) {
+  if (x == null) return '';
+  if (typeof x === 'string') return _strip(x);
+  if (typeof x.length === 'number') {
+    var o = [];
+    for (var i = 0; i < x.length; i++) { var s = _txt(x[i]); if (s) o.push(s); }
+    return o.join('；');
+  }
+  return _strip(x);
+}
+/* 有道节点 {l:{i:...}} */
+function _li(o) { return o && o.l ? _txt(o.l.i) : ''; }
+/* 同样的字段，ec 里是数组、phrs 里是对象 —— 两种都收 */
+function _first(x) { return x == null ? null : (typeof x.length === 'number' && typeof x !== 'string' ? x[0] : x); }
+
+/* ================= ① 免密钥 jsonapi ================= */
+
+function _sensesOf(w0) {
+  var out = [], trs = (w0 && w0.trs) || [];
+  for (var i = 0; i < trs.length; i++) {
+    var tr = _first(trs[i].tr);
+    var s = tr ? _li(tr) : '';
+    if (!s) continue;
+    var m = s.match(/^([a-zA-Z]+\.)\s*(.+)$/);
+    if (m) out.push({ pos: m[1], cn: m[2] });
+    else out.push({ pos: '', cn: s });
+  }
+  if (!out.length && w0 && w0.pos) out.push({ pos: '', cn: _txt(w0.pos) });
+  return out;
+}
+
+function _colsOf(j) {
+  var out = [], a = (j.phrs && j.phrs.phrs) || [];
+  for (var i = 0; i < a.length && out.length < 8; i++) {
+    var p = (a[i] && a[i].phr) || {};
+    var en = _li(p.headword);
+    var t0 = _first(p.trs);
+    var cn = t0 ? _li(_first(t0.tr)) : '';
+    if (en && cn) out.push({ en: en, cn: cn, m: 0, ex: 0 });
+  }
+  return out;
+}
+
+function _exsOf(j) {
+  var out = [], sp = (j.blng_sents_part && j.blng_sents_part['sentence-pair']) || [];
+  for (var i = 0; i < sp.length && out.length < 3; i++) {
+    var en = _strip(sp[i]['sentence'] || '');
+    var cn = _strip(sp[i]['sentence-translation'] || sp[i]['sentence-trans'] || '');
+    if (en && cn) out.push({ en: en, cn: cn, src: '有道例句' });
+  }
+  var web = j.web || [];
+  for (var k = 0; k < web.length && out.length < 5; k++) {
+    var it = web[k] || {};
+    var e2 = _strip(it.key || '');
+    var c2 = _strip((it.value || [])[0] || '');
+    if (e2 && c2) out.push({ en: e2, cn: c2, src: '网络释义' });
+  }
+  return out;
+}
+
+/* jsonapi 返回 → 模板要的 dictEntry 形状 */
+function _fromJsonApi(j, q) {
+  if (!j || j.error_code || j.errorCode) return null;
+  var ecw = (j.ec && j.ec.word) || (j.simple && j.simple.word) || [];
+  var w0 = ecw[0] || null;
+  var phonetic = _strip((w0 && (w0.usphone || w0.ukphone)) || '');
+  if (phonetic && phonetic.charAt(0) !== '/') phonetic = '/' + phonetic + '/';
+  var senses = _sensesOf(w0);
+  if (!senses.length && j.fanyi && j.fanyi.tran) senses.push({ pos: '', cn: _strip(j.fanyi.tran) });
+  if (!senses.length && !phonetic) return null;      // 真没查到，交回上游
+  return {
+    word: q,
+    phonetic: phonetic,
+    level: _txt(w0 && w0.exam_type) || '考研',
+    senses: senses,
+    collocations: _colsOf(j),
+    examples: _exsOf(j),
+    fromApi: true,
+    source: 'youdao/jsonapi'
+  };
+}
+
+function _freeLookup(q, cb) {
+  var url = 'https://dict.youdao.com/jsonapi?q=' + encodeURIComponent(q);
+  http.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13)' } }, function (err, res) {
+    if (err) { cb('网络错误: ' + err); return; }
+    if (!res || !res.status || res.status !== 200) { cb('jsonapi HTTP ' + ((res && res.status) || 0)); return; }
+    var j = res.json();
+    if (!j) { cb('响应解析失败'); return; }
+    var e = _fromJsonApi(j, q);
+    if (!e) { cb('jsonapi 无结果'); return; }
+    cb(null, e);
+  });
+}
+
+/* ================= ② 有道智云 v3（可选兜底） ================= */
+
+function _fromOpenApi(j, q) {
   var basic = j.basic || {};
-  var phonetic = basic['us-phonetic'] || basic['phonetic'] || '';
-  var senses = [];
-  var ex = basic['explains'];
+  var phonetic = _strip(basic['us-phonetic'] || basic['phonetic'] || '');
+  if (phonetic && phonetic.charAt(0) !== '/') phonetic = '/' + phonetic + '/';
+  var senses = [], ex = basic['explains'];
   if (ex && ex.length) {
     for (var i = 0; i < ex.length; i++) {
-      var s = String(ex[i]).trim();
+      var s = _strip(ex[i]);
       if (!s) continue;
       var m = s.match(/^([a-zA-Z]+\.)\s*(.+)$/);
       if (m) senses.push({ pos: m[1], cn: m[2] });
@@ -106,7 +215,7 @@ function _normalize(j) {
   }
   if (!senses.length && j.translation && j.translation.length) {
     for (var t = 0; t < j.translation.length; t++) {
-      var ts = String(j.translation[t]).trim();
+      var ts = _strip(j.translation[t]);
       if (ts) senses.push({ pos: '', cn: ts });
     }
   }
@@ -114,22 +223,50 @@ function _normalize(j) {
   if (j.web && j.web.length) {
     for (var w = 0; w < j.web.length && examples.length < 3; w++) {
       var it = j.web[w] || {};
-      var k = String(it.key || '').trim();
-      var v = (it.value && it.value[0]) || '';
-      if (k && v) examples.push({ en: k, cn: String(v), src: '网络释义' });
+      var k = _strip(it.key || '');
+      var v = _strip((it.value && it.value[0]) || '');
+      if (k && v) examples.push({ en: k, cn: v, src: '网络释义' });
     }
   }
+  if (!senses.length && !phonetic) return null;
   return {
-    word: String(j.query || ''),
+    word: String(j.query || q),
     phonetic: phonetic,
     level: '',
     senses: senses,
     collocations: [],
     examples: examples,
     fromApi: true,
-    source: 'youdao'
+    source: 'youdao/openapi'
   };
 }
+
+function _paidLookup(q, appKey, appSecret, cb) {
+  var salt = String(Date.now());
+  var curtime = String(Math.floor(Date.now() / 1000));
+  var sgn = _sign(q, salt, curtime, appKey, appSecret);
+  var body = 'q=' + encodeURIComponent(q)
+    + '&from=en&to=zh-CHS'
+    + '&appKey=' + encodeURIComponent(appKey)
+    + '&salt=' + encodeURIComponent(salt)
+    + '&sign=' + sgn
+    + '&signType=v3'
+    + '&curtime=' + curtime;
+  http.post('https://openapi.youdao.com/api', {
+    contentType: 'application/x-www-form-urlencoded',
+    body: body
+  }, function (err, res) {
+    if (err) { cb('网络错误: ' + err); return; }
+    var j = res && res.json ? res.json() : null;
+    if (!j) { cb('响应解析失败'); return; }
+    if (String(j.errorCode) !== '0') { cb('有道错误码 ' + j.errorCode); return; }
+    var e = _fromOpenApi(j, q);
+    if (!e) { cb('openapi 无结果'); return; }
+    cb(null, e);
+  });
+}
+
+/* ================= 注册 ================= */
 
 registerPlugin({
   id: 'youdao',
@@ -138,37 +275,31 @@ registerPlugin({
     lookup: function (args, cb) {
       var q = String((args && (args.w || args.word)) || '').trim();
       if (!q) { cb('空词'); return; }
-      var appKey = kv.get('appKey') || '';
-      var appSecret = kv.get('appSecret') || '';
-      if (!appKey || !appSecret) {
-        cb('未配置有道 appKey / appSecret（设置页填写）');
-        return;
-      }
-      var salt = String(Date.now());
-      var curtime = String(Math.floor(Date.now() / 1000));
-      var sgn = _sign(q, salt, curtime, appKey, appSecret);
-      var body = 'q=' + encodeURIComponent(q)
-        + '&from=en&to=zh-CHS'
-        + '&appKey=' + encodeURIComponent(appKey)
-        + '&salt=' + encodeURIComponent(salt)
-        + '&sign=' + sgn
-        + '&signType=v3'
-        + '&curtime=' + curtime;
-      http.post('https://openapi.youdao.com/api', {
-        contentType: 'application/x-www-form-urlencoded',
-        body: body
-      }, function (err, res) {
-        if (err) { cb('网络错误: ' + err); return; }
-        var j = res.json();
-        if (!j) { cb('响应解析失败'); return; }
-        if (String(j.errorCode) !== '0') { cb('有道错误码 ' + j.errorCode); return; }
-        cb(null, _normalize(j));
+      _freeLookup(q, function (fErr, fEntry) {
+        /* 免密钥这条路拿到义项就收工 */
+        if (fEntry && fEntry.senses && fEntry.senses.length) { cb(null, fEntry); return; }
+        var appKey = kv.get('appKey') || '';
+        var appSecret = kv.get('appSecret') || '';
+        if (!appKey || !appSecret) {
+          /* 没配智云：jsonapi 拿到多少算多少（音标/词组/例句也是肉） */
+          if (fEntry) { cb(null, fEntry); return; }
+          cb(fErr || '有道无结果');
+          return;
+        }
+        _paidLookup(q, appKey, appSecret, function (pErr, pEntry) {
+          if (pEntry) { cb(null, pEntry); return; }
+          if (fEntry) { cb(null, fEntry); return; }
+          cb(pErr || fErr || '有道无结果');
+        });
       });
     },
+    /* 查词免密钥可用；appKey/appSecret 是可选加强项 */
     getConfig: function (args, cb) {
       cb(null, {
         appKey: kv.get('appKey') || '',
-        hasSecret: !!(kv.get('appSecret') || '')
+        hasSecret: !!(kv.get('appSecret') || ''),
+        free: true,
+        configured: true
       });
     },
     setConfig: function (args, cb) {

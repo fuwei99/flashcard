@@ -166,6 +166,14 @@ class _ReviewScreenState extends State<ReviewScreen>
     _bridge.onChromeChanged = (top) {
       if (mounted) setState(() => _showTopBar = top);
     };
+    // Web 驱动流程（workflow.js 走 review.commit）不经过原生 answer 的
+    // markDoneBy，历史今日背词量恒为 0 —— 这里补记一笔。判据在桥里是
+    // 「prev.isNew」，天然幂等，重测 / 续会话不会重复计数。
+    _bridge.onNewLearned = (id) async {
+      await widget.settings.markDoneBy(1, card: widget.isCard);
+      StatusWriter.I.writeThrottled();
+      if (mounted) setState(() {});
+    };
     _bridge.initTts();
     _msgSub = _bridge.messages.listen(_onMsg);
     if (_webDriven) {

@@ -86,6 +86,10 @@ class WebViewBridge {
   /// 原生顶部栏显隐回调 —— 模板调 `ui.setChrome` 时触发，屏幕据此 setState。
   void Function(bool top)? onChromeChanged;
 
+  /// Web 驱动流程「首次把一张卡学进 FSRS」回调 —— ReviewScreen 据此补记
+  /// 今日背词量 / 累计 / 打卡。原生流程不走这里（它在 answer 里自己 markDoneBy）。
+  void Function(String id)? onNewLearned;
+
   /// 宿主控制器 —— RPC 回执 / 事件推送要它 runJavaScript。
   WebViewController? _ctrl;
 
@@ -185,8 +189,18 @@ class WebViewBridge {
         };
       }
       final prev = store.stateOf(id);
+      // 首次把一张卡从 new 翻进学习态 = 今天真「背」下了这个词。
+      // 原生流程在 ReviewScreen.answer 里 markDoneBy；Web 驱动流程
+      // （workflow.js 走 RPC）压根不经过那条路，所以历史计数器一直是 0。
+      // 用 prev.isNew 当判据天然幂等：重测轮 / 续会话重提交都不会重复计数。
+      final wasNew = prev.isNew;
       final st = review(prev, rating);
       store.putReview(id, prev, st, rating);
+      if (wasNew) {
+        try {
+          onNewLearned?.call(id);
+        } catch (_) {}
+      }
       return {'ok': true, 'id': id, 'rating': rating.key, 'state': st.toJson()};
     });
 

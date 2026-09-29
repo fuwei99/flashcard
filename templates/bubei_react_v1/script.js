@@ -74,7 +74,7 @@
   function loadDictCfg() {
     return pluginCall("youdao", "getConfig", {}).then(function (r) {
       var d = (r && r.ok && r.data) ? r.data : null;
-      S.dictCfg = d ? { appKey: d.appKey || "", configured: !!(d.appKey && d.hasSecret) } : null;
+      S.dictCfg = d ? { appKey: d.appKey || "", configured: !!(d.configured || (d.appKey && d.hasSecret)), free: !!d.free } : null;
       if (d && d.appKey) S.dictKey = d.appKey;
     }).catch(function () {});
   }
@@ -410,7 +410,8 @@
   function ovPassage() {
     var p = S.passage || {}; var segs = arr(p.segments);
     var body = segs.map(function (x) {
-      if (x.w) return '<span data-act="word" data-w="' + esc(x.w) + '" class="fc-pg-pw mx-[2px] cursor-pointer">' + esc(x.w) + "</span>";
+      /* 查词送 lemma（卡上存的是原形）；显示仍是文中实际形式 */
+      if (x.w) return '<span data-act="word" data-w="' + esc(x.lemma || x.w) + '" class="fc-pg-pw mx-[2px] cursor-pointer">' + esc(x.w) + "</span>";
       return esc(x.t || "");
     }).join("");
     return '<header class="flex h-[52px] flex-none items-center justify-between pl-4 pr-5 pt-2"><button data-act="home" class="flex items-center gap-2 text-[#c9c9ce]">' + ico(I.chevron, "h-[22px] w-[22px]") + '<span class="text-[15px] font-medium text-[#b9b9bf]">语篇通读</span></button>' +
@@ -616,7 +617,7 @@
     }).join("");
     return '<div data-act="settings-close" class="absolute inset-0 z-[74] flex flex-col justify-end bg-black/55"><div data-stop="1" class="rounded-t-[24px] bg-[#1e2338] px-5 pb-[34px] pt-[18px]">' +
       '<div class="relative mb-[18px]"><p class="text-center text-[17px] font-semibold text-[#ececef]">学习设置</p><button data-act="settings-close" class="absolute right-0 top-1/2 flex h-[30px] w-[30px] -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-[#c9cfdf]">' + ico(I.close, "h-[14px] w-[14px]") + "</button></div>" + html +
-      '<div class="mt-[12px] rounded-[14px] bg-[#26262b] px-[12px] py-[12px]"><div class="flex items-center justify-between"><p class="text-[16px] font-medium text-[#ececef]">有道词典</p><span class="text-[12px] ' + (S.dictCfg && S.dictCfg.configured ? "text-[#2ec4a5]" : "text-[#8a91a8]") + '">' + (S.dictCfg && S.dictCfg.configured ? "已配置" : "未配置") + '</span></div><p class="mt-[3px] text-[12.5px] text-[#8a91a8]">有道智云应用 ID / 密钥，查词走后端签名</p><input data-role="dict-key" placeholder="应用ID appKey" value="' + esc(S.dictKey || "") + '" class="mt-[9px] w-full rounded-[10px] bg-[#1c1c20] px-[11px] py-[9px] text-[14px] text-[#ececef] outline-none placeholder:text-[#5a5a60]" /><input data-role="dict-secret" type="password" placeholder="应用密钥 appSecret" value="' + esc(S.dictSecret || "") + '" class="mt-[7px] w-full rounded-[10px] bg-[#1c1c20] px-[11px] py-[9px] text-[14px] text-[#ececef] outline-none placeholder:text-[#5a5a60]" /><button data-act="dict-save" class="mt-[9px] w-full rounded-[10px] bg-[#f0a824] py-[9px] text-[15px] font-semibold text-black">保存并启用</button></div>' +
+      '<div class="mt-[12px] rounded-[14px] bg-[#26262b] px-[12px] py-[12px]"><div class="flex items-center justify-between"><p class="text-[16px] font-medium text-[#ececef]">有道词典</p><span class="text-[12px] ' + (S.dictCfg && S.dictCfg.configured ? "text-[#2ec4a5]" : "text-[#8a91a8]") + '">' + (S.dictCfg && S.dictCfg.free ? "免密钥" : (S.dictCfg && S.dictCfg.configured ? "已配置" : "未配置")) + '</span></div><p class="mt-[3px] text-[12.5px] text-[#8a91a8]">免密钥（dict.youdao.com/jsonapi）已可用；智云 appKey/密钥可选，填了优先走签名接口</p><input data-role="dict-key" placeholder="应用ID appKey" value="' + esc(S.dictKey || "") + '" class="mt-[9px] w-full rounded-[10px] bg-[#1c1c20] px-[11px] py-[9px] text-[14px] text-[#ececef] outline-none placeholder:text-[#5a5a60]" /><input data-role="dict-secret" type="password" placeholder="应用密钥 appSecret" value="' + esc(S.dictSecret || "") + '" class="mt-[7px] w-full rounded-[10px] bg-[#1c1c20] px-[11px] py-[9px] text-[14px] text-[#ececef] outline-none placeholder:text-[#5a5a60]" /><button data-act="dict-save" class="mt-[9px] w-full rounded-[10px] bg-[#f0a824] py-[9px] text-[15px] font-semibold text-black">保存并启用</button></div>' +
       '<button data-act="order-open" class="mt-[8px] flex w-full items-center justify-between rounded-[14px] px-[6px] py-[12px]"><span class="text-[16px] font-medium text-[#ececef]">助记顺序</span><span class="max-w-[60%] truncate text-[13.5px] text-[#8a91a8]">' + S.tabOrder.map(function (t) { return TABS[t]; }).join(" - ") + ' <span class="text-[#5a6178]">›</span></span></button></div></div>';
   }
 
@@ -665,47 +666,100 @@
     return null;
   }
 
+  /* 词形回退：点到的可能是变形（语篇/例句里的 surface），卡上存的是原形。
+     -ies/-ied → y、-es、-s（-ss 不动，避免 pass→pas）、-ing/-ed、-d；
+     -Xed/-Xing 的双写辅音要剥（fuelled→fuel、planned→plan、running→run），
+     否则语篇里 fuelled 这类词永远命中不了卡上的 fuel。 */
   function dictCandidates(raw) {
     var w = String(raw || "").toLowerCase().replace(/[^a-z'-]/g, "");
     var out = [w];
-    if (w.slice(-3) === "ies") out.push(w.slice(0, -3) + "y");
-    if (w.slice(-2) === "es") out.push(w.slice(0, -2));
-    if (w.slice(-1) === "s") out.push(w.slice(0, -1));
-    if (w.slice(-3) === "ing") out.push(w.slice(0, -3), w.slice(0, -3) + "e");
-    if (w.slice(-2) === "ed") out.push(w.slice(0, -2), w.slice(0, -1), w.slice(0, -2) + "e");
-    if (w.slice(-1) === "d") out.push(w.slice(0, -1));
+    function push(x) { if (x) out.push(x); }
+    if (w.slice(-3) === "ies") push(w.slice(0, -3) + "y");
+    if (w.slice(-3) === "ied") push(w.slice(0, -3) + "y");
+    if (w.slice(-2) === "es") push(w.slice(0, -2));
+    if (w.slice(-1) === "s" && w.slice(-2) !== "ss") push(w.slice(0, -1));
+    if (w.slice(-3) === "ing") {
+      push(w.slice(0, -3)); push(w.slice(0, -3) + "e");
+      if (w.length > 4 && w.charAt(w.length - 4) === w.charAt(w.length - 5)) push(w.slice(0, -4));
+    }
+    if (w.slice(-2) === "ed") {
+      push(w.slice(0, -2)); push(w.slice(0, -1)); push(w.slice(0, -2) + "e");
+      if (w.length > 3 && w.charAt(w.length - 3) === w.charAt(w.length - 4)) push(w.slice(0, -3));
+    }
+    if (w.slice(-1) === "d") push(w.slice(0, -1));
     var seen = {};
     return out.filter(function (x) { return x && !seen[x] && (seen[x] = 1); });
   }
   var _dictCache = {};
-  /* 查词：① 本轮词书里现成的卡（离线，最快）② 有道（壳侧签名 HTTP） */
+  /* 卡的 fields → 查词卡数据（词书命中时用，音标/义项/词组/例句/真题全现成） */
+  function entryFromFields(f) {
+    f = normalizeFields(f || {});
+    var se = sentenceOf(f, f.word);
+    return { word: f.word, phonetic: f.phonetic, level: "考研",
+      senses: arr(f.senses).map(function (s) { return { pos: s.pos, cn: arr(s.cn).join("；") }; }),
+      collocations: arr(f.collocations),
+      examples: [{ en: (f.sentence || {}).en || se, cn: (f.sentence || {}).cn, src: "词书例句" }].concat(arr(f.exams).map(function (x) { return { en: x.en, src: x.src }; })) };
+  }
+  /* 手上现成的卡：当前卡 + 本轮见过的卡。
+     注意不能用 S.queue —— web_session 下 workflow 的队列是步骤对象
+     {cardId,mode,round}，没有 .fields，拿它当卡池是死代码。 */
+  function localCards() {
+    var out = [];
+    if (S.card && S.card.fields) out.push(S.card);
+    var sc = S.seenCards || {};
+    Object.keys(sc).forEach(function (k) { if (sc[k] && sc[k].fields) out.push(sc[k]); });
+    return out;
+  }
+  /* 整本书索引（_poolByBook：模板自己用 Flashcard.fs 读盘建的 {id,word,senses}）
+     里按候选词（含词形回退）找。语篇通读/填空页没有当前卡，全靠这一层兜。 */
+  function poolHitByWord(cands) {
+    var pool = _poolByBook[bookIdOf(S.card)] || [];
+    /* 按候选顺序找 = 先原形（cands[0]）后词形回退，别让回退结果抢了原词 */
+    for (var c = 0; c < cands.length; c++) {
+      for (var i = 0; i < pool.length; i++) {
+        if (String(pool[i].word || "").toLowerCase() === cands[c]) return pool[i];
+      }
+    }
+    return null;
+  }
+  /* 查词：① 手上现成的卡（离线，最快）② 整本书索引 → card.get 拉全字段 ③ 有道（免密钥） */
   function lookup(w) {
     var key = String(w || "").toLowerCase().replace(/[^a-z'-]/g, "");
     if (!key) return Promise.resolve(null);
     if (_dictCache.hasOwnProperty(key)) return Promise.resolve(_dictCache[key]);
-
-    // ① 词书里已收录的词 —— 直接用卡上的完整数据
     var cands = dictCandidates(key);
-    var pool = [];
-    if (S.card) pool.push(S.card);
-    S.queue.forEach(function (c) { if (c && c !== S.card) pool.push(c); });
-    for (var j = 0; j < pool.length; j++) {
-      var f = pool[j].fields || {};
-      if (cands.indexOf(String(f.word || "").toLowerCase()) >= 0) {
-        var e = { word: f.word, phonetic: f.phonetic, level: "考研",
-          senses: arr(f.senses).map(function (s) { return { pos: s.pos, cn: arr(s.cn).join("；") }; }),
-          collocations: arr(f.collocations),
-          examples: [{ en: (f.sentence || {}).en, cn: (f.sentence || {}).cn, src: "词书例句" }].concat(arr(f.exams).map(function (x) { return { en: x.en, src: x.src }; })) };
-        _dictCache[key] = e; return Promise.resolve(e);
+
+    // ① 当前卡 / 本轮见过的卡
+    var locals = localCards();
+    for (var i = 0; i < locals.length; i++) {
+      var f0 = locals[i].fields;
+      if (cands.indexOf(String(f0.word || "").toLowerCase()) >= 0) {
+        var e0 = entryFromFields(f0);
+        _dictCache[key] = e0; return Promise.resolve(e0);
       }
     }
 
-    // ② 有道插件（未配置 / 查不到 → null）
-    return pluginCall("youdao", "lookup", { w: key }).then(function (r) {
-      var e = (r && r.ok && r.data) ? r.data : null;
-      _dictCache[key] = e;
-      return e;
-    }).catch(function () { _dictCache[key] = null; return null; });
+    // ② 整本书 —— 命中 id 后 card.get 拉全字段
+    var bid = bookIdOf(S.card);
+    var pre = Promise.resolve(null);
+    if (bid) {
+      if (_poolByBook[bid]) pre = Promise.resolve(poolHitByWord(cands));
+      else pre = new Promise(function (res) { loadPool(bid, function () { res(poolHitByWord(cands)); }); });
+    }
+    return pre.then(function (hit) {
+      if (!hit) return null;
+      return call("card.get", { id: hit.id }).then(function (r) {
+        var c = r && r.card;
+        return (c && c.fields) ? entryFromFields(c.fields) : null;
+      }).catch(function () { return null; });
+    }).then(function (e) {
+      if (e) { _dictCache[key] = e; return e; }
+      // ③ 有道插件（免密钥；查不到 → null）
+      return pluginCall("youdao", "lookup", { w: key }).then(function (r) {
+        var d = (r && r.ok && r.data) ? r.data : null;
+        _dictCache[key] = d; return d;
+      }).catch(function () { _dictCache[key] = null; return null; });
+    });
   }
   function openDict(w, el) {
     S.dictWord = w; S.dictExpanded = false; S.dictEntry = null; S.dictAnchor = null;
@@ -904,7 +958,7 @@
       var w = String(f.word || "").trim();
       if (!w) return;
       var cn = spellCnOf(f);
-      var se = String((f.sentence || {}).en || "").trim();
+      var se = sentenceOf(f, w);
       if (se) sent.push({ kind: "sentence", id: c.id, word: w, cn: cn, sentence: se });
       else single.push({ kind: "word", id: c.id, word: w, cn: cn });
     });
@@ -1143,6 +1197,9 @@
   }
   function mountFromCard(c) {
     if (!c) return;
+    /* 老书（v3 生词本）字段归一：sentence_en/sentence_cn、phonetic_us/uk、blocks → v4 形。
+       壳把书里的原始卡原样塞进 fields，不归一 → 新模板在老书上永远「没有例句」。 */
+    if (c.fields) c.fields = normalizeFields(c.fields);
     /* 先预热干扰池再分派：下面 initSentCloze / buildChoice 是同步跑完的，
        池子要是没起，首帧就只能靠易混项，选项凑不满。 */
     warmPool(c);
@@ -1283,19 +1340,91 @@
     return cands;
   }
 
-  function initSentCloze(c) {
-    var f = c.fields || {};
-    var se = String((f.sentence && f.sentence.en) || "").trim();
-    var w = String(f.word || "").trim();
-    var hit = null;
-    if (w) {
-      var re = new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\w*", "i");
-      hit = se.match(re);
+  /* ===================== 老书兼容（v3 生词本） =====================
+     壳把书里的原始卡原样塞进 fields。v3 书（bubei_shengciben / english_xiaozuowen）
+     用 sentence_en/sentence_cn、phonetic_us/uk、blocks、senses[].cn 字符串，
+     而本模板按 v4 读（sentence:{en,cn} / phonetic / collocations / cn 数组）。
+     不归一 → 老书在「例句填空」里永远抠不出空，只能退化成「看中文选词」。 */
+  function stripTags(s) { return String(s == null ? "" : s).replace(/<[^>]*>/g, ""); }
+  function normalizeFields(f) {
+    if (!f || typeof f !== "object") return f;
+    var o = {}, k;
+    for (k in f) { if (f.hasOwnProperty(k)) o[k] = f[k]; }
+    if (!(o.sentence && o.sentence.en) && (o.sentence_en || o.sentence_cn)) {
+      o.sentence = { en: stripTags(o.sentence_en || "").replace(/\s+/g, " ").trim(), cn: String(o.sentence_cn || "").trim() };
     }
+    if (!o.phonetic) o.phonetic = o.phonetic_us || o.phonetic_uk || "";
+    /* v3 的搭配在 blocks 里（type=pairs / items / pairs） */
+    if (!arr(o.collocations).length) {
+      var cols = [];
+      arr(o.blocks).forEach(function (b) {
+        if (!b) return;
+        arr(b.items).concat(arr(b.pairs)).forEach(function (p) {
+          if (p && p.en) cols.push({ en: p.en, cn: p.cn || "", m: 0, ex: 0 });
+        });
+      });
+      if (cols.length) o.collocations = cols;
+    }
+    o.senses = arr(o.senses).map(function (s) {
+      return { pos: (s && s.pos) || "", cn: arr(s && s.cn).map(function (x) { return String(x); }) };
+    });
+    return o;
+  }
+  /* 例句挖空（自 bubei_dark 移植）：① 原形整词 ② 词干 + 后缀白名单（comply→complied）。
+     返回纯文本题干（显示端是 esc()，标记一律剥掉）+ 答案；抠不出来就 text=""。 */
+  var BLANK_SUFFIXES = ["", "s", "es", "ed", "d", "ing", "ion", "ions", "ation", "ations", "ment", "ments",
+    "ly", "ness", "er", "ers", "est", "ive", "ives", "al", "ally", "ence", "ance", "ful", "less", "ity",
+    "ities", "ize", "ized", "izes", "izing", "t"];
+  function blankSentence(raw, word) {
+    var src = stripTags(raw).replace(/\s+/g, " ").trim();
+    var w = String(word || "").trim();
+    if (!src) return { text: "", answer: "" };
+    if (!w) return { text: src, answer: "" };
+    var safe = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var hit = null;
+    try { hit = src.match(new RegExp("\\b" + safe + "\\b", "i")); } catch (e) { hit = null; }
+    if (!hit) {
+      var stem = w.toLowerCase();
+      if (/y$/.test(stem) && !/[aeiou]y$/.test(stem)) stem = stem.slice(0, -1) + "i";
+      else if (/e$/.test(stem)) stem = stem.slice(0, -1);
+      var tokRe = /\b[A-Za-z][A-Za-z'’-]*\b/g, t;
+      while ((t = tokRe.exec(src)) !== null) {
+        var low2 = t[0].toLowerCase();
+        if (low2.indexOf(stem) !== 0) continue;
+        if (BLANK_SUFFIXES.indexOf(low2.slice(stem.length)) < 0) continue;
+        hit = t; break;
+      }
+    }
+    if (!hit) return { text: src, answer: "" };
+    return { text: src.slice(0, hit.index) + "______" + src.slice(hit.index + hit[0].length), answer: hit[0] };
+  }
+  /* 例句来源：卡面主例句 → 真题例句 → 义项例句（优先含目标词的那条） */
+  function sentenceOf(f, word) {
+    f = f || {};
+    var w = String(word || f.word || "").trim().toLowerCase();
+    var pool = [];
+    pool.push((f.sentence || {}).en);
+    arr(f.exams).forEach(function (x) { pool.push(x && x.en); });
+    arr(f.meaningDetails).forEach(function (d) { arr(d && d.examples).forEach(function (e) { pool.push(e && e.en); }); });
+    var first = "";
+    for (var i = 0; i < pool.length; i++) {
+      var s = stripTags(pool[i]).replace(/\s+/g, " ").trim();
+      if (!s) continue;
+      if (!first) first = s;
+      if (w && s.toLowerCase().indexOf(w) >= 0) return s;
+    }
+    return first;
+  }
+
+  function initSentCloze(c) {
+    var f = normalizeFields(c.fields || {});
+    var w = String(f.word || "").trim();
+    /* 例句：卡面主例句 → 真题 → 义项例句；一条都没有才退化成「看中文选词」 */
+    var se = sentenceOf(f, w);
+    var bk = se ? blankSentence(se, w) : { text: "", answer: w };
     S.sentCloze = {
-      word: w, sentence: se, cn: spellCnOf(f), sentenceCn: String((f.sentence && f.sentence.cn) || "").trim(),
-      blanked: hit ? se.slice(0, hit.index) + "______" + se.slice(hit.index + hit[0].length) : "",
-      answer: hit ? hit[0] : w, revealed: false, picked: null, hint: false
+      word: w, sentence: se, cn: spellCnOf(f), sentenceCn: String((f.sentence || {}).cn || "").trim(),
+      blanked: bk.text, answer: bk.answer || w, revealed: false, picked: null, hint: false
     };
     // 干扰项：易混项 / 本会话见过的卡 / 整本书池（池子没预热到就异步补一次）
     function buildOpts() {
@@ -1345,7 +1474,7 @@
   }
 
   /* —— workflow.js 复用原语 —— */
-  FC.helpers = { speak: speak, blankSentence: srBlankSentence, ttsWord: TTS_WORD, ttsSentence: TTS_SENTENCE };
+  FC.helpers = { speak: speak, blankSentence: srBlankSentence, blank: blankSentence, sentenceOf: sentenceOf, normalizeFields: normalizeFields, ttsWord: TTS_WORD, ttsSentence: TTS_SENTENCE };
   /* —— 拼写轮：workflow.js 决策，本层渲染 —— */
   FC.spell = {
     ask: function (n) { S.srAsk = n; S.sr = null; paint(); },
