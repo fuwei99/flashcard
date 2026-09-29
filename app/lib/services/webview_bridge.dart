@@ -26,6 +26,8 @@ import 'js_plugin_host.dart';
 import 'plugin.dart';
 import 'scheduler.dart';
 import 'session_store.dart';
+import 'status_writer.dart';
+import 'study_settings.dart';
 import 'template_engine.dart';
 import 'template_fs.dart';
 import 'tts_engine.dart';
@@ -59,6 +61,12 @@ class WebViewBridge {
   final CardStore store;
   final TtsService tts;
 
+  /// 学习设置（今日背诵量计数器）。stats.markDone 用它记账。
+  final StudySettings settings;
+
+  /// 本会话是「卡牌」还是「单词」—— stats.markDone 记到哪个计数器。
+  final bool isCard;
+
   /// 卡片内容源（阶段 2）：card.get / card.due / card.new 靠它。
   final CardSource cardSource;
 
@@ -86,16 +94,14 @@ class WebViewBridge {
   /// 原生顶部栏显隐回调 —— 模板调 `ui.setChrome` 时触发，屏幕据此 setState。
   void Function(bool top)? onChromeChanged;
 
-  /// Web 驱动流程「首次把一张卡学进 FSRS」回调 —— ReviewScreen 据此补记
-  /// 今日背词量 / 累计 / 打卡。原生流程不走这里（它在 answer 里自己 markDoneBy）。
-  void Function(String id)? onNewLearned;
-
   /// 宿主控制器 —— RPC 回执 / 事件推送要它 runJavaScript。
   WebViewController? _ctrl;
 
   WebViewBridge({
     required this.store,
     required this.tts,
+    required this.settings,
+    this.isCard = false,
     CardSource? cardSource,
   }) : cardSource = cardSource ?? BookCardSource() {
     sessions.init();
@@ -189,19 +195,101 @@ class WebViewBridge {
         };
       }
       final prev = store.stateOf(id);
-      // 首次把一张卡从 new 翻进学习态 = 今天真「背」下了这个词。
-      // 原生流程在 ReviewScreen.answer 里 markDoneBy；Web 驱动流程
-      // （workflow.js 走 RPC）压根不经过那条路，所以历史计数器一直是 0。
-      // 用 prev.isNew 当判据天然幂等：重测轮 / 续会话重提交都不会重复计数。
-      final wasNew = prev.isNew;
       final st = review(prev, rating);
       store.putReview(id, prev, st, rating);
-      if (wasNew) {
-        try {
-          onNewLearned?.call(id);
-        } catch (_) {}
-      }
       return {'ok': true, 'id': id, 'rating': rating.key, 'state': st.toJson()};
+    });
+
+    // 今日背诵量 +n：由 workflow.js 在卡片「毕业」那一刻主动调用。
+    // 壳只提供这一个原子能力，判「什么时候算背下一个」归模板流程 —— 解耦。
+    rpc.register('stats.markDone', (p) async {
+      final n = (p['n'] as num?)?.toInt() ?? 1;
+      if (n <= 0) return {'ok': true};
+      await settings.markDoneBy(n, card: isCard);
+      await StatusWriter.I.writeThrottled();
+      return {'ok': true};
+    });
+
+    // 读一张卡的 FSRS 调度状态 + 标熟位：模板判「学没学过 / 该不该复习」用，
+    // 不用再绕 card.due 猜。只读，不动任何调度数据。
+    rpc.register('state.getReview', (p) async {
+      final id = (p['id'] ?? '').toString();
+      if (id.isEmpty) return {'ok': false, 'error': 'missing id'};
+      final st = store.stateOf(id);
+      return {
+        'ok': true,
+        'id': id,
+        'is_new': st.isNew,
+        'is_learned': !st.isNew,
+        'known': store.isKnown(id),
+        'state': st.toJson(),
+      };
+    });
+
+    // 读今日 / 累计统计：模板要在 UI 上画进度（如今日 3/50）时照抄一份给它。
+    // 只读，不改任何数据。
+    rpc.register('stats.get', (p) async => {
+          'ok': true,
+          'today': {
+            'date': settings.todayDate,
+            'word_done': settings.todayWordDone,
+            'card_done': settings.todayCardDone,
+            'word_limit': settings.wordDailyLimit,
+            'card_limit': settings.cardDailyLimit,
+            'review_limit': settings.reviewDailyLimit,
+            'total_done': settings.todayTotal,
+          },
+          'word_passed': settings.wordPassed,
+          'card_passed': settings.cardPassed,
+          'checked_in_today': settings.checkedInToday,
+          'streak_days': settings.currentStreak,
+          'best_streak': settings.bestStreak,
+          'total_study_days': settings.totalStudyDays,
+          'total_word_done': settings.totalWordDone,
+          'total_card_done': settings.totalCardDone,
+        });
+
+    // 标熟 / 取消标熟：专用入口，不用再拿 state.kvPut(key='known') 硬凑。
+    // 标熟 = 人为判定，只落卡级 KV，不碰 FSRS 调度数据。
+    rpc.register('card.markKnown', (p) async {
+      final id = (p['id'] ?? '').toString();
+      if (id.isEmpty) return {'ok': false, 'error': 'missing id'};
+      final known = p['known'] is bool ? p['known'] as bool : true;
+      store.setKnown(id, known);
+      return {'ok': true, 'id': id, 'known': known};
+    });
+
+    // 书索引：词表 / 自建干扰项池要「这本书有哪些卡」时用，省得模板自己扫盘。
+    // 只回 id / 章节结构，**不读章节内容**（走 index.json 种子）—— 要字段仍走 card.get。
+    rpc.register('book.index', (p) async {
+      final wanted =
+          (p['book'] ?? p['book_id'] ?? p['bookId'] ?? '').toString();
+      final books = await cardSource.books();
+      final out = <Map<String, dynamic>>[];
+      for (final b in books) {
+        if (wanted.isNotEmpty && b.bookId != wanted) continue;
+        out.add({
+          'book_id': b.bookId,
+          'title': b.title,
+          'subtitle': b.subtitle,
+          'template': b.templateId,
+          'fields_order': b.fieldsOrder,
+          'count': b.allCardIds.length,
+          'ids': b.allCardIds,
+          'loose_ids': b.looseIds,
+          'chapters': <Map<String, dynamic>>[
+            if (b.hasChapters)
+              for (final ch in b.chapters)
+                {
+                  'chapter_id': ch.chapterId,
+                  'title': ch.title,
+                  'count': ch.count,
+                  'ids': ch.ids,
+                },
+          ],
+        });
+      }
+      return {'ok': true, 'books': out};
     });
 
     // 会话计划（阶段 4）：workflow.js 拉它自己排流程；非 Web 驱动返回 null

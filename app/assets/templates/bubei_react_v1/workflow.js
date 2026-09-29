@@ -142,9 +142,13 @@
   }
   function buildIndex() {
     S.cardById = {};
+    S.cardIsReview = {};
     for (var i = 0; i < S.units.length; i++) {
       var cs = S.units[i].cards || [];
-      for (var j = 0; j < cs.length; j++) S.cardById[cs[j].id] = cs[j];
+      for (var j = 0; j < cs.length; j++) {
+        S.cardById[cs[j].id] = cs[j];
+        S.cardIsReview[cs[j].id] = !!S.units[i].isReview;
+      }
     }
   }
   function removePool(id) {
@@ -333,6 +337,13 @@
     try { FC.call("review.commit", { id: id, rating: "hard" }).catch(function () {}); } catch (e) {}
   }
 
+  /// 记「今日背词量」：复习卡（isReview 单元）不占新词额度，只走 FSRS。
+  /// 壳只提供 stats.markDone 这个原子能力，「何时算背下一个」归本层流程。
+  function markCounted(id) {
+    if (S.cardIsReview && S.cardIsReview[id]) return;
+    try { FC.call("stats.markDone", {}).catch(function () {}); } catch (e) {}
+  }
+
   function flushGraduated() {
     Object.keys(S.graduated).forEach(function (id) {
       if (_committed[id]) return;
@@ -340,11 +351,13 @@
       if (S.provisional[id] && S.provisionalRating[id] === r) {
         _committed[id] = true;
         log("commit(skip, provisional) " + id + " rating=" + r);
+        markCounted(id);
         return;
       }
       _committed[id] = true;
       log("commit " + id + " rating=" + r);
       try { FC.call("review.commit", { id: id, rating: r }).catch(function () {}); } catch (e) {}
+      markCounted(id);
     });
   }
 
@@ -564,6 +577,9 @@
     S.wrongCount = sv.wrongCount || {};
     S.graduated = {};
     (sv.graduated || []).forEach(function (id) { S.graduated[id] = true; });
+    // 续上的毕业卡上一段会话已 commit 过（FSRS 已落盘）：补进 _committed，
+    // 既避免重测时重复 commit，也避免重复记今日背词量。
+    (sv.graduated || []).forEach(function (id) { _committed[id] = true; });
     S.provisional = {};
     S.provisionalRating = {};
     (sv.provisional || []).forEach(function (id) {
@@ -600,6 +616,7 @@
       })(),
       passageCloze: !!plan.passageCloze,
       cardById: {},
+      cardIsReview: {},
       unitIdx: 0,
       phase: "done",
       queue: [], retestPool: [], graduated: {}, passedModes: {},

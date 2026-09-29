@@ -48,7 +48,9 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
   void initState() {
     super.initState();
     _bridge = WebViewBridge(
-        store: widget.store, tts: TtsService(settings: widget.settings));
+        store: widget.store,
+        tts: TtsService(settings: widget.settings),
+        settings: widget.settings);
     _bridge.initTts();
     _known = widget.store.isKnown(widget.card.id);
   }
