@@ -70,6 +70,10 @@ class WebViewBridge {
   /// 卡片内容源（阶段 2）：card.get / card.due / card.new 靠它。
   final CardSource cardSource;
 
+  /// 干扰项池缓存（book_id → 精简池）。pool.get 走它，改书后清空。
+  /// 池子是一次会话里最重的一坨读盘，缓存住就别让模板反复要。
+  final Map<String, List<Map<String, dynamic>>> _poolCache = {};
+
   /// 双向 RPC 核心（阶段 0）。方法在 [_registerCore] 里注册。
   final BridgeRpc rpc = BridgeRpc();
 
@@ -171,6 +175,24 @@ class WebViewBridge {
     rpc.register('card.new', (p) async {
       final ids = await _queue(p, reviewOnly: false);
       return {'ids': ids, 'count': ids.length};
+    });
+
+    // 干扰项池（原子能力）：一次给整本书的精简池 {id, word, senses}。
+    // 模板以前自己 `fs.list` + `fs.read` 把整本书读进来 JSON.parse，
+    // 4.1MB 那本 36 个分片全在 WebView 主线程上跑。现在壳读一次、缓存住，
+    // 模板只拿它出选项要的最小结构 —— 判断归模板，读盘归壳。
+    rpc.register('pool.get', (p) async {
+      final book = (p['book'] ?? p['book_id'] ?? p['bookId'] ?? '').toString();
+      if (book.isEmpty) {
+        return {'ok': false, 'error': 'missing book'};
+      }
+      final hit = _poolCache[book];
+      if (hit != null) {
+        return {'ok': true, 'book': book, 'count': hit.length, 'cards': hit};
+      }
+      final cards = await cardSource.pool(book);
+      _poolCache[book] = cards;
+      return {'ok': true, 'book': book, 'count': cards.length, 'cards': cards};
     });
 
     // 交评级：跑 FSRS + 落盘，回新状态。这是唯一会动调度数据的入口。
@@ -376,6 +398,7 @@ class WebViewBridge {
     rpc.register('book.reload', (p) async {
       final src = cardSource;
       if (src is BookCardSource) src.invalidate();
+      _poolCache.clear();
       return {'ok': true};
     });
   }
@@ -606,10 +629,12 @@ class WebViewBridge {
 
     // JS 日志（JSlogs）：写独立文件，不进 messages 流、不掺切卡时序
     if (type == 'log') {
-      await JsLog.write(
+      // 不 await：日志是诊断用的，绝不能把主线程卡在它身上。
+      // FileLog 内部已经把「攒行 + 单飞批量落盘」做完了，这里只管投递。
+      unawaited(JsLog.write(
         (data['tag'] ?? 'js').toString(),
         (data['msg'] ?? '').toString(),
-      );
+      ));
       return;
     }
 
@@ -618,9 +643,14 @@ class WebViewBridge {
 
     // 时序埋点：把 JS 发过来的每条消息按到达顺序记下，
     // 排查「点击没反应 / TTS 串页」时能看清 answer 和 tts 的先后。
+    //
+    // 同样**不 await**：以前这里是 `await SwitchLog.write(...)`，而 FileLog
+    // 每条都做一次 `dir.exists()` + `writeAsString(flush: true)` ——
+    // 翻面那一击要连发 word + sentence 两条 TTS，主线程就被这两次 fsync 拖住，
+    // Flutter 出不了帧，屏幕上就是「点了认识卡死、再点已进下一张卡」（2026-09-30）。
     if (type == 'answer' || type == 'tts' || type == 'ttsSeq' || type == 'ttsStop') {
-      await SwitchLog.write('bridge',
-          '$type ${type == 'answer' ? (data['rating'] ?? '') : (data['text'] ?? (data['items'] is List ? '${(data['items'] as List).length}条' : ''))}');
+      unawaited(SwitchLog.write('bridge',
+          '$type ${type == 'answer' ? (data['rating'] ?? '') : (data['text'] ?? (data['items'] is List ? '${(data['items'] as List).length}条' : ''))}'));
     }
 
     switch (type) {

@@ -366,7 +366,9 @@
     if (!card) { root.innerHTML = '<div class="flex h-full items-center justify-center p-8 text-center text-[15px] text-[#8a8a90]">' + (S.phase === "done" ? "没有可学的卡（已学完 / 已标熟）" : "加载中…") + "</div>"; return; }
     var _sc = captureScroll(); var _fc = captureFocus();
     var bg = S.screen === "learn" ? LEARN_BG : BG;
-    var counter = ((S.idx || 0) + 1) + "/" + (S.retestTotal || 1);
+    /* 角标口径 = 「本单元已背完 N / 共 M」（workflow 在 mount 时给 index/total）。
+       不再是「第几张/这一轮几张」—— 那个数在重考轮会跳，且读不出「背完几个」。 */
+    var counter = (S.idx || 0) + "/" + (S.retestTotal || 1);
     var h = '<div class="relative flex h-full flex-col overflow-hidden text-[#f0f0f2]" style="background:' + bg + '">';
     if (S.phase === "cards" && !S.browse) h += topBar(counter, { canUndo: S.face === "back" && S.history.length > 0, fav: !!S.favs[card.id], showKnown: true });
     if (S.phase === "cards" && S.face === "front") {
@@ -473,7 +475,7 @@
       }
       return '<button data-act="choice-pick" data-i="' + i + '" class="relative block w-full rounded-[16px] px-[18px] text-left transition-colors ' + cls + " " + (S.revealed ? "py-[17px]" : "py-[21px]") + '">' + inner + "</button>";
     }).join("");
-    return topBar((S.rIdx + 1) + "/" + (S.retestCards || []).length, { canUndo: false, fav: !!S.favs[card.id], showKnown: true }) +
+    return topBar((S.idx || 0) + "/" + (S.retestTotal || 1), { canUndo: false, fav: !!S.favs[card.id], showKnown: true }) +
       '<div data-scroll="choice" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' + hero(card) + '<div class="min-h-[60px] flex-1"></div><div class="space-y-[13px] px-4 pb-5 pt-8">' + optsHtml + "</div></div>" +
       '<footer class="flex flex-none justify-center pb-[34px] pt-[6px]">' + (S.revealed ? dashBtn("继续", "bg-[#2ec4a5]", "choice-next") : dashBtn("看答案", "bg-[#e34d64]", "choice-reveal")) + "</footer>";
   }
@@ -1172,15 +1174,43 @@
   /* workflow.js 接管进度上报与落账；本层不再自报 */
   function reportProgress() {}
 
+  /* ---- 一击一帧：输入锁 ----
+     实机 bug（2026-09-30）：正面右下角是「认识」，翻面后**同一像素位置**变成「下一词」。
+     只要翻面那一帧还没画出来，用户第二次点下去就直接跳过释义页 —— 观感是
+     「点了认识卡死，再点一次已经进下一张卡了，释义面根本没展示过」。
+     根因不在 WebView：是「点一下 = 状态 + 重活 + 朗读」全挤在同一个 task 里，
+     浏览器要等整个 task 结束才渲染。这里两手：
+       ① 会换按钮身份的动作之后短暂锁输入（时间锁，简单可预测）；
+       ② 朗读挪到下一帧（见 flip），先出帧再开 TTS 通道。
+     这类「同位置换语义」的按钮还有：选项→继续、看答案→继续，一并上锁。 */
+  var _lockUntil = 0;
+  function lockInput(ms) {
+    var u = Date.now() + (ms || 420);
+    if (u > _lockUntil) _lockUntil = u;
+  }
+  function inputLocked() {
+    if (Date.now() >= _lockUntil) return false;
+    if (FC.log) { try { FC.log("[v1]", "input lock: drop tap"); } catch (e) {} }
+    return true;
+  }
+
   /* ---- 卡片流转（纯渲染：作答即回 workflow）---- */
   function flip(r) {
     S.pendingRating = r || "good";
     S.face = "back"; S.tab = "colloc";
-    speakWordThenSentence(S.card);
-    paint();
+    lockInput(460);
+    paint();                       // 先出帧
+    // 朗读推到下一帧：以前先发 TTS 再重建 DOM，两坨重活挤在一个 task 里，
+    // 低端机上那一帧要等好几百毫秒才出来（"点不动"的观感就来自这里）。
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(function () { speakWordThenSentence(S.card); });
+    } else {
+      speakWordThenSentence(S.card);
+    }
   }
   function nextCard(miss) {
     var r = miss ? "again" : (S.pendingRating || "good");
+    lockInput(280);
     if (FC.answer) FC.answer(r, answerMeta());
   }
 
@@ -1250,45 +1280,69 @@
     return String((cc.session && cc.session.book) || "");
   }
 
+  /* 整本书干扰池。
+     首选壳的原子能力 `pool.get`：读盘 + 缓存都在壳侧，只回 {id,word,senses}。
+     老路（模板自己 `fs.list` + `fs.read` 整本书再 JSON.parse）只在壳没给这个
+     API 时兜底 —— 考研真题那本 4.1MB / 36 个分片，全跑在 WebView 主线程上。 */
   function loadPool(bookId, done) {
-    if (!bookId || !FC.fs || !FC.fs.read) { if (done) done([]); return; }
+    if (!bookId) { if (done) done([]); return; }
     if (_poolByBook[bookId]) { if (done) done(_poolByBook[bookId]); return; }
     var q = _poolWait[bookId] || (_poolWait[bookId] = []);
     if (done) q.push(done);
     if (q._started) return;
     q._started = true;
-    var base = "books/" + bookId;
+
     function finish(cards) {
       _poolByBook[bookId] = cards;
       var ws = _poolWait[bookId] || []; _poolWait[bookId] = [];
       ws.forEach(function (fn) { try { if (fn) fn(cards); } catch (e) {} });
     }
-    FC.fs.list(base).then(function (r) {
+    function viaRpc() {
+      if (!FC.call) { viaFs(); return; }
+      FC.call("pool.get", { book: bookId }).then(function (r) {
+        var cards = arr(r && r.cards).map(function (p) {
+          return {
+            id: String((p && p.id) || (p && p.word) || ""),
+            word: String((p && p.word) || ""),
+            senses: arr(p && p.senses)
+          };
+        }).filter(function (p) { return p.id && p.word && p.senses.length; });
+        if (!cards.length) { viaFs(); return; }
+        if (FC.log) { try { FC.log("[pool]", bookId + " cards=" + cards.length + " via pool.get"); } catch (e) {} }
+        finish(cards);
+      }).catch(function () { viaFs(); });
+    }
+    function viaFs() {
+      if (!FC.fs || !FC.fs.read) { finish([]); return; }
+      var base = "books/" + bookId;
+      FC.fs.list(base).then(function (r) {
       var names = arr(r && r.entries).filter(function (e) {
         return e && !e.dir && /^ch_.*\.json$/i.test(String(e.name || ""));
       }).map(function (e) { return e.name; }).sort();
       return Promise.all(names.map(function (n) {
         return FC.fs.read(base + "/" + n).catch(function () { return null; });
       }));
-    }).then(function (files) {
-      var cards = [], seen = {};
-      arr(files).forEach(function (fp) {
-        if (!fp || !fp.content) return;
-        var d; try { d = JSON.parse(fp.content); } catch (e) { return; }
-        arr(d.cards).forEach(function (c) {
-          if (!c || !c.word) return;
-          var id = String(c.id || c.word);
-          if (seen[id]) return; seen[id] = 1;
-          var senses = c.senses;
-          if (!(senses && senses.length) && (c.cn || c.meaning)) {
-            senses = [{ pos: c.pos || "", cn: [String(c.cn || c.meaning)] }];
-          }
-          cards.push({ id: id, word: String(c.word), senses: senses || [] });
+      }).then(function (files) {
+        var cards = [], seen = {};
+        arr(files).forEach(function (fp) {
+          if (!fp || !fp.content) return;
+          var d; try { d = JSON.parse(fp.content); } catch (e) { return; }
+          arr(d.cards).forEach(function (c) {
+            if (!c || !c.word) return;
+            var id = String(c.id || c.word);
+            if (seen[id]) return; seen[id] = 1;
+            var senses = c.senses;
+            if (!(senses && senses.length) && (c.cn || c.meaning)) {
+              senses = [{ pos: c.pos || "", cn: [String(c.cn || c.meaning)] }];
+            }
+            cards.push({ id: id, word: String(c.word), senses: senses || [] });
+          });
         });
-      });
-      if (FC.log) { try { FC.log("[pool]", bookId + " cards=" + cards.length); } catch (e) {} }
-      finish(cards);
-    }).catch(function () { finish([]); });
+        if (FC.log) { try { FC.log("[pool]", bookId + " cards=" + cards.length + " via fs"); } catch (e) {} }
+        finish(cards);
+      }).catch(function () { finish([]); });
+    }
+    viaRpc();
   }
 
   /* 会话开场预热：池子是异步读盘的。等到 buildChoice / initSentCloze 要用时才加载，
@@ -1460,7 +1514,7 @@
       }
       return '<button data-act="sc-pick" data-i="' + i + '" data-right="' + (isRight ? 1 : 0) + '" class="relative block w-full rounded-[16px] px-[18px] text-left transition-colors ' + cls + " " + (sc.revealed ? "py-[17px]" : "py-[21px]") + '">' + inner + "</button>";
     }).join("");
-    return topBar(((S.idx || 0) + 1) + "/" + (S.retestTotal || 1), { canUndo: false, fav: !!S.favs[card.id], showKnown: true }) +
+    return topBar((S.idx || 0) + "/" + (S.retestTotal || 1), { canUndo: false, fav: !!S.favs[card.id], showKnown: true }) +
       '<div data-scroll="sentcloze" class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-[52px]">' +
         '<div class="px-[26px] pt-1"><span class="text-[13px] text-[#8c8c92]">例句填空 · 选词填入</span>' +
         (sc.blanked
@@ -1500,10 +1554,16 @@
            以前只认 S.card，在后两种界面按「熟」会打空甚至报错。 */
         var kc = S.card || S.rCur || (S.sentCloze && S.sentCloze.card) || null;
         if (kc && kc.id) {
-          call("state.kvPut", { id: kc.id, key: "known", value: true });
+          // 走专用原子能力，不再拿 state.kvPut(key='known') 硬凑。
+          call("card.markKnown", { id: kc.id, known: true });
           S.learned[kc.id] = true;
         }
-        if (FC.answer) FC.answer("good", answerMeta());
+        /* 标熟 = 人为判定「这张卡我背过了」→ 带 known 标记交出。
+           workflow 收到就直接毕业（含重考页 —— 以前只算过当前一门考法，毕不了业）。 */
+        lockInput(320);
+        var mk = answerMeta() || {};
+        mk.known = true;
+        if (FC.answer) FC.answer("good", mk);
         break;
       }
       case "undo":
@@ -1580,25 +1640,36 @@
         i = parseInt(el.getAttribute("data-i"), 10);
         S.picked = i; S.revealed = true;
         if (!S.choiceOpts[i] || S.choiceOpts[i].id !== S.rCur.id) S.wrongs++;
-        speak((S.rCur.fields || {}).word); paint(); break;
-      case "choice-reveal": S.revealed = true; S.wrongs++; speak((S.rCur.fields || {}).word); paint(); break;
+        lockInput(300);               // 「选项」→「继续」同位置换语义
+        paint();
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(function () { speak((S.rCur.fields || {}).word); });
+        } else { speak((S.rCur.fields || {}).word); }
+        break;
+      case "choice-reveal":
+        S.revealed = true; S.wrongs++; lockInput(300); paint();
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(function () { speak((S.rCur.fields || {}).word); });
+        } else { speak((S.rCur.fields || {}).word); }
+        break;
       case "choice-next":
         { var okCh = (S.picked != null && S.choiceOpts[S.picked] && S.choiceOpts[S.picked].id === S.rCur.id);
           S.revealed = false; S.picked = null;
           S.card = S.rCur; S.postChoice = true;
           S.pendingRating = okCh ? "good" : "again";
           S.face = "back"; S.tab = "colloc"; S.phase = "cards";
+          lockInput(340);
           paint(); }
         break;
       case "sc-pick":
         if (S.sentCloze && !S.sentCloze.revealed) {
           S.sentCloze.picked = parseInt(el.getAttribute("data-i"), 10);
           S.sentCloze._right = (el.getAttribute("data-right") === "1");
-          S.sentCloze.revealed = true; paint();
+          S.sentCloze.revealed = true; lockInput(300); paint();
         }
         break;
       case "sc-reveal":
-        if (S.sentCloze) { S.sentCloze.revealed = true; S.sentCloze._right = false; paint(); }
+        if (S.sentCloze) { S.sentCloze.revealed = true; S.sentCloze._right = false; lockInput(300); paint(); }
         break;
       case "sc-hint":
         if (S.sentCloze) { S.sentCloze.hint = true; paint(); }
@@ -1618,6 +1689,7 @@
       case "sc-next":
         { var okSc = !!(S.sentCloze && S.sentCloze._right === true);
           S.sentCloze = null;
+          lockInput(340);
           if (FC.answer) FC.answer(okSc ? "good" : "again", answerMeta()); }
         break;
     }
@@ -1687,6 +1759,7 @@
   var _swipeAt = 0, _tch = null;
   root.addEventListener("click", function (e) {
     if (Date.now() - _swipeAt < 400) return;
+    if (inputLocked()) return;
     var hit = closestAct(e.target);
     if (!hit) return;
     if (hit.word) { openDict(hit.word, hit.el); return; }

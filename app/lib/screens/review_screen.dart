@@ -1025,6 +1025,8 @@ class _ReviewScreenState extends State<ReviewScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       _bridge.emit('lifecycle.pause');
+      // 诊断日志攒在内存里（见 FileLog），退到后台就把尾巴落下去。
+      unawaited(FileLog.flushNow());
     } else if (state == AppLifecycleState.resumed) {
       _bridge.emit('lifecycle.resume');
     }
@@ -1037,6 +1039,7 @@ class _ReviewScreenState extends State<ReviewScreen>
     _msgSub = null;
     // 退出会话：写一份完整的 status 快照（尽力而为，不阻塞返回）
     StatusWriter.I.write();
+    unawaited(FileLog.flushNow());
     _bridge.dispose();
     super.dispose();
   }

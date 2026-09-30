@@ -22,6 +22,13 @@ abstract class CardSource {
 
   /// 按 id 找一张卡；找不到返回 null
   Future<FlashCard?> cardById(String id);
+
+  /// 整本书的「干扰项池」：只要 id / word / senses。
+  ///
+  /// 出选项只需要这三样。以前模板拿 `fs.list` + `fs.read` 把整本书
+  /// list + read + JSON.parse 一遍 —— 考研真题那本 4.1MB / 36 个分片，
+  /// 那坨活全跑在 WebView 主线程上。现在壳读一次、缓存住，只回最小结构。
+  Future<List<Map<String, dynamic>>> pool(String bookId);
 }
 
 /// 基于 [DeckRepository] 的实现：书读盘 + 章节懒加载。
@@ -55,6 +62,42 @@ class BookCardSource implements CardSource {
       }
     }
     return null;
+  }
+
+  /// 精简池：{id, word, senses:[{pos, cn:[...]}]}。
+  /// 章节读盘交给 Chapter 自己的缓存，同一本书整个会话只读一次。
+  @override
+  Future<List<Map<String, dynamic>>> pool(String bookId) async {
+    final out = <Map<String, dynamic>>[];
+    for (final b in await books()) {
+      if (b.bookId != bookId) continue;
+      final seen = <String>{};
+      void add(FlashCard c) {
+        if (!seen.add(c.id)) return;
+        final senses = <Map<String, dynamic>>[];
+        for (final s in c.senses) {
+          if (s.isEmpty) continue;
+          senses.add({'pos': s.pos, 'cn': <String>[s.cn]});
+        }
+        // 没有中文释义的卡放进去也出不了选项，只会渲染成空行 —— 直接不进池。
+        if (senses.isEmpty) return;
+        out.add({'id': c.id, 'word': c.word, 'senses': senses});
+      }
+
+      if (b.hasChapters) {
+        for (final ch in b.chapters) {
+          for (final c in ch.cards) {
+            add(c);
+          }
+        }
+      } else {
+        for (final c in b.looseCards) {
+          add(c);
+        }
+      }
+      break;
+    }
+    return out;
   }
 
   /// 在书里找一张卡。分片章先看 ids（**不触发读盘**），命中才 cards（只读这一章）。

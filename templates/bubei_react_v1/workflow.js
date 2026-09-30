@@ -35,9 +35,9 @@
 
   function sessionSnapshot() {
     if (!S) return null;
-    var grad = [], prov = [];
+    var grad = [], settled = [];
     for (var g in S.graduated) { if (S.graduated[g]) grad.push(g); }
-    for (var p in S.provisional) { if (S.provisional[p]) prov.push(p); }
+    for (var p in S.settled) { if (S.settled[p]) settled.push(p); }
     return {
       unitIdx: S.unitIdx,
       phase: S.phase,
@@ -50,7 +50,7 @@
       retestFailed: S.retestFailed,
       wrongCount: S.wrongCount,
       graduated: grad,
-      provisional: prov
+      settled: settled
     };
   }
 
@@ -156,6 +156,18 @@
     if (i >= 0) S.retestPool.splice(i, 1);
   }
 
+  /// 本单元「已背完」几张 —— 进度条/角标的唯一口径。
+  ///
+  /// 以前角标画的是 `第几张/本轮几张`（roundTotal - queue.length），
+  /// 重考轮分母还会跟着池子变，用户根本读不出「这一单元背完几个了」。
+  /// 现在统一：分子 = 本单元已毕业（含标熟）的卡数，分母 = 本单元总卡数。
+  function unitDone() {
+    var ids = S.unitIds || [];
+    var n = 0;
+    for (var i = 0; i < ids.length; i++) { if (S.graduated[ids[i]]) n++; }
+    return n;
+  }
+
   function enterLearn() {
     if (!S.queue.length) {
       if (S.retestPool.length && S.retestModes.length) {
@@ -176,6 +188,10 @@
     S.modeIdx = 0;
     var u = S.units[S.unitIdx];
     if (!u) { S.phase = "done"; return; }
+    // 进度分母：本单元卡数。整个单元（learn + 重考 + 拼写）都用它，
+    // 不随重考轮次/考法变化。
+    S.unitIds = (u.cards || []).map(function (c) { return c.id; });
+    S.unitTotal = S.unitIds.length;
     S.queue = (u.cards || []).map(function (c) {
       return { cardId: c.id, mode: "read", round: 1 };
     });
@@ -212,11 +228,12 @@
   }
 
   function startMode() {
-    // 兜底一：池里「考不了任何启用中的考法」的卡直接毕业
+    // 兜底一：池里「考不了任何启用中的考法」的卡 = 没有重考可做，自评即终评。
+    // 以前不管自评是什么，这里一律 graduated + 计数 —— 「不认识」也成了「背完」。
     S.retestPool.slice().forEach(function (id) {
       var ms = modesOf(id);
       var playable = ms.filter(function (m) { return S.retestModes.indexOf(m) >= 0; });
-      if (!playable.length) { removePool(id); S.graduated[id] = true; }
+      if (!playable.length) settleNoRetest(id);
     });
     while (S.modeIdx < S.retestModes.length) {
       var m = S.retestModes[S.modeIdx];
@@ -236,9 +253,14 @@
     }
     if (!S.retestPool.length) { nextUnit(); return; }
 
-    // 兜底二：轮数封顶
+    // 兜底二：轮数封顶。到顶直接终评放行 —— 但**不算背完**：
+    // 连考 10 轮都没过，凭什么是「已背」？只落 FSRS，保住调度数据不丢。
     if (S.round >= MAX_RETEST_ROUND) {
-      S.retestPool.slice().forEach(function (id) { S.graduated[id] = true; });
+      S.retestPool.slice().forEach(function (id) {
+        if (S.graduated[id]) return;
+        S.settled[id] = true;
+        commitNow(id, ratingFor(id));
+      });
       S.retestPool = [];
       nextUnit();
       return;
@@ -256,22 +278,34 @@
     startMode();
   }
 
-  /// 自评落账：good 毕业；hard+语篇客观测过 直接毕业；
-  /// 其余 hard / again 送重考池（bump 1 + 先 commit 保底 hard）。
+  /// 自评落账（learn 阶段）。
+  ///
+  /// **铁律：只有毕业才写 FSRS。** 以前这里对 hard / again 直接
+  /// `commitProvisional(hard)` —— 「不认识」当场落一笔 hard，FSRS 立刻把这张卡
+  /// 记成已学、due 推到明天，加上壳按「首次学会」记今日背词量，
+  /// 于是「没考过选词也算背过」（2026-09-30 实机）。
+  ///
+  /// effort 状态机：0=good / 1=hard / >=2=again。again 必须记 2，
+  /// 不能像以前那样 bump(id,1) 压成 hard —— 那样 again 判据整个丢失。
   function submitLearn(rating) {
     if (!S.queue.length) return;
     var step = S.queue.shift();
     var id = step.cardId;
     var tag = S.passageTag[id] || "untested";
     S.learnRating[id] = rating;
-    if (rating === "good" || !modesOf(id).length) {
-      S.graduated[id] = true;
-    } else if (rating === "hard" && tag === "tested") {
+    if (!modesOf(id).length) {
+      // 壳没给可考量法：没有重考可做，自评就是终评。
+      bump(id, rating === "good" ? 0 : (rating === "hard" ? 1 : 2));
+      if (rating === "good") S.graduated[id] = true;
+      else { S.settled[id] = true; commitNow(id, rating); }
+      advance();
+      return;
+    }
+    if (rating === "good" || (rating === "hard" && tag === "tested")) {
       S.graduated[id] = true;
     } else {
       if (S.retestPool.indexOf(id) < 0) S.retestPool.push(id);
-      bump(id, 1);
-      commitProvisional(id);
+      bump(id, rating === "again" ? 2 : 1);
     }
     advance();
   }
@@ -313,33 +347,42 @@
     failed.forEach(function (id) {
       S.learnRating[id] = "hard";
       if (S.retestPool.indexOf(id) < 0) S.retestPool.push(id);
-      bump(id, 1);
-      commitProvisional(id);
+      bump(id, 2);
     });
     enterLearn();
   }
 
-  /// 最终评分：语篇证据 + 自评 + 重考结果三合一
+  /// 终评：语篇客观证据 + 本轮挣扎程度（effort 状态机）二合一。
+  ///   语篇里错 >= 3 次的词（failed）→ again，不管自评怎么吹
+  ///   其余按 effort：0 一次过 = good / 1 费了点劲 = hard / >=2 硬骨头 = again
   function finalRating(id) {
-    var tag = S.passageTag[id] || "untested";
-    if (tag === "failed") return S.retestFailed[id] ? "again" : "hard";
-    var learned = S.learnRating[id];
-    if (learned === "good") return "good";
-    if (learned === "hard" && tag === "tested") return "hard";
-    return S.retestFailed[id] ? "again" : "hard";
+    if ((S.passageTag[id] || "untested") === "failed") return "again";
+    return ratingFor(id);
   }
 
-  function commitProvisional(id) {
-    if (S.provisional[id]) return;
-    S.provisional[id] = true;
-    S.provisionalRating[id] = "hard";
-    log("commit(provisional) " + id + " rating=hard");
-    try { FC.call("review.commit", { id: id, rating: "hard" }).catch(function () {}); } catch (e) {}
+  /// 唯一 FSRS 写入口。落盘一次就记账，后续不会再重复提交。
+  function commitNow(id, rating) {
+    if (_committed[id]) return;
+    _committed[id] = true;
+    log("commit " + id + " rating=" + rating);
+    try { FC.call("review.commit", { id: id, rating: rating }).catch(function () {}); } catch (e) {}
+  }
+
+  /// 池里那批「没有重考可考」的卡：自评即终评。
+  /// 自评「认识」= 背完（计数）；hard / again 只落 FSRS，不算背完。
+  function settleNoRetest(id) {
+    removePool(id);
+    if (S.graduated[id] || S.settled[id]) return;
+    if (ratingFor(id) === "good") { S.graduated[id] = true; return; }
+    S.settled[id] = true;
+    commitNow(id, ratingFor(id));
   }
 
   /// 记「今日背词量」：复习卡（isReview 单元）不占新词额度，只走 FSRS。
+  /// 封顶放行 / 无考法终评的卡（settled / forced）不算 —— 它们没背下来。
   /// 壳只提供 stats.markDone 这个原子能力，「何时算背下一个」归本层流程。
   function markCounted(id) {
+    if (S.settled[id]) return;
     if (S.cardIsReview && S.cardIsReview[id]) return;
     try { FC.call("stats.markDone", {}).catch(function () {}); } catch (e) {}
   }
@@ -348,35 +391,25 @@
     Object.keys(S.graduated).forEach(function (id) {
       if (_committed[id]) return;
       var r = finalRating(id);
-      if (S.provisional[id] && S.provisionalRating[id] === r) {
-        _committed[id] = true;
-        log("commit(skip, provisional) " + id + " rating=" + r);
-        markCounted(id);
-        return;
-      }
-      _committed[id] = true;
-      log("commit " + id + " rating=" + r);
-      try { FC.call("review.commit", { id: id, rating: r }).catch(function () {}); } catch (e) {}
+      commitNow(id, r);
       markCounted(id);
     });
   }
 
   function progressDone() {
-    if (S.phase === "passage" || S.phase === "passageCloze") return 0;
     if (S.phase === "spell" || S.phase === "spellPrompt") return S.spellDone;
-    return Math.max(0, S.roundTotal - S.queue.length);
+    return unitDone();
   }
   function progressTotal() {
-    if (S.phase === "passage" || S.phase === "passageCloze") return 1;
     if (S.phase === "spell" || S.phase === "spellPrompt") return S.spellCards.length;
-    return S.roundTotal;
+    return S.unitTotal || 0;
   }
   function reportProgress() {
     sPost("web.progress", {
       phase: S.phase,
       done: progressDone(),
       total: progressTotal(),
-      graduated: Object.keys(S.graduated).length
+      graduated: unitDone()
     });
   }
 
@@ -505,7 +538,8 @@
       sPost("web.mount", {
         unit: S.unitIdx,
         mode: S.phase === "passage" ? "passage" : "passage_cloze",
-        index: 0, total: 1, round: 1
+        // index/total 语义 = 「本单元已背完 N / 共 M」，不再是「第几张 / 本轮几张」。
+        index: unitDone(), total: S.unitTotal, round: 1
       });
       return;
     }
@@ -515,8 +549,8 @@
       unit: S.unitIdx,
       cardId: step.cardId,
       mode: step.mode,
-      index: Math.max(0, S.roundTotal - S.queue.length),
-      total: S.roundTotal,
+      index: unitDone(),
+      total: S.unitTotal,
       round: step.round
     });
   }
@@ -524,7 +558,17 @@
   function onAnswer(rating, meta) {
     if (!S) return;
     log("answer " + rating + " phase=" + S.phase + " q=" + S.queue.length);
-    if (S.phase === "learn") submitLearn(rating);
+    // 标熟：用户在任意阶段点「熟」= 人为判定这张卡已经背过 → 直接毕业 + 落 good。
+    // 以前在重测页点「熟」只按 good 交了当前那一门考法，另一门还得再考一遍（白送），
+    // 于是「标熟却毕不了业」。现在标熟 = 一次性出队，跟点「认识」一个待遇。
+    if (meta && meta.known && S.queue.length) {
+      var kid = S.queue.shift().cardId;
+      S.learnRating[kid] = S.learnRating[kid] || "good";
+      if (typeof S.effort[kid] === "number") S.effort[kid] = 0;
+      removePool(kid);
+      S.graduated[kid] = true;
+      advance();
+    } else if (S.phase === "learn") submitLearn(rating);
     else if (S.phase === "choice" || S.phase === "cloze") submitRetest(S.phase, rating !== "again");
     else if (S.phase === "passage") submitPassage();
     else if (S.phase === "passageCloze") submitPassageCloze(rating !== "again", meta);
@@ -552,7 +596,7 @@
       var o = sv[k];
       if (o && typeof o === "object" && !Array.isArray(o)) ids = ids.concat(Object.keys(o));
     });
-    ["graduated", "provisional"].forEach(function (k) {
+    ["graduated", "settled", "provisional"].forEach(function (k) {
       var a = sv[k];
       if (Array.isArray(a)) ids = ids.concat(a);
     });
@@ -563,6 +607,23 @@
 
   function restoreSession(sv) {
     var ui = sv.unitIdx || 0;
+    /* 收尾阶段：所有单元走完 → 最后一场拼写轮。这时快照里的 unitIdx ==
+       units.length（越界），以前的 `ui >= units.length → false` 会把它判成
+       脏断点，退出去再进来就从第一单元重来。这一段已经没有「没背完的卡」了
+       （拼写轮本身不落 FSRS），所以续 = 本轮结束，别让人白背一遍。 */
+    if (ui === S.units.length && (sv.phase === "spell" || sv.phase === "spellPrompt")) {
+      S.unitIdx = S.units.length;
+      S.unitIds = []; S.unitTotal = 0;
+      S.retestPool = [];
+      S.graduated = {};
+      (sv.graduated || []).forEach(function (id) {
+        S.graduated[id] = true;
+        _committed[id] = true;
+      });
+      S.phase = "done";
+      log("restore: 收尾拼写轮 → 本轮已结束");
+      return true;
+    }
     if (ui < 0 || ui >= S.units.length) return false;
     var okUnit = savedBelongsToUnit(sv, S.units[ui]);
     log("restore? unitIdx=" + ui + " savedPhase=" + (sv && sv.phase) + " 同unit=" + okUnit);
@@ -580,12 +641,16 @@
     // 续上的毕业卡上一段会话已 commit 过（FSRS 已落盘）：补进 _committed，
     // 既避免重测时重复 commit，也避免重复记今日背词量。
     (sv.graduated || []).forEach(function (id) { _committed[id] = true; });
-    S.provisional = {};
-    S.provisionalRating = {};
-    (sv.provisional || []).forEach(function (id) {
-      S.provisional[id] = true;
-      S.provisionalRating[id] = "hard";
+    // settled = 已终评但不算背完（封顶放行 / 无考法终评）的卡：FSRS 已落盘，
+    // 续会话时同样补进 _committed，别重复提交、也别让它们混进毕业数。
+    S.settled = {};
+    (sv.settled || sv.provisional || []).forEach(function (id) {
+      S.settled[id] = true;
+      _committed[id] = true;
     });
+    var uu = S.units[S.unitIdx];
+    S.unitIds = ((uu && uu.cards) || []).map(function (c) { return c.id; });
+    S.unitTotal = S.unitIds.length;
     S.retestPool = S.retestPool.filter(function (id) { return !S.graduated[id]; });
     S.round = Math.max(2, sv.round || 2);
     S.modeIdx = 0;
@@ -622,7 +687,8 @@
       queue: [], retestPool: [], graduated: {}, passedModes: {},
       effort: {}, wrongCount: {},
       passageTag: {}, learnRating: {}, retestFailed: {},
-      provisional: {}, provisionalRating: {},
+      settled: {},
+      unitIds: [], unitTotal: 0,
       round: 1, modeIdx: 0, roundTotal: 0,
       leadingReviewCount: 0,
       reviewSpellDone: false, finalSpellDone: false,
