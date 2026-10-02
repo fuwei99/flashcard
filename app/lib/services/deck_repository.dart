@@ -35,6 +35,7 @@ import 'data_dir.dart';
 class DeckRepository {
   static const _assetBooks = <String>[
     'assets/decks/kaoyan_core.json',
+    'assets/decks/general_demo.json',
   ];
 
   /// 内置模板：**只有旗舰模板一个**。
@@ -42,11 +43,16 @@ class DeckRepository {
   /// 播种（[seedPublicTemplates]）和兜底（[loadAllTemplates]）都只认这份清单。
   /// 以前这里挂的是 bubei_dark —— 那是早期骨架模板，自己不会算干扰项、
   /// 数据契约也停在 v3，铺出去等于给用户塞个残废壳。换成 react_v1。
+  ///
+  /// 2026-10-02 加 plaincard_v1：这是**另一套引擎**（srs_basic）的模板，
+  /// 服务知识点卡。它跟 bubei_* 不是「换皮」关系 —— 两者读的字段、
+  /// 背的东西、跑的调度内核全不一样，所以两个都要在。
   static const _templateDirs = <String>[
     'assets/templates/bubei_react_v1',
+    'assets/templates/plaincard_v1',
   ];
 
-  /// 一个模板包固定这几个文件
+  /// 一个模板包固定这几个文件（**核心文件**；额外资源走 manifest.vendor）
   static const _templateFiles = <String>[
     'manifest.json',
     'template.html',
@@ -54,6 +60,26 @@ class DeckRepository {
     'script.js',
     'workflow.js',
   ];
+
+  /// 把 manifest 里 `vendor` 段声明的额外文件并进同步清单。
+  /// 读不到 manifest / 没声明的，就只当核心 5 文件。
+  static List<String> _withVendor(
+      List<String> core, Map<String, dynamic>? manifest) {
+    if (manifest == null) return core;
+    final v = manifest['vendor'];
+    if (v is! Map) return core;
+    final extra = <String>[];
+    for (final key in const ['css', 'js']) {
+      final raw = v[key];
+      if (raw is List) {
+        for (final e in raw) {
+          final s = e.toString().trim();
+          if (s.isNotEmpty) extra.add(s);
+        }
+      }
+    }
+    return [...core, ...extra];
+  }
 
   /// 播种标记：铺内置模板时写在目录里的 `.builtin`。
   ///
@@ -118,7 +144,17 @@ class DeckRepository {
       } catch (_) {}
 
       final fresh = <String, String>{};
-      for (final name in _templateFiles) {
+      // 文件清单 = 核心 5 文件 + manifest 声明的第三方资源。
+      // 先拿 assets 里的 manifest 定清单（读不到就退回核心 5 个）。
+      Map<String, dynamic>? manifest;
+      try {
+        manifest = json.decode(
+                await rootBundle.loadString('$assetDir/manifest.json'))
+            as Map<String, dynamic>;
+      } catch (_) {}
+      final fileList = _withVendor(_templateFiles, manifest);
+
+      for (final name in fileList) {
         try {
           final content = await rootBundle.loadString('$assetDir/$name');
           final hash = _sha(content);
@@ -146,7 +182,6 @@ class DeckRepository {
     }
     return copied;
   }
-
   /// 壳铺过、但已经不在内置清单里的模板目录（旧版本残留，比如 bubei_dark）。
   ///
   /// **只报告，不删** —— 删用户 Documents 下的东西得用户点头。
@@ -248,16 +283,57 @@ class DeckRepository {
         return await f.readAsString();
       }
 
+      /// 第三方资源（manifest.vendor）：相对模板目录的文件名
+      Future<String> readRel(String rel) async {
+        try {
+          final f = File('${dir.path}/$rel');
+          return await f.exists() ? await f.readAsString() : '';
+        } catch (_) {
+          return '';
+        }
+      }
+
+      final (vcssNames, vjsNames) = splitVendor(manifest);
+      final vcss = StringBuffer();
+      for (final n in vcssNames) {
+        final c = await readRel(n);
+        if (c.isNotEmpty) vcss.write('\n$c');
+      }
+      final vjs = StringBuffer();
+      for (final n in vjsNames) {
+        final c = await readRel(n);
+        if (c.isNotEmpty) vjs.write('\n$c');
+      }
+
       return CardTemplate(
         manifest: manifest,
         html: await read('template', 'template.html'),
         css: await read('style', 'style.css'),
         js: await read('script', 'script.js'),
         workflow: await read('workflow', 'workflow.js'),
+        vendorCss: vcss.toString(),
+        vendorJs: vjs.toString(),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// 把 manifest.vendor 拆成 (css 文件名表, js 文件名表)
+  static (List<String>, List<String>) splitVendor(Map<String, dynamic> manifest) {
+    final css = <String>[];
+    final js = <String>[];
+    final v = manifest['vendor'];
+    if (v is! Map) return (css, js);
+    for (final e in (v['css'] as List? ?? const [])) {
+      final s = e.toString().trim();
+      if (s.isNotEmpty) css.add(s);
+    }
+    for (final e in (v['js'] as List? ?? const [])) {
+      final s = e.toString().trim();
+      if (s.isNotEmpty) js.add(s);
+    }
+    return (css, js);
   }
 
   /// 读一个内置模板包（asset）
@@ -274,12 +350,26 @@ class DeckRepository {
       }
     }
 
+    final (vcssNames, vjsNames) = splitVendor(manifest);
+    final vcss = StringBuffer();
+    for (final n in vcssNames) {
+      final c = await maybe(n);
+      if (c.isNotEmpty) vcss.write('\n$c');
+    }
+    final vjs = StringBuffer();
+    for (final n in vjsNames) {
+      final c = await maybe(n);
+      if (c.isNotEmpty) vjs.write('\n$c');
+    }
+
     return CardTemplate(
       manifest: manifest,
       html: await maybe('template.html'),
       css: await maybe('style.css'),
       js: await maybe('script.js'),
       workflow: await maybe('workflow.js'),
+      vendorCss: vcss.toString(),
+      vendorJs: vjs.toString(),
     );
   }
 

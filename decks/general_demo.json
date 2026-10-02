@@ -1,0 +1,283 @@
+{
+  "schema": 2,
+  "book_id": "general_demo",
+  "title": "通用卡演示 · 概念 / 知识点 / 句子",
+  "subtitle": "机设概念 + 政治知识点 + 英语长难句 + 高数公式，一套模板四种卡型",
+  "template": "plaincard_v1",
+  "fields_order": [
+    "type",
+    "front",
+    "back",
+    "detail",
+    "cloze",
+    "cover",
+    "media",
+    "tags",
+    "source",
+    "mnemonic",
+    "html"
+  ],
+  "chapters": [
+    {
+      "chapter_id": "ch01",
+      "title": "机械设计 · 概念卡",
+      "cards": [
+        {
+          "id": "md-elastic-slide",
+          "type": "qa",
+          "front": "带传动中，**弹性滑动**和**打滑**有什么区别？哪个可以避免？",
+          "back": "**弹性滑动**：由于带是弹性体，紧边与松边拉力不同（$F_1>F_2$），带在绕过带轮时会发生弹性变形量的变化，造成带与轮面之间的**局部**相对滑动。\n**特点**：不可避免，是带传动固有属性，也是传动比不恒定的原因。\n\n**打滑**：载荷超过带与轮面之间的最大摩擦力时，带与轮面发生**全面**相对滑动。\n**特点**：过载导致，**可以避免**（控制载荷、增大包角/初拉力/摩擦系数）。\n\n两者关系：弹性滑动是打滑的**前兆**，打滑是弹性滑动发展的结果。",
+          "detail": "圈重点：弹性滑动是「局部」，打滑是「全面」。考试最爱在这里埋一个字让人选错。\n\n打滑**一定发生在小带轮上** —— 包角小、摩擦力小，最先守不住。",
+          "tags": ["机械设计", "带传动"],
+          "source": "濮良贵《机械设计》第 8 章",
+          "mnemonic": "弹性滑动=局部=必然；打滑=全面=可避免。小轮先滑。"
+        },
+        {
+          "id": "md-belt-stress",
+          "type": "cloze",
+          "front": "带传动中带的最大应力发生在哪里？由哪三项叠加？",
+          "cloze": "带中的应力有三种：紧边拉应力 $\\sigma_1$、离心拉应力 $\\sigma_c$、弯曲应力 $\\sigma_{b}$。\n\n最大应力发生在{{c1::紧边刚绕上小带轮处}}，即 $$\\sigma_{\\max}=\\sigma_1+\\sigma_c+\\sigma_{b1}$$",
+          "back": "最大应力在**紧边刚绕上小带轮处**。\n\n主因是弯曲应力：带轮直径越小，曲率越大，弯曲应力越大 —— 所以小带轮的直径 $d_{d1}$ 有下限要求。",
+          "detail": "带绕过带轮时，外层受拉伸长、内层受压缩短，中间有一层**中性层**长度不变。\n弯得越狠（$d_d$ 越小），弯曲应力越大。这就是「小带轮不能太小」的真正原因。",
+          "tags": ["机械设计", "带传动", "应力"],
+          "source": "濮良贵《机械设计》第 8 章"
+        },
+        {
+          "id": "md-thread-lock",
+          "type": "mask",
+          "front": "螺纹连接的自锁条件是什么？为什么螺旋千斤顶用得着它？",
+          "cover": "螺纹的自锁条件是：螺纹升角 $\\lambda$ 小于等于当量摩擦角 $\\varphi_v$，即\n\n$$\\lambda \\le \\varphi_v,\\quad \\tan\\varphi_v=\\frac{f}{\\cos\\beta}$$\n\n其中 $\\beta$ 为牙侧角。当量摩擦角之所以比摩擦角大，是因为[[V 形牙侧把法向力放大了 $1/\\cos\\beta$ 倍::牙侧角 $\beta$ 的作用]]，等效于摩擦系数被放大。",
+          "back": "自锁条件：$\\lambda \\le \\varphi_v$。\n\n千斤顶靠它**举起来之后松手不掉** —— 反行程自动锁死。\n\n代价：正行程也费劲，传动效率低（一般 $\\eta<50\\%$）。自锁与效率天生互斥。",
+          "detail": "三角螺纹（普通螺纹）牙侧角 $\beta=30°$，当量摩擦系数 $f_v=f/\\cos30°\\approx1.155f$，自锁性好 → 用于**连接**。\n\n梯形/矩形螺纹 $\beta$ 小，效率高、自锁差 → 用于**传动**（丝杠）。\n\n「连接用三角，传动用梯形矩形」这个对应关系记住，选择题稳。",
+          "tags": ["机械设计", "螺纹连接"],
+          "source": "濮良贵《机械设计》第 5 章",
+          "mnemonic": "牙侧角越大 → 当量摩擦越大 → 越自锁、越不省力。"
+        },
+        {
+          "id": "md-undercut",
+          "type": "qa",
+          "front": "什么是**根切**？标准直齿圆柱齿轮不根切的最少齿数是多少？",
+          "back": "用**范成法**（滚齿 / 插齿）加工齿轮时，若齿数太少，刀具齿顶线超过了轮齿的**啮合极限点**，把轮齿根部的渐开线齿廓切掉一部分 —— 这就是**根切**。\n\n后果：齿根变薄、弯曲强度下降、重合度减小。\n\n标准齿轮（$\\alpha=20°$、$h_a^*=1$）不根切的最少齿数：$z_{\\min}=17$。",
+          "detail": "公式：$z_{\\min}=\\dfrac{2h_a^*}{\\sin^2\\alpha}$。\n代入 $\\alpha=20°$：$z_{\\min}=\\dfrac{2}{\\sin^2 20°}\\approx17.1$。\n\n注意这是**标准齿轮**的结论。变位之后可以突破 17 —— 见下一张。",
+          "tags": ["机械设计", "齿轮"],
+          "source": "濮良贵《机械设计》第 10 章"
+        },
+        {
+          "id": "md-profile-shift",
+          "type": "point",
+          "front": "变位齿轮有哪三大作用？",
+          "back": "1. **避免根切** —— 用正变位加工 $z<17$ 的齿轮，这是变位最原本的动机。\n2. **凑配中心距** —— 标准中心距只有离散值，实际装配需要非标准距离时用变位凑。\n3. **提高承载能力** —— 合理分配变位系数，改善齿根弯曲强度和齿面接触强度。",
+          "detail": "变位 = 加工时刀具**远离**（正变位）或**靠近**（负变位）轮坯中心。\n\n注意：变位后**分度圆不变、模数不变、压力角不变**，变的是齿廓在分度圆上的位置 —— 所以「变位齿轮的基本参数不变」这句一定对。",
+          "media": [{ "kind": "image", "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzNjAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMzYwIDIwMCI+CiAgPHJlY3Qgd2lkdGg9IjM2MCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiMxMDFhMWMiLz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiMwMGMwOGIiIHN0cm9rZS13aWR0aD0iMiI+CiAgICA8Y2lyY2xlIGN4PSIxMjAiIGN5PSIxMDAiIHI9IjYyIi8+CiAgICA8Y2lyY2xlIGN4PSIxMjAiIGN5PSIxMDAiIHI9IjU0IiBzdHJva2UtZGFzaGFycmF5PSI1IDQiIHN0cm9rZS13aWR0aD0iMS40Ii8+CiAgICA8Y2lyY2xlIGN4PSIyNDAiIGN5PSIxMDAiIHI9IjQ1Ii8+CiAgICA8Y2lyY2xlIGN4PSIyNDAiIGN5PSIxMDAiIHI9IjM5IiBzdHJva2UtZGFzaGFycmF5PSI1IDQiIHN0cm9rZS13aWR0aD0iMS40Ii8+CiAgPC9nPgogIDxsaW5lIHgxPSIxMjAiIHkxPSIxMDAiIHgyPSIyNDAiIHkyPSIxMDAiIHN0cm9rZT0iIzhjOWRhMiIgc3Ryb2tlLXdpZHRoPSIxLjIiIHN0cm9rZS1kYXNoYXJyYXk9IjMgMyIvPgogIDxnIGZpbGw9IiNmMGY0ZjUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIj4KICAgIDx0ZXh0IHg9IjE2OCIgeT0iOTQiPmE8L3RleHQ+CiAgICA8dGV4dCB4PSI4OCIgeT0iMTA0Ij56MTwvdGV4dD4KICAgIDx0ZXh0IHg9IjI1MiIgeT0iMTA0Ij56MjwvdGV4dD4KICAgIDx0ZXh0IHg9Ijk2IiB5PSIxODAiIGZpbGw9IiM1NDY2NmMiPuiKguWchjwvdGV4dD4KICAgIDx0ZXh0IHg9IjIwMCIgeT0iMzAiIGZpbGw9IiM1NDY2NmMiPuWkluWVruWQiOagh+WHhuebtOm9v+Wchuafsem9v+i9rjwvdGV4dD4KICA8L2c+Cjwvc3ZnPgo=", "caption": "外啮合标准直齿圆柱齿轮：a 为中心距" }],
+          "tags": ["机械设计", "齿轮", "变位"],
+          "source": "濮良贵《机械设计》第 10 章"
+        },
+        {
+          "id": "md-worm",
+          "type": "cloze",
+          "front": "蜗杆传动的传动比怎么算？为什么反行程会自锁？",
+          "cloze": "传动比 $i_{12}=\\dfrac{n_1}{n_2}=\\dfrac{z_2}{z_1}$ —— 注意**不等于直径比** $d_2/d_1$。\n\n蜗杆头数越少、传动比越大，但效率越低。反行程自锁的条件是{{c1::蜗杆导程角 $\\gamma$ 小于等于当量摩擦角 $\\varphi_v$}}。",
+          "back": "$i=n_1/n_2=z_2/z_1$。\n\n自锁：$\\gamma\\le\\varphi_v$。$z_1=1$ 时 $\\gamma$ 最小，最容易自锁，常见于起重装置。\n\n自锁的蜗杆传动**效率很低**，因为摩擦损失大 —— 又要自锁又要高效，做不到。",
+          "detail": "常用 $z_1$ 取 1、2、4、6 —— 全是**偶数或 1**，是为了避免蜗轮齿数 $z_2$ 与 $z_1$ 有公因数导致磨损集中。\n\n推荐 $z_2\\ge28$，一般 $z_2=32\\sim80$。",
+          "tags": ["机械设计", "蜗杆传动"],
+          "source": "濮良贵《机械设计》第 11 章"
+        },
+        {
+          "id": "md-bearing-life",
+          "type": "qa",
+          "front": "滚动轴承的**基本额定寿命** $L_{10}$ 是什么？球轴承和滚子轴承的寿命指数各是多少？",
+          "back": "**基本额定寿命** $L_{10}$：一组相同的轴承，在相同条件下运转，其中 **90%** 的轴承不发生点蚀失效前所能达到的**总转数**（或工作小时数）。\n\n计算公式：\n$$L_{10}=\\left(\\frac{C}{P}\\right)^{\\varepsilon}\\times10^{6}\\ \\text{转}$$\n\n寿命指数：**球轴承 $\\varepsilon=3$**，**滚子轴承 $\\varepsilon=10/3$**。",
+          "detail": "为什么滚子轴承的 $\\varepsilon$ 更大？\n因为滚子是**线接触**，球是**点接触**。线接触的承载能力对载荷的敏感性更强 —— 载荷涨一点，寿命掉得比球轴承多。\n\n$C$ = 基本额定动载荷（使 $L_{10}=10^6$ 转的载荷），$P$ = 当量动载荷。",
+          "tags": ["机械设计", "轴承"],
+          "source": "濮良贵《机械设计》第 13 章",
+          "mnemonic": "球 3、滚子 10/3。点接触比线接触「皮实」一点。"
+        },
+        {
+          "id": "md-chain-polygon",
+          "type": "qa",
+          "front": "链传动的**多边形效应**是什么？受什么影响？",
+          "back": "链条绕在链轮上时，各链节构成一个**正多边形**而不是圆，导致：\n\n- **瞬时链速**周期性变化（忽快忽慢）\n- **瞬时传动比**周期性波动\n- 产生**动载荷**和垂直方向的**上下振动**\n\n影响因素：\n- 链节距 $p$ 越**大** → 效应越**明显**\n- 链轮齿数 $z$ 越**少** → 效应越**明显**",
+          "detail": "所以设计上：小链轮齿数 $z_1$ 不能太少（一般 $z_1\\ge17$），链节距也不能过大 —— 但节距小了承载又不够，两头拉扯。\n\n链传动**只用在低速级**（一般 $v<15$ m/s），就是被这个效应逼的。",
+          "tags": ["机械设计", "链传动"],
+          "source": "濮良贵《机械设计》第 9 章"
+        },
+        {
+          "id": "md-key-failure",
+          "type": "qa",
+          "front": "普通平键连接的**主要失效形式**是什么？按什么强度校核？",
+          "back": "**静连接**（普通平键）：主要失效形式是**较弱工作面被压溃** → 按**挤压强度**校核。\n\n**动连接**（导向平键 / 滑键）：主要失效形式是**工作面磨损** → 按**压强**校核。\n\n校核式（静连接）：\n$$\\sigma_p=\\frac{4T}{d\\,h\\,l}\\le[\\sigma_p]$$",
+          "detail": "键是**标准件**，只校核、不设计。\n\n$d$ 轴径、$h$ 键高、$l$ 键的工作长度、$T$ 传递扭矩。\n\n双键时按 1.5 个键计算（不是 2 个）—— 载荷在键间分布不均匀。",
+          "tags": ["机械设计", "键连接"],
+          "source": "濮良贵《机械设计》第 6 章"
+        },
+        {
+          "id": "md-shaft-fix",
+          "type": "point",
+          "front": "轴上零件的**轴向固定**方式有哪些？",
+          "back": "1. **轴肩 / 轴环** —— 最可靠，能承受较大轴向力；但会增大轴径、产生应力集中。\n2. **套筒** —— 适用于零件间距较小的场合，不需另加定位件。\n3. **圆螺母** —— 固定可靠、可调整间隙，但轴上要切螺纹，削弱强度。\n4. **弹性挡圈（卡簧）** —— 结构紧凑，但只能承受较小轴向力。\n5. **轴端挡圈** —— 用于轴端零件的固定。\n6. **紧定螺钉 / 圆锥销** —— 兼作周向固定，只能承受不大的力。",
+          "detail": "记住一条判断标准：**轴向力大 → 轴肩 / 圆螺母；轴向力小 → 挡圈 / 紧定螺钉**。\n\n轴肩处必须有**过渡圆角** $r<C_1$ 或 $r<R$（否则零件装不到底），这个细节大题常考。",
+          "tags": ["机械设计", "轴"],
+          "source": "濮良贵《机械设计》第 15 章"
+        }
+      ]
+    },
+    {
+      "chapter_id": "ch02",
+      "title": "政治 · 知识点",
+      "cards": [
+        {
+          "id": "zz-contradiction",
+          "type": "point",
+          "front": "矛盾的**普遍性**与**特殊性**是什么关系？这个方法论的落脚点在哪？",
+          "back": "**普遍性**：矛盾存在于一切事物中，且贯穿每一事物发展始终（处处有矛盾、时时有矛盾）。\n**特殊性**：具体事物的矛盾各有其特点（不同事物、不同阶段、不同方面各不相同）。\n\n二者是**共性与个性、一般与个别**的关系：\n1. 共性**寓于**个性之中，没有脱离个性的共性；\n2. 个性中包含着共性，脱离共性的个性也不存在。",
+          "detail": "方法论落脚点：**具体问题具体分析**（矛盾特殊性原理的要求）。\n\n再往上一步：普遍性与特殊性统一，正是 **马克思主义中国化** 的哲学依据 —— 把普遍真理（共性）与中国具体实际（个性）结合。这个链条大答题能加不少分。",
+          "tags": ["马原", "辩证法"],
+          "source": "肖秀荣精讲精练 · 唯物辩证法"
+        },
+        {
+          "id": "zz-quantity-quality",
+          "type": "qa",
+          "front": "量变与质变的辩证关系是什么？什么是**度**？",
+          "back": "**量变**：数量的增减和场所的变更，是渐进、不显著的。\n**质变**：事物性质的根本变化，是飞跃。\n\n关系：\n1. 量变是质变的**必要准备**；\n2. 质变是量变的**必然结果**；\n3. 质变又为新的量变开辟道路，循环往复。\n\n**度**：保持事物质的稳定性的量的限度，两端是**关节点**。",
+          "detail": "两个常考方法论：\n- 「不积跬步无以至千里」→ 重视量变积累，脚踏实地。\n- 「掌握火候、过犹不及」→ 坚持适度原则，把握度。\n\n一个高频陷阱：**质变优于量变**这句话是错的。两者是同等重要的两个阶段，没有谁优于谁。",
+          "tags": ["马原", "辩证法"],
+          "source": "肖秀荣精讲精练 · 唯物辩证法",
+          "mnemonic": "量变准备、质变结果、度是限度、关节点是边界。"
+        },
+        {
+          "id": "zz-two-leaps",
+          "type": "point",
+          "front": "认识的**两次飞跃**分别是什么？哪一次更重要？",
+          "back": "**第一次飞跃**：从**感性认识**到**理性认识**（实践 → 认识）。\n条件是：占有丰富而真实的感性材料 + 运用科学的思维方法加工。\n\n**第二次飞跃**：从**理性认识**回到**实践**（认识 → 实践）。\n\n**第二次飞跃更重要** —— 因为认识世界的目的是改造世界，理性认识只有回到实践才能得到检验和发展。",
+          "detail": "为什么第二次更重要？\n1. 认识的**目的**是改造世界；\n2. 理性认识只有回到实践才能**检验**其正确性；\n3. 只有回到实践才能实现认识的**第二次深化**。\n\n感性认识是认识的低级阶段，但不等于错误 —— 「感性认识不可靠」这种表述是错的，它是可靠性有局限。",
+          "tags": ["马原", "认识论"],
+          "source": "肖秀荣精讲精练 · 认识论"
+        },
+        {
+          "id": "zz-productive-forces",
+          "type": "cloze",
+          "front": "生产力与生产关系的辩证关系是什么？",
+          "cloze": "生产力**决定**生产关系：{{c1::生产力的性质和发展水平决定着生产关系的性质和变革}}。\n生产关系**反作用**于生产力：{{c1::适合生产力状况时促进其发展，不适合时阻碍其发展}}。\n\n这就是{{c1::生产关系一定要适合生产力状况的规律}}，是唯物史观的基石。",
+          "back": "生产力决定生产关系；生产关系反作用于生产力。\n\n二者构成**生产方式**，是社会存在的核心。\n\n注意措辞：生产力是**决定**（第一性），生产关系是**反作用**（第二性）。写反了整道大题就没分了。",
+          "detail": "马克思的两大发现：**唯物史观** + **剩余价值学说**。\n\n「生产关系一定要适合生产力状况的规律」和「上层建筑一定要适合经济基础状况的规律」合称**人类社会发展的两个基本规律**。\n\n考试高频：为什么改革是社会主义制度的自我完善？因为生产关系/上层建筑有不适应生产力的部分 → 改革就是解决这个矛盾。",
+          "tags": ["马原", "唯物史观"],
+          "source": "肖秀荣精讲精练 · 人类社会及其发展规律"
+        },
+        {
+          "id": "zz-main-contradiction",
+          "type": "qa",
+          "front": "我国**新时代社会主要矛盾**是什么？（十九大 2017）",
+          "back": "**人民日益增长的美好生活需要** 与 **不平衡不充分的发展** 之间的矛盾。\n\n相比旧表述（1981 十一届六中全会）的变化：\n- 需要端：从「**物质文化需要**」扩展为「**美好生活需要**」\n- 供给端：从「**落后的社会生产**」改为「**不平衡不充分的发展**」",
+          "detail": "关键理解：「不平衡不充分」是矛盾的**主要方面**。\n- 不平衡：城乡、区域、行业之间发展不平衡\n- 不充分：发展质量和效益还不高，创新能力不够强\n\n注意：主要矛盾变了，**但基本国情（社会主义初级阶段）没变**。这两句话必须一起说，只答前半句要扣分。",
+          "tags": ["毛中特", "新时代"],
+          "source": "肖秀荣精讲精练 · 习近平新时代中国特色社会主义思想"
+        },
+        {
+          "id": "zz-mao-soul",
+          "type": "point",
+          "front": "毛泽东思想活的**灵魂**是哪三个方面？",
+          "back": "1. **实事求是** —— 一切从实际出发，理论联系实际，在实践中检验和发展真理。是马克思主义中国化理论成果的**精髓**。\n2. **群众路线** —— 一切为了群众、一切依靠群众，从群众中来、到群众中去。是党的**根本工作路线**。\n3. **独立自主** —— 坚持独立思考，走自己的路，把国家发展放在自己力量的基点上。",
+          "detail": "别跟「三大法宝」搞混：\n\n| 概念 | 内容 |\n|---|---|\n| 活的灵魂 | 实事求是、群众路线、独立自主 |\n| 三大法宝 | 统一战线、武装斗争、党的建设 |\n| 三大优良作风 | 理论联系实际、密切联系群众、批评与自我批评 |\n\n这三个「三」是选择题的常青树，混起来必丢分。",
+          "tags": ["毛中特", "毛泽东思想"],
+          "source": "肖秀荣精讲精练 · 毛泽东思想"
+        },
+        {
+          "id": "zz-three-magic",
+          "type": "cloze",
+          "front": "新民主主义革命的三大法宝是什么？",
+          "cloze": "毛泽东在《〈共产党人〉发刊词》中提出，中国革命的三大法宝是：\n\n{{c1::统一战线}}、{{c1::武装斗争}}、{{c1::党的建设}}。\n\n其中{{c1::党的建设}}是中心环节，三大法宝相互联系、相互促进。",
+          "back": "统一战线、武装斗争、党的建设。\n\n三者关系：统一战线和武装斗争是战胜敌人的**两个基本武器**；党的建设是**掌握这两个武器的战士**，因而处于中心地位。",
+          "detail": "出处一定记牢：《〈共产党人〉发刊词》（1939）—— 选择题常考文献与观点的对应。\n\n顺带串一条：\n- 《反对本本主义》(1930)：没有调查没有发言权\n- 《新民主主义论》(1940)：新民主主义革命理论系统形成\n- 《论联合政府》(1945)：三大优良作风",
+          "tags": ["毛中特", "新民主主义革命"],
+          "source": "肖秀荣精讲精练 · 新民主主义革命理论"
+        },
+        {
+          "id": "zz-social-existence",
+          "type": "qa",
+          "front": "社会存在与社会意识的关系是什么？社会意识的**相对独立性**表现在哪？",
+          "back": "**社会存在决定社会意识**：社会意识是社会存在的反映，随社会存在的变化而变化。\n\n**社会意识具有相对独立性**，表现为：\n1. 与社会存在的变化**不完全同步**（可能超前，也可能滞后）；\n2. 具有**历史继承性**；\n3. 各种形式之间**相互影响**；\n4. 对社会存在具有**能动的反作用**（这是最突出的表现）。",
+          "detail": "为什么会有「滞后」？先进阶级的思想可以超前，而旧制度的思想在旧制度被消灭后还会长期残留 —— 这就是「破除旧思想」为什么难。\n\n高频考法：用「社会意识的相对独立性」解释为什么经济落后的国家能产生先进思想。",
+          "tags": ["马原", "唯物史观"],
+          "source": "肖秀荣精讲精练 · 人类社会及其发展规律"
+        }
+      ]
+    },
+    {
+      "chapter_id": "ch03",
+      "title": "英语 · 长难句",
+      "cards": [
+        {
+          "id": "en-long-01",
+          "type": "sentence",
+          "front": "The idea **that the purpose of education is to prepare students for the workforce** has been challenged by those **who argue that it should instead cultivate critical thinking**.",
+          "back": "**译文**：认为「教育的目的是为学生进入职场做准备」这一观点，已经受到那些主张它应当转而培养批判性思维的人的挑战。\n\n**骨架**：The idea ... has been challenged by those ...\n（主干：观点被那些人质疑）\n\n**两个从句**：\n1. `that the purpose of education is to prepare students for the workforce` —— **同位语从句**，说明 idea 的内容\n2. `who argue that it should instead cultivate critical thinking` —— **定语从句**修饰 those，内部再套一个 that 宾语从句",
+          "detail": "**考点拆解**：\n- `the idea that...` 是同位语从句不是定语从句 —— 判别方法：that 在从句里**不充当成分**、只起连接作用，且从句说明的是 idea 的**具体内容**。\n- 两个从句**嵌套**：who argue **that** ...，第二个 that 引导宾语从句。\n- `instead` 在这里是副词「转而、反而」，不是 instead of。\n\n**写作套用**：`The idea that X has been challenged by those who argue that Y` —— 一个句子表达「对立观点」，大作文第二段开头很好用。",
+          "tags": ["英语一", "长难句", "同位语从句"],
+          "source": "考研阅读风格仿写"
+        },
+        {
+          "id": "en-long-02",
+          "type": "sentence",
+          "front": "Not until the consequences of climate change became **visible** in the form of extreme weather events **did** policymakers begin to take seriously the warnings that scientists **had been issuing for decades**.",
+          "back": "**译文**：直到气候变化的后果以极端天气事件的形式变得**肉眼可见**，政策制定者才开始认真对待科学家**几十年来一直在发出**的警告。\n\n**骨架**：Not until + 时间状语从句 + **did** policymakers begin to take seriously the warnings ...\n（Not until 置句首 → 主句**部分倒装**）",
+          "detail": "**三个考点**：\n1. **Not until 倒装**：Not until X did Y happen。不倒装就错。\n2. `take seriously the warnings` —— 宾语后置（宾语太长，补语提前），等于 take the warnings seriously。\n3. `had been issuing for decades` —— **过去完成进行时**，表示「在某个过去时间点之前一直在做」。\n\n翻译时 `Not until` 常译成「直到……才」，中文语序不用倒装。",
+          "tags": ["英语一", "长难句", "倒装"],
+          "source": "考研阅读风格仿写"
+        },
+        {
+          "id": "en-long-03",
+          "type": "qa",
+          "front": "长难句遇到**多重从句嵌套**时，第一步该做什么？",
+          "back": "**第一步：砍掉所有修饰，只留主干。**\n\n具体操作（按这个顺序）：\n1. **找谓语动词** —— 一个句子有几个谓语，就有几个分句。\n2. **找连词** —— and / but / that / which / who / because… 连词数 ≈ 分句数 − 1。\n3. **定主干** —— 主句的「主语 + 谓语 + 宾语」拎出来。\n4. **挂从句** —— 把每个从句挂回它修饰的那个词。",
+          "detail": "判断从句类型的**唯一可靠办法**：看它在主句里**充当什么成分**，不是看它由什么词引导。\n\n- 作主语 → 主语从句\n- 作宾语 → 宾语从句\n- 说明名词内容 → 同位语从句\n- 修饰名词 → 定语从句\n- 修饰动词/整句 → 状语从句\n\n`that` 一个词能引导四种从句，光看 `that` 判断类型必然出错。",
+          "tags": ["英语一", "长难句", "方法"],
+          "source": "长难句分析通用方法"
+        }
+      ]
+    },
+    {
+      "chapter_id": "ch04",
+      "title": "高等数学 · 公式卡",
+      "cards": [
+        {
+          "id": "math-taylor",
+          "type": "qa",
+          "front": "写出 $f(x)$ 在 $x_0$ 处的**泰勒公式**（带拉格朗日余项）。",
+          "back": "$$f(x)=\\sum_{k=0}^{n}\\frac{f^{(k)}(x_0)}{k!}(x-x_0)^k+R_n(x)$$\n\n其中拉格朗日余项：\n$$R_n(x)=\\frac{f^{(n+1)}(\\xi)}{(n+1)!}(x-x_0)^{n+1},\\quad \\xi\\in(x_0,x)$$",
+          "detail": "$x_0=0$ 时退化成**麦克劳林公式**：\n$$f(x)=\\sum_{k=0}^{n}\\frac{f^{(k)}(0)}{k!}x^k+o(x^n)$$\n\n常用展开（务必背到条件反射）：\n$$e^x=1+x+\\frac{x^2}{2!}+\\cdots,\\quad \\sin x=x-\\frac{x^3}{3!}+\\frac{x^5}{5!}-\\cdots$$\n$$\\ln(1+x)=x-\\frac{x^2}{2}+\\frac{x^3}{3}-\\cdots,\\quad (1+x)^{\\alpha}=1+\\alpha x+\\frac{\\alpha(\\alpha-1)}{2!}x^2+\\cdots$$",
+          "tags": ["数学一", "一元微分学"],
+          "source": "考研数学大纲 · 高等数学"
+        },
+        {
+          "id": "math-gauss",
+          "type": "cloze",
+          "front": "写出**高斯公式**（散度定理），并说明它把什么转化成了什么。",
+          "cloze": "$$\\iiint_{\\Omega}\\nabla\\cdot\\vec{F}\\,dV=\\oiint_{\\Sigma}\\vec{F}\\cdot d\\vec{S}$$\n\n它把{{c1::闭曲面上的第二类曲面积分}}转化成了{{c1::该曲面所围区域上的三重积分}}。\n\n其中 $\\Sigma$ 取{{c1::外侧}}。",
+          "back": "$\\displaystyle\\iiint_{\\Omega}\\nabla\\cdot\\vec{F}\\,dV=\\oiint_{\\Sigma}\\vec{F}\\cdot d\\vec{S}$\n\n方向：$\\Sigma$ 取**外侧**。若取内侧，右边要加负号。\n\n本质：区域内的「源」总量 = 穿过边界流出的通量。",
+          "detail": "三个「大定理」是同一件事的三种维度：\n\n| 定理 | 把边界上的积分 | 转成 |\n|---|---|---|\n| 格林 | 平面闭曲线 | 二重积分 |\n| 高斯 | 闭曲面 | 三重积分 |\n| 斯托克斯 | 空间闭曲线 | 曲面积分 |\n\n**用之前先查条件**：$P,Q,R$ 在闭区域上有一阶连续偏导，且曲面闭合。**曲面不闭合要先补面** —— 这是考场上最容易漏的一步。",
+          "tags": ["数学一", "多元积分"],
+          "source": "考研数学大纲 · 高等数学"
+        },
+        {
+          "id": "math-bayes",
+          "type": "qa",
+          "front": "全概率公式与贝叶斯公式分别长什么样？两者什么关系？",
+          "back": "**全概率公式**（由因求果）：\n$$P(B)=\\sum_{i=1}^{n}P(A_i)\\,P(B\\mid A_i)$$\n\n**贝叶斯公式**（由果溯因）：\n$$P(A_j\\mid B)=\\frac{P(A_j)P(B\\mid A_j)}{\\displaystyle\\sum_{i=1}^{n}P(A_i)P(B\\mid A_i)}$$",
+          "detail": "关系：贝叶斯公式的**分母就是全概率公式**。\n\n所以做题套路：先算分母（全概率），再算分子（联合概率），相除就是后验概率。\n\n前提：$A_1,A_2,\\dots,A_n$ 是样本空间的一个**完备事件组**（两两互斥且并为全集）。漏写这个前提，大题要扣分。",
+          "tags": ["数学一", "概率论"],
+          "source": "考研数学大纲 · 概率论与数理统计"
+        },
+        {
+          "id": "math-html-demo",
+          "type": "qa",
+          "front": "（逃生舱示例）这张卡的内容完全由 `html` 字段决定。",
+          "html": "<div style=\"border:1px solid rgba(0,192,139,.35);border-radius:14px;padding:16px 18px;background:rgba(0,192,139,.06)\">\n  <div style=\"font-size:12px;letter-spacing:.18em;color:#00c08b;text-transform:uppercase\">Escape Hatch</div>\n  <div style=\"font-size:19px;font-weight:700;margin:8px 0 10px\">HTML 逃生舱</div>\n  <p style=\"line-height:1.8;margin:0 0 10px\">字段 <code style=\"background:rgba(255,255,255,.08);padding:1px 6px;border-radius:5px\">html</code> 非空时，模板把整个内容区交给它 —— 结构化槽位（front/back/cloze/cover/media）全部让位。</p>\n  <ul style=\"line-height:1.9;margin:0;padding-left:1.2em\">\n    <li>想怎么排就怎么排：表格、双栏、时间轴、思维导图</li>\n    <li>公式照样能渲染：$\\int_0^1 x^2\\,dx=\\frac13$</li>\n    <li>顶栏、翻面、四档评分还是模板的 —— 只换内容</li>\n  </ul>\n  <div style=\"margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,.12);color:#8c9da2;font-size:13px\">\n    要点：<b style=\"color:#f0f4f5\">结构化原语覆盖 90% 的卡，剩下的 10% 走这里。</b>\n  </div>\n</div>",
+          "back": "HTML 逃生舱的取舍：\n\n**好处** —— 表达力不受限。表格、双栏对照、时间轴，模板不用为此加语法。\n\n**代价** —— 内容和样式耦合进卡数据。同一张卡换模板就不再是「换皮」，排版会重来。\n\n**建议** —— 只把「排版本身很有信息量」的卡（对比表、流程图）写成 html；普通的一问一答继续用 front/back。",
+          "detail": "背后的设计判断：**不做统一的富文本编辑器**。\n\n「什么字段都能塞 HTML」听起来自由，实际结果是每张卡的样式都不可控，也没法批量改主题。所以分层：\n\n1. front/back/detail → **markdown-lite**（安全、可控、统一）\n2. html → **原样注入**（自由、但要自己兜底）\n3. 换模板 → 整包替换（数据不动）",
+          "tags": ["模板说明", "HTML"],
+          "source": "plaincard_v1 设计文档"
+        }
+      ]
+    }
+  ]
+}

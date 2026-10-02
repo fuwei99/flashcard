@@ -73,7 +73,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       itemBuilder: (context, i) {
         final ch = book.chapters[i];
         final ids = ch.ids;
-        final learned = store.countLearned(ids);
+        final isCard = widget.template?.engine == 'srs_basic';
+        final learned =
+            isCard ? store.countLearnedSm2(ids) : store.countLearned(ids);
         final total = ids.length;
         final progress = total == 0 ? 0.0 : learned / total;
 

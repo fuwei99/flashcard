@@ -14,6 +14,18 @@
 /// 读 jsonl 看到「最近改了什么」。
 ///
 /// 公共目录不可用时退回 SharedPreferences（app 私有，Agent 读不到）。
+///
+/// ## 两套调度状态共存（2026-10-02）
+///
+/// 同一个存储里躺着**两套互不相通的调度状态**，按引擎分键：
+///   * `card_states` / FSRS（language 引擎，管「词」）
+///   * `sm2_states`  / SM-2（srs_basic 引擎，管「知识点卡」）
+///
+/// 它们**不换算**：词的 stability/difficulty 和卡的 ease/step 之间没有任何
+/// 对应关系（详见 scheduler_sm2.dart 顶部的分工说明）。共用的是：
+/// 卡级 KV（标熟 / 收藏 / 笔记）和今日计数 —— 那两样跟调度算法无关。
+///
+/// 日志行靠 `engine` 字段分流（不写 = fsrs，老行天然兼容）。
 library;
 
 import 'dart:convert';
@@ -24,6 +36,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data_dir.dart';
 import 'scheduler.dart';
+import 'scheduler_sm2.dart';
 
 class CardStore {
   static const _snapFile = 'progress.json';
@@ -33,8 +46,14 @@ class CardStore {
   // 公共文件不可用时的兜底（老版本数据也在这）
   static const _kStates = 'fc_card_states_v1';
   static const _kKv = 'fc_card_kv_v1';
+  static const _kSm2 = 'fc_sm2_states_v1';
 
   final Map<String, CardState> _states = {};
+
+  /// srs_basic 引擎的调度状态（知识点卡）。跟 [_states] 完全平行，
+  /// 分文件键 / 分日志行，互相看不见。
+  final Map<String, Sm2State> _sm2 = {};
+
   final Map<String, Map<String, dynamic>> _kv = {};
   SharedPreferences? _prefs;
 
@@ -161,7 +180,63 @@ class CardStore {
     if (_journal == null) _flushPrefs();
   }
 
-  /// 到期 / 新卡 的复习队列
+  // ---------- srs_basic（SM-2）----------
+
+  /// 一张知识点卡的调度状态（没学过 → new）
+  Sm2State sm2Of(String cardId) => _sm2[cardId] ?? Sm2State();
+
+  /// 这张卡在 srs_basic 引擎下学过没
+  bool isLearnedSm2(String cardId) => _sm2[cardId]?.isLearned ?? false;
+
+  /// 直写状态（导入 / 手动改卡用）
+  void putSm2(String cardId, Sm2State st) {
+    _sm2[cardId] = st;
+    _append(cardId, sm2: st);
+    if (_journal == null) _flushPrefs();
+  }
+
+  /// 复习提交（SM-2）：跑完调度后落盘，同时把「输入侧」写进日志。
+  /// 跟 [putReview] 同构，但 rev 字段换成 SM-2 的口径（phase / step / ease），
+  /// 这样 progress.log.jsonl 对两套引擎都是可回放的 revlog。
+  void putSm2Review(String cardId, Sm2State prev, Sm2State next, Sm2Rating rating) {
+    _sm2[cardId] = next;
+    _append(cardId, sm2: next, rev: {
+      'engine': 'sm2',
+      'rating': rating.key,
+      'at': DateTime.now().toIso8601String(),
+      'prev_phase': prev.phase,
+      'prev_step': prev.step,
+      'prev_ease': double.parse(prev.ease.toStringAsFixed(4)),
+      'prev_interval': prev.interval,
+      'interval': next.interval,
+    });
+    if (_journal == null) _flushPrefs();
+  }
+
+  /// 到期队列（srs_basic）：学习步是分钟级，所以比的是**时刻**不是日期。
+  /// 已学 + 已到点（含今天上午毕业、晚上到期的卡），不含新卡。
+  List<String> reviewDueSm2(List<String> allIds, [DateTime? now]) {
+    final t = now ?? DateTime.now();
+    return [
+      for (final id in allIds)
+        if (!isKnown(id) && sm2IsDue(sm2Of(id), t)) id,
+    ];
+  }
+
+  /// 未学过的卡（srs_basic）
+  List<String> newSm2(List<String> allIds) => [
+        for (final id in allIds)
+          if (!isKnown(id) && !isLearnedSm2(id)) id,
+      ];
+
+  /// srs_basic 的完整队列：到期优先 → 新卡殿后
+  List<String> queueSm2(List<String> allIds, [DateTime? now]) =>
+      sm2Queue(allIds, sm2Of, isKnown, now);
+
+  /// srs_basic 的已学计数（章节进度条用）
+  int countLearnedSm2(List<String> ids) =>
+      ids.where((id) => isLearnedSm2(id) || isKnown(id)).length;
+
   List<String> dueQueue(List<String> allIds) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -241,14 +316,17 @@ class CardStore {
   /// 导出指定卡片的进度（只导这些卡的）
   Map<String, dynamic> exportProgress(List<String> ids) {
     final states = <String, dynamic>{};
+    final sm2 = <String, dynamic>{};
     final kv = <String, dynamic>{};
     for (final id in ids) {
       final s = _states[id];
       if (s != null) states[id] = s.toJson();
+      final s2 = _sm2[id];
+      if (s2 != null) sm2[id] = s2.toJson();
       final k = _kv[id];
       if (k != null) kv[id] = k;
     }
-    return {'card_states': states, 'card_kv': kv};
+    return {'card_states': states, 'sm2_states': sm2, 'card_kv': kv};
   }
 
   /// 导入进度并合并（同 id 覆盖）
@@ -259,6 +337,15 @@ class CardStore {
         if (v is Map) {
           _states[k.toString()] =
               CardState.fromJson(Map<String, dynamic>.from(v));
+        }
+      });
+    }
+    final sm2 = progress['sm2_states'];
+    if (sm2 is Map) {
+      sm2.forEach((k, v) {
+        if (v is Map) {
+          _sm2[k.toString()] =
+              Sm2State.fromJson(Map<String, dynamic>.from(v));
         }
       });
     }
@@ -275,8 +362,10 @@ class CardStore {
 
   Future<void> reset() async {
     _states.clear();
+    _sm2.clear();
     _kv.clear();
     await _prefs?.remove(_kStates);
+    await _prefs?.remove(_kSm2);
     await _prefs?.remove(_kKv);
     _compact();
     _writeDueIndex();
@@ -289,12 +378,18 @@ class CardStore {
 
   Map<String, dynamic> _doc() => {
         'card_states': _states.map((k, v) => MapEntry(k, v.toJson())),
+        // srs_basic 引擎的状态。老版本 App 读这份文件会直接忽略这个键，
+        // 所以加它不会把旧版客户端毒到。
+        'sm2_states': _sm2.map((k, v) => MapEntry(k, v.toJson())),
         'card_kv': _kv,
       };
 
   /// 追加一行变更；失败就退回整份快照，绝不丢数据
   void _append(String cardId,
-      {CardState? st, Map<String, dynamic>? kv, Map<String, dynamic>? rev}) {
+      {CardState? st,
+      Map<String, dynamic>? kv,
+      Map<String, dynamic>? rev,
+      Sm2State? sm2}) {
     final j = _journal;
     if (j == null) {
       _writeSnap();
@@ -303,6 +398,12 @@ class CardStore {
     try {
       final rec = <String, dynamic>{'id': cardId};
       if (st != null) rec['st'] = st.toJson();
+      // 两套状态各占一个键，回放时按键分流 —— 不靠 `engine` 猜，
+      // 因为一行日志可能同时带 kv（两套共用）。
+      if (sm2 != null) {
+        rec['sm2'] = sm2.toJson();
+        rec['engine'] = 'sm2';
+      }
       if (kv != null) rec['kv'] = kv;
       if (rev != null) rec['rev'] = rev;
       // flush:false —— 答一张卡就 fsync 一次，在主线程上是几十毫秒级的开销，
@@ -337,6 +438,10 @@ class CardStore {
           final st = m['st'];
           if (st is Map) {
             _states[id] = CardState.fromJson(Map<String, dynamic>.from(st));
+          }
+          final sm2 = m['sm2'];
+          if (sm2 is Map) {
+            _sm2[id] = Sm2State.fromJson(Map<String, dynamic>.from(sm2));
           }
           final kv = m['kv'];
           if (kv is Map) _kv[id] = Map<String, dynamic>.from(kv);
@@ -382,27 +487,24 @@ class CardStore {
   /// 派生索引 due.jsonl：按 due 升序，一行一张卡。
   ///
   /// 给 Agent / 外部工具直接读 —— 「下次复习啥」看文件头几行就行，
-  /// 不用解析 progress.json 再遍历。真相源仍是 _states，删了能重建。
+  /// 不用解析 progress.json 再遍历。真相源仍是内存里的两张状态表，删了能重建。
+  ///
   /// 每 [_dueEvery] 次状态变更重建一次；compact / 启动时也会重建。
-  /// 字段：id / due / state / s(稳定性) / d(难度) / reps / lapses / last / known。
+  /// 字段：id / engine / due / state(phase) / s(ease|稳定性) / d(难度) /
+  ///       reps / lapses / last / step / known。
+  ///
+  /// `engine` 是后加的（2026-10-02）：两套调度状态混在一个文件里就必须标出来，
+  /// 否则监工读到的「due」到底是词的还是卡的都分不清。老行没有这个字段 = fsrs。
   void _writeDueIndex() {
     final r = DataDir.cachedRoot;
     if (r == null) return;
     try {
-      final entries = _states.entries.toList()
-        ..sort((a, b) {
-          final da = a.value.due;
-          final db = b.value.due;
-          if (da == null && db == null) return 0;
-          if (da == null) return -1;
-          if (db == null) return 1;
-          return da.compareTo(db);
-        });
-      final sb = StringBuffer();
-      for (final e in entries) {
+      final entries = <Map<String, dynamic>>[];
+      for (final e in _states.entries) {
         final s = e.value;
-        sb.writeln(json.encode({
+        entries.add({
           'id': e.key,
+          'engine': 'fsrs',
           'due': _day(s.due),
           'state': s.state,
           's': s.stability,
@@ -411,7 +513,36 @@ class CardStore {
           'lapses': s.lapses,
           'last': _day(s.lastReview),
           'known': _kv[e.key]?['known'] == true,
-        }));
+        });
+      }
+      for (final e in _sm2.entries) {
+        final s = e.value;
+        entries.add({
+          'id': e.key,
+          'engine': 'sm2',
+          'due': s.due?.toIso8601String(),
+          'state': s.phase,
+          'step': s.step,
+          's': s.ease,
+          'd': null,
+          'ivl': s.interval,
+          'reps': s.reps,
+          'lapses': s.lapses,
+          'last': _day(s.lastReview),
+          'known': _kv[e.key]?['known'] == true,
+        });
+      }
+      entries.sort((a, b) {
+        final da = a['due'] as String?;
+        final db = b['due'] as String?;
+        if (da == null && db == null) return 0;
+        if (da == null) return -1;
+        if (db == null) return 1;
+        return da.compareTo(db);
+      });
+      final sb = StringBuffer();
+      for (final e in entries) {
+        sb.writeln(json.encode(e));
       }
       final f = File('${r.path}/$_dueFile');
       final tmp = File('${f.path}.tmp');
@@ -442,10 +573,20 @@ class CardStore {
         });
       } catch (_) {}
     }
+    final rawSm2 = _prefs?.getString(_kSm2);
+    if (rawSm2 != null) {
+      try {
+        final m = json.decode(rawSm2) as Map<String, dynamic>;
+        m.forEach((k, v) {
+          _sm2[k] = Sm2State.fromJson(Map<String, dynamic>.from(v as Map));
+        });
+      } catch (_) {}
+    }
   }
 
   void _applyDoc(Map<String, dynamic> doc) {
     _states.clear();
+    _sm2.clear();
     _kv.clear();
     final states = doc['card_states'];
     if (states is Map) {
@@ -453,6 +594,15 @@ class CardStore {
         if (v is Map) {
           _states[k.toString()] =
               CardState.fromJson(Map<String, dynamic>.from(v));
+        }
+      });
+    }
+    final sm2 = doc['sm2_states'];
+    if (sm2 is Map) {
+      sm2.forEach((k, v) {
+        if (v is Map) {
+          _sm2[k.toString()] =
+              Sm2State.fromJson(Map<String, dynamic>.from(v));
         }
       });
     }
@@ -468,6 +618,10 @@ class CardStore {
     _prefs?.setString(
       _kStates,
       json.encode(_states.map((k, v) => MapEntry(k, v.toJson()))),
+    );
+    _prefs?.setString(
+      _kSm2,
+      json.encode(_sm2.map((k, v) => MapEntry(k, v.toJson()))),
     );
     _prefs?.setString(_kKv, json.encode(_kv));
   }

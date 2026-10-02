@@ -71,6 +71,10 @@ class TemplateEngine {
     Map<String, dynamic>? kv,
     Map<String, dynamic>? extra,
     String workflowJs = '',
+    // 模板自带的第三方库（如 KaTeX）：css 在模板 css 之前，
+    // js 在模板 script 之前 —— 顺序反了模板就拿不到 `window.katex`。
+    String vendorCss = '',
+    String vendorJs = '',
   }) {
     final html = render(templateHtml, fields, extra: extra);
     final cardJsonStr = _jsonEncode(cardJson);
@@ -81,6 +85,7 @@ class TemplateEngine {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+${vendorCss.isEmpty ? '' : '<style>$vendorCss</style>'}
 <style>$css</style>
 </head>
 <body>
@@ -278,6 +283,7 @@ window.__FLASHCARD_KV__ = $kvJsonStr;
   });
 })();
 </script>
+${vendorJs.isEmpty ? '' : '<script>$vendorJs</script>'}
 <script>$js</script>
 ${workflowJs.isEmpty ? '' : '<script>$workflowJs</script>'}
 </body>

@@ -169,18 +169,36 @@ class _ReviewScreenState extends State<ReviewScreen>
     _bridge.onChromeChanged = (top) {
       if (mounted) setState(() => _showTopBar = top);
     };
+    // SM-2 参数覆盖：书的模板 manifest 里 `srs` 段带上就生效，
+    // 不带就用 Anki 出厂值（学习步 1m/10m、ease 2.5 …）。
+    final srs = widget.template.manifest['srs'];
+    if (srs is Map) {
+      _bridge.srsParams = Map<String, dynamic>.from(srs);
+    }
     _bridge.initTts();
     _msgSub = _bridge.messages.listen(_onMsg);
     if (_webDriven) {
-      _bridge.setPlan(SessionPlan.build(
-        units: widget.units,
-        passageCloze: widget.settings.modePassageCloze,
-        retestModes: [
-          if (widget.settings.modeChoice) 'choice',
-          if (widget.settings.modeSentenceCloze) 'cloze',
-        ],
-        passageJson: _bridge.passageJson,
-      ));
+      // 计划里额外带上「本会话属于哪本书 / 用哪套引擎 / 标题」——
+      // srs_basic 的模板不靠 units 开车（它自己拉 card.due / card.new），
+      // 但必须知道**去哪本书**拉队列，否则只给了 queue 没有 book，
+      // 多本卡书就会串到一起。
+      _bridge.setPlan({
+        ...SessionPlan.build(
+          units: widget.units,
+          passageCloze: widget.settings.modePassageCloze,
+          retestModes: [
+            if (widget.settings.modeChoice) 'choice',
+            if (widget.settings.modeSentenceCloze) 'cloze',
+          ],
+          passageJson: _bridge.passageJson,
+        ),
+        'book': widget.bookId,
+        'title': widget.title,
+        'engine': _bridge.engine,
+        // 公式定界符归 manifest 管（模板作者可以改，不用碰壳）。
+        // 模板把它原样交给 KaTeX 的 auto-render。
+        'math': widget.template.manifest['math'],
+      });
     }
     // 控制器在这里建一次（不能在 build 里建，见 _ensure 注释）
     _ensure();
@@ -400,6 +418,7 @@ class _ReviewScreenState extends State<ReviewScreen>
         'round': round,
         'review': unit.isReview ? 1 : 0,
         'scene': scene,
+        'engine': _bridge.engine,
         'book': widget.bookId,
         'chapter': unit.title,
       },

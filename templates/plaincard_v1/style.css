@@ -1,0 +1,299 @@
+/* ============================================================================
+   通用卡模板 · 主题
+   ----------------------------------------------------------------------------
+   设计原则：三行 CSS 决定「好不好排」这件事，其余都是皮肤。
+     1. .pc-body  display:grid          —— 内容区可滚，不抢 head/actions 的高度
+     2. .pc-inner margin:auto           —— 短内容居中、长内容从头滚（不裁头）
+     3. .pc-actions sticky 在底部        —— 答案再长，按钮也不会被挤走
+
+   配色跟壳（#141D1F / #00C08B）一脉，卡片进出不跳色。
+   ========================================================================== */
+
+.pc-root {
+  --bg: #141d1f;
+  --card: rgba(255, 255, 255, .045);
+  --line: rgba(255, 255, 255, .09);
+  --txt: #f0f4f5;
+  --muted: #8c9da2;
+  --dim: #54666c;
+  --teal: #00c08b;
+  --teal-bg: rgba(0, 192, 139, .12);
+  --amber: #e8b04b;
+  --red: #ff6b6b;
+  --blue: #5aa9ff;
+
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+}
+
+/* ---------- 顶：标签 / 出处 ---------- */
+.pc-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 18px 6px;
+  min-height: 22px;
+}
+.pc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pc-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--teal);
+  background: var(--teal-bg);
+  border: 1px solid rgba(0, 192, 139, .22);
+  white-space: nowrap;
+}
+.pc-chip.t-cloze { color: var(--blue); background: rgba(90,169,255,.12); border-color: rgba(90,169,255,.25); }
+.pc-chip.t-mask  { color: var(--amber); background: rgba(232,176,75,.12); border-color: rgba(232,176,75,.25); }
+.pc-src { font-size: 11px; color: var(--dim); white-space: nowrap; }
+
+/* ---------- 中：内容（唯一会滚的部分） ---------- */
+.pc-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;              /* ← 见文件头注释 1 */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.pc-body::-webkit-scrollbar { display: none; }
+
+.pc-inner {
+  margin: auto;               /* ← 见文件头注释 2 */
+  width: 100%;
+  padding: 10px 22px 18px;
+  box-sizing: border-box;
+}
+
+/* 正面：主问题，字最大 */
+.pc-front {
+  font-size: 21px;
+  line-height: 1.62;
+  font-weight: 600;
+  letter-spacing: .1px;
+  word-break: break-word;
+}
+.pc-front p { margin: 0 0 .7em; }
+.pc-front p:last-child { margin-bottom: 0; }
+
+/* 背面：默认整个收起，data-state=back 才展开 */
+.pc-answer {
+  display: none;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+  animation: pc-in .18s ease-out;
+}
+.pc-root[data-state="back"] .pc-answer { display: block; }
+@keyframes pc-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.pc-back {
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--txt);
+  word-break: break-word;
+}
+.pc-back p { margin: 0 0 .6em; }
+.pc-back p:last-child { margin-bottom: 0; }
+
+/* 要点行（政治大题那种）：- xxx / 1. xxx 自动成列表 */
+.pc-back ul, .pc-detail ul { margin: .35em 0 .7em; padding-left: 1.25em; }
+.pc-back li, .pc-detail li { margin: .22em 0; }
+.pc-back b, .pc-detail b { color: #fff; }
+.pc-mark {
+  background: linear-gradient(transparent 58%, rgba(0,192,139,.28) 58%);
+  padding: 0 1px;
+  border-radius: 2px;
+}
+.pc-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .92em;
+  background: rgba(255,255,255,.07);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+/* 详解：默认折叠，点「详解」展开 */
+.pc-detail {
+  display: none;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid var(--line);
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.pc-root[data-detail="on"] .pc-detail { display: block; }
+
+.pc-mnemonic {
+  display: none;
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 3px solid var(--amber);
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--amber);
+}
+.pc-root[data-detail="on"] .pc-mnemonic { display: block; }
+
+/* ---------- 挖空 / 遮盖 ---------- */
+.pc-blank, .pc-cover {
+  display: inline-block;
+  min-width: 3.4em;
+  padding: 1px 8px;
+  margin: 0 2px;
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.pc-blank {
+  border-bottom: 2px solid rgba(90,169,255,.55);
+  background: rgba(90,169,255,.10);
+  color: transparent;
+}
+.pc-blank .pc-hint { color: var(--blue); opacity: .75; font-size: .82em; }
+.pc-blank.on {
+  color: var(--txt);
+  background: rgba(90,169,255,.16);
+  border-bottom-color: transparent;
+}
+.pc-cover {
+  background: #2b3841;
+  color: transparent;
+  border-radius: 5px;
+}
+.pc-cover.on { background: var(--teal-bg); color: var(--txt); }
+
+/* ---------- 媒体 ---------- */
+.pc-media { margin: 14px 0 2px; }
+.pc-media img {
+  max-width: 100%;
+  max-height: 46vh;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  display: block;
+  cursor: zoom-in;
+}
+.pc-media .cap {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+}
+.pc-media audio { width: 100%; margin-top: 8px; }
+
+/* ---------- 公式（KaTeX） ---------- */
+/* 窄屏上超宽公式必须能横向滚，否则整页会被撑出横向位移 */
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.katex { font-size: 1.06em; }
+.pc-front .katex-display { margin: .6em 0; }
+
+/* ---------- 底：动作条 ---------- */
+.pc-actions {
+  flex: 0 0 auto;
+  padding: 8px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: linear-gradient(to top, var(--bg) 62%, rgba(20,29,31,0));
+}
+.pc-flip-row { display: flex; gap: 8px; margin-bottom: 9px; }
+.pc-btn {
+  flex: 1;
+  height: 46px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform .1s, background .15s;
+}
+.pc-btn:active { transform: scale(.98); }
+.pc-btn-flip { background: var(--teal); color: #10201c; }
+.pc-btn-ghost {
+  flex: 0 0 auto;
+  padding: 0 18px;
+  background: rgba(255,255,255,.06);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* 四档：正面只露「显示答案」，背面才露评级（避免没看答案就自评） */
+.pc-rate-row { display: none; gap: 8px; }
+.pc-root[data-state="back"] .pc-rate-row { display: flex; }
+.pc-root[data-state="back"] .pc-btn-flip { display: none; }
+
+.pc-rate {
+  flex: 1;
+  height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.045);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  transition: transform .1s, background .15s, color .15s;
+}
+.pc-rate:active { transform: scale(.97); }
+.pc-rate-g { font-size: 10.5px; font-weight: 500; opacity: .62; font-variant-numeric: tabular-nums; }
+.pc-rate[data-rating="again"]:active { background: rgba(255,107,107,.16); color: var(--red); }
+.pc-rate[data-rating="hard"]:active  { background: rgba(232,176,75,.16); color: var(--amber); }
+.pc-rate[data-rating="good"]:active  { background: rgba(0,192,139,.16); color: var(--teal); }
+.pc-rate[data-rating="easy"]:active  { background: rgba(90,169,255,.16); color: var(--blue); }
+
+/* 空闲态：背面停留太久，四个按钮轻微呼吸一下提醒该打分了 */
+.pc-root[data-state="back"] .pc-rate { animation: pc-breathe 2.6s ease-in-out infinite; }
+@keyframes pc-breathe {
+  0%, 100% { border-color: var(--line); }
+  50%      { border-color: rgba(255,255,255,.16); }
+}
+
+/* ---------- 只读预览（CardPreviewScreen 打的 data-preview=1） ---------- */
+.pc-root[data-preview="1"] .pc-actions { display: none; }
+.pc-root[data-preview="1"] .pc-body { padding-bottom: 24px; }
+
+/* ---------- TTS 小喇叭 ---------- */
+.pc-btn-speak {
+  margin-left: 8px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .05);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.pc-btn-speak:active { background: var(--teal-bg); color: var(--teal); }
+
+/* ---------- 空卡兜底：字段全空时别显示一片白 ---------- */
+.pc-empty { color: var(--dim); font-size: 14px; text-align: center; }

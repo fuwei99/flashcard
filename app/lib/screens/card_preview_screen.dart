@@ -50,7 +50,12 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
     _bridge = WebViewBridge(
         store: widget.store,
         tts: TtsService(settings: widget.settings),
-        settings: widget.settings);
+        settings: widget.settings,
+        // 预览页也要认引擎：不传的话 srs_basic 的卡会被当成单词卡，
+        // 灌注的是 FSRS 状态（模板读到的 due/phase 全是错的）。
+        isCard: widget.template.engine == 'srs_basic');
+    final srs = widget.template.manifest['srs'];
+    if (srs is Map) _bridge.srsParams = Map<String, dynamic>.from(srs);
     _bridge.initTts();
     _known = widget.store.isKnown(widget.card.id);
   }
@@ -65,6 +70,13 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
   Future<void> _mount() async {
     final ctrl = _controller;
     if (ctrl == null) return;
+    final session = <String, dynamic>{
+      'phase': 'read',
+      'mode': 'read',
+      'round': 1,
+      'scene': 'preview',
+      'engine': _bridge.engine,
+    };
     await _bridge.mountCard(
       ctrl,
       fieldsOrder: widget.fieldsOrder,
@@ -72,7 +84,7 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
       card: widget.card,
       index: 0,
       total: 1,
-      session: const {'phase': 'read', 'mode': 'read', 'round': 1, 'scene': 'preview'},
+      session: session,
     );
     // mount() 结束会把 data-state 重置成 front；预览要的是词义页。
     // data-preview 交给 CSS 收掉所有底部动作条。
@@ -107,7 +119,13 @@ class _CardPreviewScreenState extends State<CardPreviewScreen> {
       card: widget.card,
       index: 0,
       total: 1,
-      session: const {'phase': 'read', 'mode': 'read', 'round': 1, 'scene': 'preview'},
+      session: <String, dynamic>{
+        'phase': 'read',
+        'mode': 'read',
+        'round': 1,
+        'scene': 'preview',
+        'engine': _bridge.engine,
+      },
     ));
     return c;
   }

@@ -23,6 +23,7 @@ import '../models/book.dart';
 import '../models/deck.dart';
 import '../models/study_session.dart';
 import 'card_store.dart';
+import 'scheduler_sm2.dart';
 
 /// 一组 = 背多少个词停一下（只影响 UI 暂停节奏，不影响编排）
 const int kGroupSize = 20;
@@ -231,6 +232,123 @@ class StudyPlanner {
       if (withReview) ...reviewUnits(books, store, limit: reviewLimit),
       if (withNew) ...newUnits(books, store),
     ];
+  }
+
+  // ===============================================================
+  // srs_basic（知识点卡）的编排
+  // ===============================================================
+  //
+  // 跟单词那套的差别就三行：
+  //   1. 不分章 —— 「卡」没有「一章一篇文章」的概念，一本书一个单元；
+  //   2. 不挂语篇、不挑考法 —— 模板自己决定怎么考（问答/挖空/遮盖）；
+  //   3. 用 SM-2 的到期口径（分钟粒度），不是 FSRS 的日粒度。
+  //
+  // 其实壳排的这份队列只是**兜底 / 给个入口**：srs_basic 的模板声明
+  // `web_session: true`，它自己用 `card.due` + `card.new` 拉队列。
+  // 但壳仍得给出一个非空的 unit，否则 ReviewScreen 连开哪本书、用哪个
+  // 模板都不知道。
+
+  static int cardDueCount(List<Book> books, CardStore store) {
+    var n = 0;
+    for (final b in books) {
+      for (final id in b.allCardIds) {
+        if (store.isKnown(id)) continue;
+        final st = store.sm2Of(id);
+        if (st.isLearned && sm2IsDue(st)) n++;
+      }
+    }
+    return n;
+  }
+
+  static int cardNewCount(List<Book> books, CardStore store) {
+    var n = 0;
+    for (final b in books) {
+      for (final id in b.allCardIds) {
+        if (!store.isKnown(id) && !store.isLearnedSm2(id)) n++;
+      }
+    }
+    return n;
+  }
+
+  static int cardLearnedCount(List<Book> books, CardStore store) {
+    var n = 0;
+    for (final b in books) {
+      n += store.countLearnedSm2(b.allCardIds);
+    }
+    return n;
+  }
+
+  /// 卡片计划：一本书一个 unit，只含本次要推的卡（到期优先 → 新卡殿后）。
+  static List<StudyUnit> cardPlan({
+    required List<Book> books,
+    required CardStore store,
+    required bool withReview,
+    required bool withNew,
+    int? reviewLimit,
+    int? newLimit,
+    DateTime? now,
+  }) {
+    final t = now ?? DateTime.now();
+    final out = <StudyUnit>[];
+
+    for (final b in books) {
+      final groups = _groups(b);
+      final dueRefs = <_DueRef>[];
+      final newRefs = <_DueRef>[];
+
+      for (final g in groups) {
+        for (final id in g.ids) {
+          if (store.isKnown(id)) continue;
+          final st = store.sm2Of(id);
+          if (st.isNew) {
+            newRefs.add(_DueRef(null, g, id));
+          } else if (sm2IsDue(st, t)) {
+            dueRefs.add(_DueRef(st.due, g, id));
+          }
+        }
+      }
+
+      dueRefs.sort((a, b) {
+        final da = a.due;
+        final db = b.due;
+        if (da == null && db == null) return 0;
+        if (da == null) return -1;
+        if (db == null) return 1;
+        return da.compareTo(db);
+      });
+
+      final picked = <_DueRef>[
+        if (withReview)
+          ...(reviewLimit != null && reviewLimit > 0
+              ? dueRefs.take(reviewLimit)
+              : dueRefs),
+        if (withNew)
+          ...(newLimit != null && newLimit > 0
+              ? newRefs.take(newLimit)
+              : newRefs),
+      ];
+      if (picked.isEmpty) continue;
+
+      // 到这一步才真读盘（只有中标的章才载入）
+      final byGroup = <_Group, Set<String>>{};
+      for (final r in picked) {
+        (byGroup[r.group] ??= <String>{}).add(r.cardId);
+      }
+      final cards = <FlashCard>[];
+      for (final g in groups) {
+        final want = byGroup[g];
+        if (want == null) continue;
+        cards.addAll(g.cards.where((c) => want.contains(c.id)));
+      }
+      if (cards.isEmpty) continue;
+
+      out.add(StudyUnit(
+        cards: cards,
+        isReview: withReview && !withNew,
+        title: b.title,
+      ));
+    }
+    return out;
   }
 
   /// 单章 / 单本书的计划 —— 书内「顺序 / 乱序背诵」入口用

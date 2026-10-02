@@ -58,7 +58,10 @@ class HomeScreenState extends State<HomeScreen> {
       .toList();
 
   // 下面三个计数全部走 allCardIds —— 只读 index.json 里的 id，**不载入任何卡片**
-  int _due(List<Book> books) {
+  // [card] = true 时走 SM-2 那套状态（srs_basic 的书）。
+  // 两套状态不换算，所以计数也必须分开 —— 拿 FSRS 状态去数卡片会全是 0。
+  int _due(List<Book> books, {bool card = false}) {
+    if (card) return StudyPlanner.cardDueCount(books, widget.store);
     var n = 0;
     for (final b in books) {
       n += widget.store.reviewDueCount(b.allCardIds);
@@ -66,7 +69,8 @@ class HomeScreenState extends State<HomeScreen> {
     return n;
   }
 
-  int _fresh(List<Book> books) {
+  int _fresh(List<Book> books, {bool card = false}) {
+    if (card) return StudyPlanner.cardNewCount(books, widget.store);
     var n = 0;
     for (final b in books) {
       for (final id in b.allCardIds) {
@@ -77,7 +81,8 @@ class HomeScreenState extends State<HomeScreen> {
     return n;
   }
 
-  int _learned(List<Book> books) {
+  int _learned(List<Book> books, {bool card = false}) {
+    if (card) return StudyPlanner.cardLearnedCount(books, widget.store);
     var n = 0;
     for (final b in books) {
       n += widget.store.countLearned(b.allCardIds);
@@ -193,7 +198,7 @@ class HomeScreenState extends State<HomeScreen> {
     return _runGroups(order, i + 1, groups, title, isCard, bookOfCard);
   }
 
-  /// 只复习到期词（跨牌组，语篇只挖今天要复习的词）
+  /// 只复习到期卡（跨牌组，语篇只挖今天要复习的词）
   void _startReview(LibraryKind k) {
     final books = _ofKind(k);
     final name = k == LibraryKind.word ? '单词' : 'Card';
@@ -201,13 +206,22 @@ class HomeScreenState extends State<HomeScreen> {
       _toast('还没有$name内容，去「$name」页导入');
       return;
     }
-    final units = StudyPlanner.wordPlan(
-      books: books,
-      store: widget.store,
-      withReview: true,
-      withNew: false,
-      reviewLimit: widget.settings.reviewDailyLimit,
-    );
+    // Card 走 SM-2 那套编排（不分章 / 不挂语篇 / 分钟粒度）
+    final units = k == LibraryKind.card
+        ? StudyPlanner.cardPlan(
+            books: books,
+            store: widget.store,
+            withReview: true,
+            withNew: false,
+            reviewLimit: widget.settings.reviewDailyLimit,
+          )
+        : StudyPlanner.wordPlan(
+            books: books,
+            store: widget.store,
+            withReview: true,
+            withNew: false,
+            reviewLimit: widget.settings.reviewDailyLimit,
+          );
     if (units.isEmpty) {
       _toast('今天没有要复习的$name 🎉');
       return;
@@ -223,12 +237,20 @@ class HomeScreenState extends State<HomeScreen> {
       _toast('还没有$name内容，去「$name」页导入');
       return;
     }
-    final units = StudyPlanner.wordPlan(
-      books: books,
-      store: widget.store,
-      withReview: false,
-      withNew: true,
-    );
+    final units = k == LibraryKind.card
+        ? StudyPlanner.cardPlan(
+            books: books,
+            store: widget.store,
+            withReview: false,
+            withNew: true,
+            newLimit: widget.settings.cardDailyLimit,
+          )
+        : StudyPlanner.wordPlan(
+            books: books,
+            store: widget.store,
+            withReview: false,
+            withNew: true,
+          );
     if (units.isEmpty) {
       _toast('$name今天没有要背的卡片 🎉');
       return;
@@ -337,9 +359,9 @@ class HomeScreenState extends State<HomeScreen> {
               _taskCard(
                 icon: Icons.style,
                 title: 'Card',
-                due: _due(cardBooks),
-                fresh: _fresh(cardBooks),
-                learned: _learned(cardBooks),
+                due: _due(cardBooks, card: true),
+                fresh: _fresh(cardBooks, card: true),
+                learned: _learned(cardBooks, card: true),
                 passed: s.cardPassed,
                 onStart: () => _startNew(LibraryKind.card),
               ),

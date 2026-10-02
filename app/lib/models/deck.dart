@@ -240,6 +240,134 @@ class FlashCard {
     return t.isEmpty ? s : t;
   }
 
+  // ===============================================================
+  // 通用卡（srs_basic 引擎）的字段读取
+  // ===============================================================
+  //
+  // 单词卡靠 `word` / `senses` 一套字段，但那套东西对知识点卡毫无意义 ——
+  // 「带传动的弹性滑动是什么」没有 word，也不该去猜词性。
+  // 所以 srs_basic 的书走另一套**平铺**字段，与 WORD 平行、互不干扰：
+  //
+  //   type     qa | cloze | mask | point | sentence（渲染提示，不填按 qa）
+  //   front    正面：问题 / 题目 / 提示
+  //   back     背面：答案 / 要点
+  //   detail   可选：展开讲解、易错点、公式（背面展开后才出现）
+  //   cloze    挖空正文，Anki 同款语法 {{c1::答案}} / {{c1::答案::提示}}
+  //   cover    遮盖正文，[[遮住的部分]] / [[遮住的部分::提示]]
+  //   media    图片 / 音频：[{kind:"image",src:"…",caption:"…"}]
+  //   tags     标签数组
+  //   source   出处（“机设 第 8 章”、“肖秀荣 P32”）
+  //   mnemonic 助记
+  //
+  // 这些 getter 只做**宽容读取**（缺字段给空值），渲染全在模板里 ——
+  // 壳不认识 qa 该怎么排，也不该认识。
+
+  /// 卡型（渲染提示）。缺省 qa。
+  String get genericType {
+    final t = (fields['type'] ?? fields['card_type'] ?? '').toString().trim();
+    return t.isEmpty ? 'qa' : t.toLowerCase();
+  }
+
+  /// 正面（问题）。兼容 question / q 两种别名。
+  String get front =>
+      (fields['front'] ?? fields['question'] ?? fields['q'] ?? '').toString();
+
+  /// 背面（答案）。兼容 answer / a 两种别名。
+  String get back =>
+      (fields['back'] ?? fields['answer'] ?? fields['a'] ?? '').toString();
+
+  /// 展开详解（可空）
+  String get detail =>
+      (fields['detail'] ?? fields['note'] ?? fields['explain'] ?? '')
+          .toString();
+
+  /// 挖空正文（cloze 卡）
+  String get clozeText =>
+      (fields['cloze'] ?? fields['cloze_text'] ?? '').toString();
+
+  /// 遮盖正文（mask 卡）
+  String get coverText =>
+      (fields['cover'] ?? fields['mask'] ?? '').toString();
+
+  /// 媒体列表：[{kind, src, caption}]。宽容读取单字符串写法（当图片）。
+  List<Map<String, dynamic>> get mediaList {
+    final raw = fields['media'] ?? fields['images'];
+    if (raw is String && raw.trim().isNotEmpty) {
+      return [
+        {'kind': 'image', 'src': raw.trim()}
+      ];
+    }
+    if (raw is! List) return const [];
+    return [
+      for (final e in raw)
+        if (e is Map)
+          Map<String, dynamic>.from(e)
+        else if (e is String && e.trim().isNotEmpty)
+          <String, dynamic>{'kind': 'image', 'src': e.trim()},
+    ];
+  }
+
+  List<String> get tags {
+    final raw = fields['tags'] ?? fields['tag'];
+    if (raw is String) {
+      return [
+        for (final s in raw.split(RegExp(r'[,，、;；]')))
+          if (s.trim().isNotEmpty) s.trim(),
+      ];
+    }
+    if (raw is! List) return const [];
+    return [
+      for (final e in raw)
+        if (e != null && e.toString().trim().isNotEmpty) e.toString().trim(),
+    ];
+  }
+
+  String get source =>
+      (fields['source'] ?? fields['from'] ?? '').toString().trim();
+
+  String get mnemonic => (fields['mnemonic'] ?? '').toString().trim();
+
+  /// 剥 HTML 标签的纯文本（列表页摘要 / 统计用）
+  static String plainText(dynamic v) => cnToString(v)
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll(RegExp(r'\{\{c\d+::([^}:]*)(?:::[^}]*)?\}\}'), r'$1')
+      .replaceAll(RegExp(r'\[\[([^\]:]*)(?:::[^\]]*)?\]\]'), r'$1')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// 页面列表那一行的标题。
+  /// 单词卡用 `word`；通用卡依次退到 front / cloze 首段 / cover 首段 / id。
+  String get displayTitle {
+    final w = word.trim();
+    if (w.isNotEmpty && w != id) return w;
+    for (final s in [front, clozeText, coverText, id]) {
+      final t = plainText(s);
+      if (t.isNotEmpty) return t;
+    }
+    return id;
+  }
+
+  /// 页面列表第二行：通用卡用卡型 + 出处
+  String get displaySubtitle {
+    final parts = <String>[];
+    if (genericType.isNotEmpty && genericType != 'qa') {
+      parts.add(switch (genericType) {
+        'cloze' => '挖空',
+        'mask' => '遮盖',
+        'point' => '要点',
+        'sentence' => '句子',
+        'qa' => '问答',
+        _ => genericType,
+      });
+    }
+    if (source.isNotEmpty) parts.add(source);
+    return parts.join(' · ');
+  }
+
+  /// 页面列表第三行：答案摘要（剥标签 + 截断交给 UI）
+  String get displaySummary =>
+      plainText(back.isNotEmpty ? back : detail);
+
   /// 序列化：id 单列，其余字段平铺
   Map<String, dynamic> toJson() => {'id': id, ...fields};
 
@@ -299,7 +427,7 @@ class Deck {
   }
 }
 
-/// 模板包：manifest + 三段资源
+/// 模板包：manifest + 三段资源 + 可选的第三方库
 class CardTemplate {
   final Map<String, dynamic> manifest;
   final String html;
@@ -310,12 +438,23 @@ class CardTemplate {
   /// 空字符串 = 没有，壳走老路径。
   final String workflow;
 
+  /// 模板自带的第三方库（manifest 的 `vendor` 段声明，如 KaTeX）。
+  ///
+  /// 为什么要壳来读：模板是 `loadHtmlString` 灌进 WebView 的，**页面没有
+  /// baseUrl** —— `<script src="vendor/katex.min.js">` 这种相对路径一定 404。
+  /// 所以这些文件得由壳读成字符串、内联进页面（顺序：css 在模板 css 前，
+  /// js 在模板 script 前）。
+  final String vendorCss;
+  final String vendorJs;
+
   CardTemplate({
     required this.manifest,
     required this.html,
     required this.css,
     required this.js,
     this.workflow = '',
+    this.vendorCss = '',
+    this.vendorJs = '',
   });
 
   String get id => (manifest['id'] ?? 'unknown').toString();
@@ -329,4 +468,28 @@ class CardTemplate {
       (manifest['fields'] as List?)?.cast<String>() ?? const [];
   Map<String, dynamic> get tts =>
       Map<String, dynamic>.from(manifest['tts'] as Map? ?? {});
+
+  /// 模板声明的额外资源（manifest.vendor）：{"css":[…],"js":[…]}。
+  /// 空 = 没声明。壳用它在铺模板 / 读模板时决定还要读哪些文件。
+  List<String> get vendorFiles {
+    final v = manifest['vendor'];
+    if (v is! Map) return const [];
+    final out = <String>[];
+    for (final key in const ['css', 'js']) {
+      final raw = v[key];
+      if (raw is List) {
+        for (final e in raw) {
+          final s = e.toString().trim();
+          if (s.isNotEmpty) out.add(s);
+        }
+      }
+    }
+    return out;
+  }
+
+  /// SM-2 参数覆盖（manifest 的 `srs` 段）。空 = 用 Anki 出厂值。
+  Map<String, dynamic> get srs {
+    final v = manifest['srs'];
+    return v is Map ? Map<String, dynamic>.from(v) : const {};
+  }
 }

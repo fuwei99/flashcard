@@ -1,0 +1,56 @@
+<!-- 通用卡的 DOM 骨架。
+     ===============================================================
+     分三层，这是**布局契约**（也是「问答卡不好排」的解法）：
+
+       .pc-head     固定：标签 / 出处，永远在顶
+       .pc-body     可滚：内容区。短内容居中、长内容从头滚
+       .pc-actions  固定：翻面 / 四档自评，永远在底
+
+     排版的关键在 .pc-body 用 `display:grid` + .pc-inner 用 `margin:auto`：
+     flex 的 `justify-content:center` 在内容溢出时会把**顶部**裁掉（滚动条
+     拉到最上面也看不全第一行），grid + margin:auto 没有这个病 ——
+     短内容垂直居中，长内容正常从头顶开始滚。
+
+     正面 / 背面都常驻 DOM，靠 data-state 切显隐（而不是重新渲染）：
+     翻面就是改一个属性，不重排、不闪、TTS 也不用重挂。 -->
+<div id="pc-root" class="pc-root" data-state="front" data-type="qa">
+  <header class="pc-head">
+    <div class="pc-chips" id="pcChips"></div>
+    <div class="pc-src" id="pcSrc"></div>
+  </header>
+
+  <main class="pc-body" id="pcBody">
+    <div class="pc-inner" id="pcInner">
+      <!-- 逃生舱：字段 `html` 非空时，整个 .pc-inner 被它替换掉，
+           下面这些结构化槽位全部不参与渲染。 -->
+      <section class="pc-front" id="pcFront"></section>
+
+      <section class="pc-answer" id="pcAnswer">
+        <div class="pc-back" id="pcBack"></div>
+        <div class="pc-detail" id="pcDetail"></div>
+        <div class="pc-mnemonic" id="pcMnemonic"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="pc-actions" id="pcActions">
+    <div class="pc-flip-row">
+      <button class="pc-btn pc-btn-flip" id="pcFlip">显示答案</button>
+      <button class="pc-btn pc-btn-ghost" id="pcDetailBtn" hidden>详解</button>
+    </div>
+    <div class="pc-rate-row" id="pcRateRow">
+      <button class="pc-rate" data-rating="again">
+        <span class="pc-rate-t">重来</span><span class="pc-rate-g" id="pcG-again"></span>
+      </button>
+      <button class="pc-rate" data-rating="hard">
+        <span class="pc-rate-t">困难</span><span class="pc-rate-g" id="pcG-hard"></span>
+      </button>
+      <button class="pc-rate" data-rating="good">
+        <span class="pc-rate-t">良好</span><span class="pc-rate-g" id="pcG-good"></span>
+      </button>
+      <button class="pc-rate" data-rating="easy">
+        <span class="pc-rate-t">简单</span><span class="pc-rate-g" id="pcG-easy"></span>
+      </button>
+    </div>
+  </footer>
+</div>

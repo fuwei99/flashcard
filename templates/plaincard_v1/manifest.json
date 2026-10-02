@@ -1,0 +1,71 @@
+{
+  "api_version": "1",
+  "id": "plaincard_v1",
+  "name": "通用卡 · 问答/挖空/遮盖",
+  "version": "1.0.0",
+  "author": "江锋",
+  "description": "知识点卡模板。一套排版吃四种卡型：问答(qa) / 挖空(cloze) / 遮盖(mask) / 要点(point)，外加句子(sentence)。支持 KaTeX 公式（$…$ 行内、$$…$$ 独立）、本地图片（走 media.get 转 data-uri）、HTML 逃生舱（字段 html 整段原样注入）。引擎 srs_basic：SM-2 调度、四档自评、学习步分钟级。",
+  "engine": "srs_basic",
+  "render_mode": "placeholder",
+  "web_session": true,
+  "self_distractors": true,
+  "top_bar": true,
+  "fields": [
+    "type",
+    "front",
+    "back",
+    "detail",
+    "cloze",
+    "cover",
+    "media",
+    "tags",
+    "source",
+    "mnemonic",
+    "html"
+  ],
+  "field_types": {
+    "media": "list",
+    "tags": "list",
+    "html": "html",
+    "detail": "html",
+    "back": "html",
+    "front": "html"
+  },
+  "srs": {
+    "learning_steps": [1, 10],
+    "relearning_steps": [10],
+    "graduating_interval": 1,
+    "easy_interval": 4,
+    "starting_ease": 2.5,
+    "min_ease": 1.3,
+    "easy_bonus": 1.3,
+    "hard_factor": 1.2,
+    "interval_modifier": 1.0,
+    "max_interval": 36500,
+    "lapse_multiplier": 0.0
+  },
+  "math": {
+    "engine": "katex",
+    "delimiters": [
+      { "left": "$$", "right": "$$", "display": true },
+      { "left": "\\[", "right": "\\]", "display": true },
+      { "left": "$", "right": "$", "display": false },
+      { "left": "\\(", "right": "\\)", "display": false }
+    ]
+  },
+  "vendor": {
+    "css": ["vendor/katex.css"],
+    "js": ["vendor/katex.min.js", "vendor/auto-render.min.js"]
+  },
+  "files": {
+    "script": "script.js",
+    "style": "style.css",
+    "template": "template.html",
+    "workflow": "workflow.js"
+  },
+  "tts": {
+    "auto_play": false,
+    "fields": ["front", "back"],
+    "lang": "en-US"
+  }
+}

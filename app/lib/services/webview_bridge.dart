@@ -13,6 +13,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -21,10 +22,12 @@ import '../models/deck.dart';
 import 'bridge_rpc.dart';
 import 'card_source.dart';
 import 'card_store.dart';
+import 'data_dir.dart';
 import 'js_log.dart';
 import 'js_plugin_host.dart';
 import 'plugin.dart';
 import 'scheduler.dart';
+import 'scheduler_sm2.dart';
 import 'session_store.dart';
 import 'status_writer.dart';
 import 'study_settings.dart';
@@ -67,7 +70,32 @@ class WebViewBridge {
   /// 本会话是「卡牌」还是「单词」—— stats.markDone 记到哪个计数器。
   final bool isCard;
 
-  /// 卡片内容源（阶段 2）：card.get / card.due / card.new 靠它。
+  /// 本会话用哪套调度引擎。
+  ///
+  /// **引擎由书的模板 manifest 决定**（`engine: language | srs_basic`），
+  /// 模板在 PageListBody 那边换算成 `isCard` 传进来，这里反推回引擎名。
+  /// 加这套是为了让 RPC 能按引擎分派 —— 而不是再开一整套 `sm2.*` API：
+  /// 「只读卡 / 只取队列 / 只交评级」这三个动作两套引擎形状完全一样，
+  /// 差的只是背后跑的是哪个内核。
+  String get engine => isCard ? 'sm2' : 'fsrs';
+
+  /// 模板 manifest 里的 `srs` 段（SM-2 参数覆盖）。由 ReviewScreen 灌入。
+  /// 空 = 用 Anki 出厂值（见 Sm2Params）。
+  Map<String, dynamic> srsParams = const {};
+
+  Sm2Params get _sm2Params =>
+      srsParams.isEmpty ? const Sm2Params() : Sm2Params.fromJson(srsParams);
+
+  /// 请求里的引擎（`p['engine']`），没有就用本会话的。
+  /// 允许显式传是为了让模板在混合场景（查别的书）里也能正确取数。
+  String _engineOf(Map<String, dynamic> p) {
+    final e = (p['engine'] ?? '').toString().trim().toLowerCase();
+    if (e == 'sm2' || e == 'srs_basic' || e == 'card') return 'sm2';
+    if (e == 'fsrs' || e == 'language' || e == 'word') return 'fsrs';
+    return engine;
+  }
+
+  /// 卡牌状态存储（阶段 2）：card.get / card.due / card.new 靠它。
   final CardSource cardSource;
 
   /// 干扰项池缓存（book_id → 精简池）。pool.get 走它，改书后清空。
@@ -80,8 +108,7 @@ class WebViewBridge {
   /// 会话断点（workflow.js 的 session.save 落这）。
   final SessionStore sessions = SessionStore();
 
-  final _messages = StreamController<BridgeMessage>.broadcast();
-  Stream<BridgeMessage> get messages => _messages.stream;
+  final _messages = StreamController<BridgeMessage>.broadcast();  Stream<BridgeMessage> get messages => _messages.stream;
 
   String? _currentCardId;
 
@@ -162,7 +189,8 @@ class WebViewBridge {
     rpc.register('card.get', (p) async {
       final id = (p['id'] ?? '').toString();
       final c = await cardSource.cardById(id);
-      return {'card': c == null ? null : _cardJson(c)};
+      final eng = _engineOf(p);
+      return {'card': c == null ? null : _cardJson(c, engine: eng), 'engine': eng};
     });
 
     // 到期队列（已学 + 到期，不含新卡）。ids 按 due 升序，limit 截断。
@@ -195,8 +223,11 @@ class WebViewBridge {
       return {'ok': true, 'book': book, 'count': cards.length, 'cards': cards};
     });
 
-    // 交评级：跑 FSRS + 落盘，回新状态。这是唯一会动调度数据的入口。
+    // 交评级：跑调度 + 落盘，回新状态。这是唯一会动调度数据的入口。
     //
+    // 两套引擎共用这一条，行为按 `engine` 分派：
+    //   fsrs → 三档（again/hard/good），跑 FSRS-lite，天粒度
+    //   sm2  → 四档（again/hard/good/easy），跑 SM-2，学习步是分钟粒度
     // 评分必须**显式且合法**。以前是 `catch (_) { rating = Rating.good }`，
     // 任何拼错的 / 老模板传的 / 消息串了的评分都被当成「记得」写进 FSRS ——
     // 这在调度系统里是最危险的一类兜底：它不报错，只是悄悄把这张卡的
@@ -206,6 +237,36 @@ class WebViewBridge {
       final id = (p['id'] ?? '').toString();
       if (id.isEmpty) return {'ok': false, 'error': 'missing id'};
       final key = (p['rating'] ?? '').toString();
+      final eng = _engineOf(p);
+
+      if (eng == 'sm2') {
+        Sm2Rating rating;
+        try {
+          rating = Sm2Rating.fromKey(key);
+        } catch (_) {
+          return {
+            'ok': false,
+            'id': id,
+            'engine': 'sm2',
+            'error': '非法评分: "$key"（sm2 只接受 again/hard/good/easy）',
+          };
+        }
+        final prev = store.sm2Of(id);
+        final st = sm2Review(prev, rating, DateTime.now(), _sm2Params);
+        store.putSm2Review(id, prev, st, rating);
+        await StatusWriter.I.writeThrottled();
+        return {
+          'ok': true,
+          'id': id,
+          'engine': 'sm2',
+          'rating': rating.key,
+          'state': st.toJson(),
+          'due_in': st.due == null
+              ? null
+              : sm2FormatGap(st.due!.difference(DateTime.now())),
+        };
+      }
+
       Rating rating;
       try {
         rating = Rating.fromKey(key);
@@ -213,13 +274,31 @@ class WebViewBridge {
         return {
           'ok': false,
           'id': id,
+          'engine': 'fsrs',
           'error': '非法评分: "$key"（只接受 again/hard/good 或 忘记/模糊/记得）',
         };
       }
       final prev = store.stateOf(id);
       final st = review(prev, rating);
       store.putReview(id, prev, st, rating);
-      return {'ok': true, 'id': id, 'rating': rating.key, 'state': st.toJson()};
+      return {'ok': true, 'id': id, 'engine': 'fsrs', 'rating': rating.key, 'state': st.toJson()};
+    });
+
+    // 四档的「下次间隔」预览：模板把它画在按钮上的小字（Anki 那个）。
+    // 纯计算，不落盘 —— 就为了一个实时预览去写盘是疯了。
+    rpc.register('review.preview', (p) async {
+      final id = (p['id'] ?? '').toString();
+      final eng = _engineOf(p);
+      if (eng != 'sm2') {
+        return {'ok': true, 'engine': 'fsrs', 'ratings': <String, String>{}};
+      }
+      final st = id.isEmpty ? Sm2State() : store.sm2Of(id);
+      return {
+        'ok': true,
+        'engine': 'sm2',
+        'phase': st.phase,
+        'ratings': sm2Preview(st, DateTime.now(), _sm2Params),
+      };
     });
 
     // 今日背诵量 +n：由 workflow.js 在卡片「毕业」那一刻主动调用。
@@ -232,15 +311,30 @@ class WebViewBridge {
       return {'ok': true};
     });
 
-    // 读一张卡的 FSRS 调度状态 + 标熟位：模板判「学没学过 / 该不该复习」用，
-    // 不用再绕 card.due 猜。只读，不动任何调度数据。
+    // 读一张卡的调度状态 + 标熟位：模板判「学没学过 / 该不该复习 / 到没到点」用，
+    // 不用再绕 card.due 猜。只读，不动任何调度数据。两套引擎共用。
     rpc.register('state.getReview', (p) async {
       final id = (p['id'] ?? '').toString();
       if (id.isEmpty) return {'ok': false, 'error': 'missing id'};
+      final eng = _engineOf(p);
+      if (eng == 'sm2') {
+        final st = store.sm2Of(id);
+        return {
+          'ok': true,
+          'id': id,
+          'engine': 'sm2',
+          'is_new': st.isNew,
+          'is_learned': st.isLearned,
+          'due_now': sm2IsDue(st),
+          'known': store.isKnown(id),
+          'state': st.toJson(),
+        };
+      }
       final st = store.stateOf(id);
       return {
         'ok': true,
         'id': id,
+        'engine': 'fsrs',
         'is_new': st.isNew,
         'is_learned': !st.isNew,
         'known': store.isKnown(id),
@@ -401,25 +495,106 @@ class WebViewBridge {
       _poolCache.clear();
       return {'ok': true};
     });
+
+    // ---- 本地图片 → data-uri ----
+    //
+    // 卡里的 `<img src="…">` 不能写相对路径：模板是 `loadHtmlString` 灌进去的，
+    // 页面没有 baseUrl，相对路径**一定** 404（跟 KaTeX 字体是同一个坑）。
+    // 外链（http/data:）模板直接用；本地文件走这里换 data-uri。
+    //
+    // 路径相对 `Documents/Flashcard/`，规范化后不允许 `..` 逃逸 ——
+    // 跟 fs.* 同一套边界。上限 6MB：一张卡片图再大就是数据搞错了。
+    rpc.register('media.get', (p) async {
+      final raw = (p['path'] ?? '').toString().trim();
+      if (raw.isEmpty) return {'ok': false, 'error': 'missing path'};
+      final norm = _normAssetPath(raw);
+      if (norm == null) return {'ok': false, 'error': '非法路径: $raw'};
+      final root = DataDir.cachedRoot ?? await DataDir.root();
+      if (root == null) {
+        return {'ok': false, 'error': '数据目录不可用（未授权）'};
+      }
+      try {
+        final f = File('${root.path}/$norm');
+        if (!await f.exists()) return {'ok': false, 'error': '找不到: $norm'};
+        final bytes = await f.readAsBytes();
+        if (bytes.length > 6 * 1024 * 1024) {
+          return {'ok': false, 'error': '文件过大（>6MB）: $norm'};
+        }
+        final mime = _mimeOf(norm);
+        return {
+          'ok': true,
+          'path': norm,
+          'mime': mime,
+          'bytes': bytes.length,
+          'data_uri': 'data:$mime;base64,${base64Encode(bytes)}',
+        };
+      } catch (e) {
+        return {'ok': false, 'error': '$e'};
+      }
+    });
   }
 
   // ---- RPC 辅助 ----
 
-  /// 一张卡的完整数据（与 mountCard 灌进模板的形状一致）
-  Map<String, dynamic> _cardJson(FlashCard c) => {
-        'id': c.id,
-        'fields': c.fields,
-        'state': store.stateOf(c.id).toJson(),
-        'kv': store.kvOf(c.id),
-      };
+  /// 规范化资源路径：吃掉 `.` / `..`，禁止逃出数据根。
+  /// 返回 null = 非法。
+  static String? _normAssetPath(String raw) {
+    final parts = raw.replaceAll('\\', '/').split('/');
+    final out = <String>[];
+    for (final p in parts) {
+      if (p.isEmpty || p == '.') continue;
+      if (p == '..') {
+        if (out.isEmpty) return null; // 想向上逃出根 → 拒
+        out.removeLast();
+        continue;
+      }
+      out.add(p);
+    }
+    return out.isEmpty ? null : out.join('/');
+  }
+
+  static String _mimeOf(String path) {
+    final p = path.toLowerCase();
+    if (p.endsWith('.png')) return 'image/png';
+    if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'image/jpeg';
+    if (p.endsWith('.webp')) return 'image/webp';
+    if (p.endsWith('.gif')) return 'image/gif';
+    if (p.endsWith('.svg')) return 'image/svg+xml';
+    if (p.endsWith('.bmp')) return 'image/bmp';
+    if (p.endsWith('.mp3')) return 'audio/mpeg';
+    if (p.endsWith('.m4a')) return 'audio/mp4';
+    if (p.endsWith('.wav')) return 'audio/wav';
+    if (p.endsWith('.ogg')) return 'audio/ogg';
+    return 'application/octet-stream';
+  }
+
+  /// 一张卡的完整数据（与 mountCard 灌进模板的形状一致）。
+  /// [engine] 决定 `state` 字段装的是哪套调度状态 —— 字段名不变，
+  /// 模板只看字段名，不用管背后是 FSRS 还是 SM-2。
+  Map<String, dynamic> _cardJson(FlashCard c, {String? engine}) {
+    final eng = engine ?? this.engine;
+    return {
+      'id': c.id,
+      'fields': c.fields,
+      'engine': eng,
+      'state': eng == 'sm2'
+          ? store.sm2Of(c.id).toJson()
+          : store.stateOf(c.id).toJson(),
+      'kv': store.kvOf(c.id),
+    };
+  }
 
   /// 到期 / 新卡队列。
   /// 只用 [Book.allCardIds]（来自 index.json，**不读章节文件**）判队列，
   /// 所以列 6500 词的到期也不会把书读进内存。
+  ///
+  /// 两套引擎共用：`engine=sm2` 时走 SM-2（分钟粒度、四档），否则走 FSRS。
   Future<List<String>> _queue(
     Map<String, dynamic> p, {
     required bool reviewOnly,
   }) async {
+    if (_engineOf(p) == 'sm2') return _queueSm2(p, reviewOnly: reviewOnly);
+
     final limit = (p['limit'] as num?)?.toInt() ?? 0;
     final bookId = (p['bookId'] ?? '').toString();
     final now = DateTime.now();
@@ -446,6 +621,50 @@ class WebViewBridge {
     }
 
     // 最该复习的排前面：按到期时间升序
+    dueRefs.sort((a, b) {
+      final da = a.value;
+      final db = b.value;
+      if (da == null && db == null) return 0;
+      if (da == null) return -1;
+      if (db == null) return 1;
+      return da.compareTo(db);
+    });
+    final ids = [for (final e in dueRefs) e.key];
+    return limit > 0 ? ids.take(limit).toList() : ids;
+  }
+
+  /// SM-2 版队列（srs_basic 引擎）。
+  ///
+  /// 跟上面 FSRS 那版的唯一实质差别：比的是**时刻**不是日期（[sm2IsDue]）。
+  /// 学习步是 1 分钟 / 10 分钟，用「日」比会把刚学过的卡一直判为未到期。
+  Future<List<String>> _queueSm2(
+    Map<String, dynamic> p, {
+    required bool reviewOnly,
+  }) async {
+    final limit = (p['limit'] as num?)?.toInt() ?? 0;
+    final bookId = (p['bookId'] ?? '').toString();
+    final now = DateTime.now();
+
+    final dueRefs = <MapEntry<String, DateTime?>>[];
+    final newIds = <String>[];
+
+    for (final b in await cardSource.books()) {
+      if (bookId.isNotEmpty && b.bookId != bookId) continue;
+      for (final id in b.allCardIds) {
+        if (store.isKnown(id)) continue; // 标熟 = 永久出队
+        final st = store.sm2Of(id);
+        if (st.isNew) {
+          if (!reviewOnly) newIds.add(id);
+        } else if (sm2IsDue(st, now)) {
+          dueRefs.add(MapEntry(id, st.due));
+        }
+      }
+    }
+
+    if (!reviewOnly) {
+      return limit > 0 ? newIds.take(limit).toList() : newIds;
+    }
+
     dueRefs.sort((a, b) {
       final da = a.value;
       final db = b.value;
@@ -500,6 +719,8 @@ class WebViewBridge {
       css: template.css,
       js: template.js,
       workflowJs: template.workflow,
+      vendorCss: template.vendorCss,
+      vendorJs: template.vendorJs,
       fields: fields,
       cardJson: cardJson,
       kv: const <String, dynamic>{},
@@ -532,8 +753,12 @@ class WebViewBridge {
     final cardJson = <String, dynamic>{
       'id': card?.id ?? '',
       'fields': fields,
-      'state':
-          card == null ? <String, dynamic>{} : store.stateOf(card.id).toJson(),
+      'engine': engine,
+      'state': card == null
+          ? <String, dynamic>{}
+          : (engine == 'sm2'
+              ? store.sm2Of(card.id).toJson()
+              : store.stateOf(card.id).toJson()),
       // 卡牌私有 KV（标熟 / 收藏…）—— 模板顶栏读它渲染按钮状态。
       // 不传这个，模板就不知道这张卡是不是已经标过熟，按钮永远是灰的。
       'kv': card == null ? <String, dynamic>{} : store.kvOf(card.id),
@@ -546,7 +771,6 @@ class WebViewBridge {
     };
 
     _lastCardJson = cardJson;
-
     final jsonStr = TemplateEngine.jsonForJs(cardJson);
     final js = "window.Flashcard.mountCard('$jsonStr');";
     await ctrl.runJavaScript(js);

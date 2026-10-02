@@ -143,6 +143,12 @@ class PageListBody extends StatelessWidget {
   void _pushReview(BuildContext context, List<FlashCard> list, bool shuffle) {
     if (shuffle) list.shuffle(math.Random());
 
+    // srs_basic（知识点卡）由 workflow.js 自己拉队列 —— 壳只需要把这一章
+    // **全部**卡给它当候选池（不能只给未学的：到期的是已学卡，
+    // 拿不到它们 workflow 就卡死在“无卡可挂”）。
+    final isCard = template!.engine == 'srs_basic';
+    final unitCards = isCard ? cards : list;
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -150,12 +156,14 @@ class PageListBody extends StatelessWidget {
           title: title,
           units: [
             StudyPlanner.singleUnit(
-              passage: passage,
-              cards: list,
+              passage: isCard ? null : passage,
+              cards: unitCards,
               passageCards: cards,
               // 只挖「这一轮要背的词」；其余目标词在语篇里只划线展示
-              blankLemmas: StudyPlanner.blankLemmasFor(list, passage),
-              readFirst: true,
+              blankLemmas: isCard
+                  ? const <String>{}
+                  : StudyPlanner.blankLemmasFor(list, passage),
+              readFirst: !isCard,
             ),
           ],
           template: template!,
@@ -168,7 +176,7 @@ class PageListBody extends StatelessWidget {
           bookId: book.bookId,
           store: store,
           settings: settings,
-          isCard: template!.engine == 'srs_basic',
+          isCard: isCard,
         ),
       ),
     );
@@ -250,14 +258,21 @@ class PageListBody extends StatelessWidget {
 
   /// 词表一行：点开 -> 单卡预览（词义页）
   /// 显示：单词 + 词性标签 + 音标 + 释义（最多两行）
+  ///
+  /// srs_basic 的书（知识点卡）没有词/词性/音标，改走通用字段：
+  /// 标题 = front（或挖空首段），副标题 = 卡型 · 出处，正文 = 答案摘要。
   Widget _pageTile(BuildContext context, int i) {
     final card = cards[i];
-    final learned = store.isLearned(card.id);
-    final phonetic =
-        (card.fields['phonetic_us'] ?? card.fields['phonetic_uk'] ?? '')
+    final isCard = template?.engine == 'srs_basic';
+    final learned =
+        isCard ? store.isLearnedSm2(card.id) : store.isLearned(card.id);
+    final phonetic = isCard
+        ? card.displaySubtitle
+        : (card.fields['phonetic_us'] ?? card.fields['phonetic_uk'] ?? '')
             .toString();
-    final pos = card.posLabel;
-    final meaning = card.meaningFull;
+    final pos = isCard ? '' : card.posLabel;
+    final meaning = isCard ? card.displaySummary : card.meaningFull;
+    final title = isCard ? card.displayTitle : card.word;
     final tpl = template;
 
     return InkWell(
@@ -306,7 +321,7 @@ class PageListBody extends StatelessWidget {
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Flexible(
-                        child: Text(card.word,
+                        child: Text(title,
                             style: const TextStyle(
                                 color: Color(0xFFF0F4F5),
                                 fontSize: 15.5,

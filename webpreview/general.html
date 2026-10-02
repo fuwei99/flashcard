@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>flashcard · 通用卡预览（srs_basic / SM-2）</title>
+<style>
+:root{
+  --bg:#141d1f; --line:rgba(255,255,255,.08); --txt:#f0f4f5;
+  --muted:#8c9da2; --dim:#54666c; --teal:#00c08b; --teal-bg:rgba(0,192,139,.12);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidden;
+  -webkit-font-smoothing:antialiased}
+#app{display:flex;flex-direction:column;height:100vh;max-width:680px;margin:0 auto}
+
+/* 模拟壳的顶栏：真实 Flutter 壳里这段是 Dart 画的，这里用 HTML 复刻
+   （口径一样：done/total + 今日 a/b） */
+#shellbar{flex:0 0 auto;padding:10px 16px 8px;border-bottom:1px solid var(--line)}
+#shellbar .r1{display:flex;align-items:center;gap:10px}
+#shellbar .back{font-size:18px;color:var(--muted);cursor:pointer;text-decoration:none}
+#shellbar .ttl{flex:1;font-size:14px;font-weight:600;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#shellbar .cnt{font-size:13px;font-weight:600;color:var(--teal);font-variant-numeric:tabular-nums}
+#shellbar .bar{margin-top:8px;height:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+#shellbar .bar > i{display:block;height:100%;width:0;background:var(--teal);transition:width .2s}
+#shellbar .td{margin-top:5px;font-size:11px;color:var(--dim);display:flex;justify-content:space-between}
+
+#stage{flex:1 1 auto;position:relative;background:var(--bg)}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
+
+#done{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;color:var(--muted);background:var(--bg);z-index:9}
+#done.on{display:flex}
+#done .big{font-size:44px}
+#done button{margin-top:8px;padding:10px 22px;border:0;border-radius:12px;background:var(--teal);
+  color:#10201c;font-weight:700;font-size:14px;font-family:var(--sans);cursor:pointer}
+
+#log{position:absolute;left:0;right:0;bottom:0;max-height:34%;overflow-y:auto;
+  background:rgba(8,12,13,.92);border-top:1px solid var(--line);font:11px/1.55
+  ui-monospace,SFMono-Regular,Menlo,monospace;color:#8c9da2;padding:6px 10px;display:none;z-index:10}
+#log.on{display:block}
+#log b{color:var(--teal);font-weight:600}
+#logToggle{position:absolute;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));
+  z-index:11;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);
+  background:rgba(20,29,31,.9);color:var(--muted);cursor:pointer;font-size:15px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="shellbar">
+    <div class="r1">
+      <a class="back" href="index.html">←</a>
+      <span class="ttl" id="sbTitle">通用卡演示</span>
+      <span class="cnt" id="sbCnt">已背 0 / 0</span>
+    </div>
+    <div class="bar"><i id="sbBar"></i></div>
+    <div class="td"><span id="sbPhase">待启动</span><span id="sbToday">今日 0 / 20</span></div>
+  </header>
+
+  <main id="stage">
+    <iframe id="card" title="card"></iframe>
+    <div id="done">
+      <div class="big">🎉</div>
+      <div id="doneText">本场背完</div>
+      <button id="again">再来一轮</button>
+    </div>
+    <button id="logToggle" title="JS 日志">≡</button>
+    <div id="log"></div>
+  </main>
+</div>
+
+<script src="sm2.js"></script>
+<script src="general.js"></script>
+</body>
+</html>
