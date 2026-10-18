@@ -159,6 +159,7 @@ class PageListBody extends StatelessWidget {
               passage: isCard ? null : passage,
               cards: unitCards,
               passageCards: cards,
+              passageIndex: book.passageIndex,
               // 只挖「这一轮要背的词」；其余目标词在语篇里只划线展示
               blankLemmas: isCard
                   ? const <String>{}

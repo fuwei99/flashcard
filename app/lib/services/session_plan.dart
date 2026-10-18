@@ -21,7 +21,10 @@ class SessionPlan {
     required bool passageCloze,
     required List<String> retestModes,
     required Map<String, dynamic> Function(
-            Passage p, List<FlashCard> cards, Set<String>? blank)
+            Passage p,
+            List<FlashCard> cards,
+            Set<String>? blank,
+            [Map<String, FlashCard>? extra])
         passageJson,
   }) {
     final out = <Map<String, dynamic>>[];
@@ -41,7 +44,8 @@ class SessionPlan {
         'hasPassage': u.hasPassage,
         'blankLemmas': u.blankLemmas?.toList() ?? <String>[],
         'passage': u.hasPassage
-            ? passageJson(u.passage!, u.passageLookup, u.blankLemmas)
+            ? passageJson(
+                u.passage!, u.passageLookup, u.blankLemmas, u.passageIndex)
             : null,
         'cards': cards,
       });

@@ -736,6 +736,7 @@ class WebViewBridge {
     FlashCard? card,
     Passage? passage,
     List<FlashCard> passageCards = const [],
+    Map<String, FlashCard>? passageIndex,
     Set<String>? blankLemmas,
     required int index,
     required int total,
@@ -767,7 +768,7 @@ class WebViewBridge {
       'session': session,
       'choices': choices,
       if (passage != null && passage.hasContent)
-        'passage': passageJson(passage, passageCards, blankLemmas),
+        'passage': passageJson(passage, passageCards, blankLemmas, passageIndex),
     };
 
     _lastCardJson = cardJson;
@@ -790,13 +791,21 @@ class WebViewBridge {
   /// 把语篇解析成模板友好的 segments，并把每个目标词关联到本章卡片（词性/释义）。
   /// 模板拿到的是现成结构，不需要自己解析 [word] / [surface|lemma]。
   /// [blankLemmas] 为 null 时挖全部标记词；否则只挖命中的 lemma。
+  /// [extra] 是全书卡池索引（schema 2）：语篇里引用的词可能压根不在这章的
+  /// 卡片列表里 —— 它在别的章「归位」，这里只是又一次出现。没有它，那些
+  /// 词会渲染成没有词性、没有释义的死词。
   Map<String, dynamic> passageJson(Passage p, List<FlashCard> cards,
-      [Set<String>? blankLemmas]) {
+      [Set<String>? blankLemmas, Map<String, FlashCard>? extra]) {
     final byWord = <String, FlashCard>{};
     for (final c in cards) {
       byWord[c.word.toLowerCase()] = c;
       final w = (c.fields['word'] ?? '').toString().toLowerCase();
       if (w.isNotEmpty) byWord[w] = c;
+    }
+    if (extra != null) {
+      for (final e in extra.entries) {
+        byWord.putIfAbsent(e.key, () => e.value);
+      }
     }
 
     final segs = <Map<String, dynamic>>[];

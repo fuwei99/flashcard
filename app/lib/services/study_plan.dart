@@ -36,11 +36,15 @@ const int kGroupSize = 20;
 /// 等于给每一本书的每一章都做一次同步 IO —— 文档里承诺的
 /// 「只读当天要用的那几章」就成了空话。现在只有真被选中的章才会碰到它们。
 class _Group {
+  final Book? book;
   final Chapter? chapter;
   final List<FlashCard> inlineCards;
   final String? _title;
 
-  const _Group(this.chapter, this.inlineCards, this._title);
+  const _Group(this.book, this.chapter, this.inlineCards, this._title);
+
+  /// 语篇释义查表的全书索引（schema 2 才有；老格式 null）
+  Map<String, FlashCard>? get passageIndex => book?.passageIndex;
 
   /// 语篇（懒）—— 只有这一章被排进计划才会真正读盘
   Passage? get passage => chapter?.passage;
@@ -71,9 +75,9 @@ class StudyPlanner {
       // 注意：这里**不能**取 c.title / c.passage。新格式下这两个 getter
       // 在没有 index 种子时会直接读 ch_*.json，一旦在这里取，
       // 「先只用 id 判断、不读章节文件」的整套懒加载就失效了。
-      return [for (final c in b.chapters) _Group(c, const [], null)];
+      return [for (final c in b.chapters) _Group(b, c, const [], null)];
     }
-    return [_Group(null, b.looseCards, b.title)];
+    return [_Group(b, null, b.looseCards, b.title)];
   }
 
   static String _lemmaOf(FlashCard c) =>
@@ -179,6 +183,8 @@ class StudyPlanner {
         readFirst: false,
         isReview: true,
         passageCards: cards,
+        // 只有真挂语篇才去碰全书索引（它会全量解析卡池）
+        passageIndex: withPassage ? g.passageIndex : null,
         title: g.title,
       ));
     }
@@ -212,6 +218,7 @@ class StudyPlanner {
           readFirst: true,
           isReview: false,
           passageCards: g.cards,
+          passageIndex: hasPassage ? g.passageIndex : null,
           title: g.title,
         ));
       }
@@ -356,6 +363,7 @@ class StudyPlanner {
     Passage? passage,
     required List<FlashCard> cards,
     List<FlashCard>? passageCards,
+    Map<String, FlashCard>? passageIndex,
     Set<String>? blankLemmas,
     bool readFirst = false,
     bool isReview = false,
@@ -368,6 +376,7 @@ class StudyPlanner {
       readFirst: readFirst,
       isReview: isReview,
       passageCards: passageCards,
+      passageIndex: passageIndex,
       title: title,
     );
   }

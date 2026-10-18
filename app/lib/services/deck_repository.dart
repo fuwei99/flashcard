@@ -522,17 +522,37 @@ class DeckRepository {
     if (await dir.exists()) await dir.delete(recursive: true);
     await dir.create(recursive: true);
 
+    // schema 2：卡片统一进全书卡池（cards.jsonl），章文件只留 id 索引。
+    // 同一个 id 只写一行（先到先得），几章都引用它也只占一份 —— 调度状态
+    // 本来就按 id 唯一，这样「一卡一位、多处出现」才成立。
+    final pool = <String, FlashCard>{};
+    for (final c in book.chapters) {
+      for (final card in c.cards) {
+        pool.putIfAbsent(card.id, () => card);
+      }
+    }
+    for (final card in book.looseCards) {
+      pool.putIfAbsent(card.id, () => card);
+    }
+    final buf = StringBuffer();
+    for (final card in pool.values) {
+      buf.writeln(json.encode(card.toJson()));
+    }
+    await File('${dir.path}/cards.jsonl').writeAsString(buf.toString());
+
     var i = 0;
     for (final c in book.chapters) {
       i++;
       final name = 'ch_${i.toString().padLeft(4, '0')}.json';
       await File('${dir.path}/$name').writeAsString(
-        const JsonEncoder.withIndent('  ').convert(c.toJson()),
+        const JsonEncoder.withIndent('  ').convert(c.toJsonIndexed()),
       );
     }
 
     await File('${dir.path}/index.json').writeAsString(
-      const JsonEncoder.withIndent('  ').convert(book.toIndexJson()),
+      const JsonEncoder.withIndent('  ').convert(
+        book.toIndexJson(schema2: true, cardCount: pool.length),
+      ),
     );
 
     // 顺手清掉可能存在的同名单文件

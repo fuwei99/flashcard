@@ -84,6 +84,10 @@ class StudyUnit {
   /// 语篇释义查表用的卡片（该章全部卡片，通常比 cards 多）；为空时用 cards
   final List<FlashCard>? passageCards;
 
+  /// 语篇释义查表的全书索引（schema 2 卡池）。语篇里引用的词可能不在本章，
+  /// 甚至不在本单元 —— 没有它就查不到释义。
+  final Map<String, FlashCard>? passageIndex;
+
   /// 单元标题（章名 / 分组名），仅用于展示
   final String title;
 
@@ -94,6 +98,7 @@ class StudyUnit {
     this.readFirst = false,
     this.isReview = false,
     this.passageCards,
+    this.passageIndex,
     this.title = '',
   });
 

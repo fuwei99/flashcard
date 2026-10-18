@@ -129,20 +129,155 @@ class ChapterContent {
   });
 }
 
+/// 全书卡池（schema 2 的唯一真源）
+/// ================================================================
+///   books/<book_id>/cards.jsonl   一行一张卡（推荐：diff 干净、可增量追加）
+///   books/<book_id>/cards.json    一个数组（小书 / 手写方便）
+///
+/// 章文件里只留 **id 引用**：`"cards": ["flawed", "prevail"]`。
+/// 一张卡在全书只有一个物理位置，出现在几章就几章引用它 —— 调度状态按
+/// id 唯一（[CardStore] 全部以 cardId 为键），所以同一个词绝不会被背两遍，
+/// 也不会出现「两份内容各改各的」那种分叉。
+///
+/// 读盘是**懒的**：构造时只记路径，第一次 byId / byWord / all 才碰文件；
+/// 读的时候只对每一行做一次 id / word 的正则扫描建索引，卡片本体按需解析。
+/// 6500 词的书开背时不会把整本解析进内存。
+class CardPool {
+  final String path;
+  final String templateId;
+  final bool jsonl;
+
+  final Map<String, FlashCard> _cards = {};
+  final Map<String, int> _idAt = {};
+  final Map<String, int> _wordAt = {};
+  List<String> _lines = const <String>[];
+  bool _ready = false;
+
+  CardPool(this.path, this.templateId, {this.jsonl = true});
+
+  static final RegExp _idRe = RegExp(r'"id"\s*:\s*"([^"]*)"');
+  static final RegExp _wordRe = RegExp(r'"word"\s*:\s*"([^"]*)"');
+
+  void _ensure() {
+    if (_ready) return;
+    _ready = true;
+    try {
+      final f = File(path);
+      if (!f.existsSync()) return;
+      final raw = f.readAsStringSync();
+      if (!jsonl) {
+        final arr = json.decode(raw);
+        if (arr is List) {
+          for (final e in arr) {
+            if (e is! Map) continue;
+            final c =
+                FlashCard.fromJson(Map<String, dynamic>.from(e), templateId);
+            _cards[c.id] = c;
+          }
+        }
+        return;
+      }
+      _lines = raw.split('\n');
+      for (var i = 0; i < _lines.length; i++) {
+        final l = _lines[i].trim();
+        if (l.isEmpty || !l.startsWith('{')) continue;
+        final m = _idRe.firstMatch(l);
+        if (m != null) _idAt.putIfAbsent(m.group(1)!, () => i);
+        final w = _wordRe.firstMatch(l);
+        if (w != null) _wordAt.putIfAbsent(w.group(1)!.toLowerCase(), () => i);
+      }
+    } catch (_) {}
+  }
+
+  FlashCard? _parseLine(int i) {
+    if (i < 0 || i >= _lines.length) return null;
+    try {
+      final m = json.decode(_lines[i]);
+      if (m is! Map) return null;
+      final c = FlashCard.fromJson(Map<String, dynamic>.from(m), templateId);
+      _cards[c.id] = c;
+      return c;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 按 id 取卡（章文件里的引用走这里）
+  FlashCard? byId(String id) {
+    _ensure();
+    final hit = _cards[id];
+    if (hit != null) return hit;
+    if (!jsonl) return null;
+    final i = _idAt[id];
+    return i == null ? null : _parseLine(i);
+  }
+
+  /// 按词形取卡（语篇 [surface|lemma] 走这里；lemma 不一定等于 id）
+  FlashCard? byWord(String word) {
+    final w = word.trim().toLowerCase();
+    if (w.isEmpty) return null;
+    _ensure();
+    if (!jsonl) {
+      for (final c in _cards.values) {
+        if (c.word.toLowerCase() == w) return c;
+      }
+      return null;
+    }
+    final i = _wordAt[w];
+    if (i == null) return byId(word);
+    return _parseLine(i);
+  }
+
+  /// 全书卡片（全量解析；只在导出 / 统计 / 迁移时用）
+  Map<String, FlashCard> get all {
+    _ensure();
+    if (jsonl) {
+      for (var i = 0; i < _lines.length; i++) {
+        final l = _lines[i].trim();
+        if (l.isEmpty || !l.startsWith('{')) continue;
+        final m = _idRe.firstMatch(l);
+        final id = m?.group(1);
+        if (id != null && _cards.containsKey(id)) continue;
+        _parseLine(i);
+      }
+    }
+    return _cards;
+  }
+
+  /// 词 / id → 卡。语篇跨章查释义用（会全量解析，只在有语篇的单元里调）
+  Map<String, FlashCard> get wordIndex {
+    final out = <String, FlashCard>{};
+    for (final c in all.values) {
+      out.putIfAbsent(c.word.toLowerCase(), () => c);
+      out.putIfAbsent(c.id.toLowerCase(), () => c);
+    }
+    return out;
+  }
+}
+
 /// 同步读一个 ch 分片文件（首次访问时才调用；单章几十~几百 KB，毫秒级）
-ChapterContent _readChapterFile(String path, String templateId) {
+ChapterContent _readChapterFile(String path, String templateId,
+    [CardPool? pool]) {
   try {
     final f = File(path);
     if (!f.existsSync()) return const ChapterContent();
     final m = json.decode(f.readAsStringSync());
     if (m is! Map) return const ChapterContent();
+    final cards = <FlashCard>[];
+    for (final e in (m['cards'] as List? ?? [])) {
+      if (e is Map) {
+        // schema 1：卡片内联在章文件里（老书，继续支持）
+        cards.add(FlashCard.fromJson(Map<String, dynamic>.from(e), templateId));
+      } else if (e is String) {
+        // schema 2：章里只有 id，卡片本体在全书卡池
+        final c = pool?.byId(e) ?? pool?.byWord(e);
+        if (c != null) cards.add(c);
+      }
+    }
     return ChapterContent(
       title: (m['title'] ?? '').toString(),
       passage: _passageFrom(m['passage']),
-      cards: [
-        for (final e in (m['cards'] as List? ?? []))
-          FlashCard.fromJson(Map<String, dynamic>.from(e as Map), templateId),
-      ],
+      cards: cards,
     );
   } catch (_) {
     return const ChapterContent();
@@ -281,6 +416,14 @@ class Chapter {
         if (passage != null) 'passage': passage!.toJson(),
         'cards': cards.map((c) => c.toJson()).toList(),
       };
+
+  /// schema 2 的章文件：卡片退化成 id 索引，本体在全书 cards.jsonl
+  Map<String, dynamic> toJsonIndexed() => {
+        'chapter_id': chapterId,
+        'title': title,
+        if (passage != null) 'passage': passage!.toJson(),
+        'cards': ids,
+      };
 }
 
 /// 兼容三种写法：对象 {"text":...} / 纯字符串 / 空
@@ -320,6 +463,9 @@ class Book {
   /// 分片目录（null = 单文件 / 内置 asset）
   final String? dir;
 
+  /// schema 2 的全书卡池（null = 老格式，卡片内联在各章里）
+  final CardPool? pool;
+
   Book({
     required this.bookId,
     required this.title,
@@ -332,6 +478,7 @@ class Book {
     this.looseIds = const <String>[],
     this.passage,
     this.dir,
+    this.pool,
   });
 
   bool get hasChapters => chapters.isNotEmpty;
@@ -356,6 +503,10 @@ class Book {
   /// 全书的卡片（会把所有章节读进内存；只在真要背的时候用）
   List<FlashCard> get allCards =>
       hasChapters ? chapters.expand((c) => c.cards).toList() : looseCards;
+
+  /// 语篇跨章查释义用的全表（词 / id → 卡）。老格式返回 null，走原来的
+  /// 「只用本章卡片」逻辑，行为不变。
+  Map<String, FlashCard>? get passageIndex => pool?.wordIndex;
 
   /// 老格式：卡片内联
   factory Book.fromJson(Map<String, dynamic> j) {
@@ -402,6 +553,16 @@ class Book {
     }
 
     final chapters = <Chapter>[];
+    // schema 2：全书卡池（懒加载，这里只 stat 一下文件在不在）
+    CardPool? pool;
+    final jl = File('$dir/cards.jsonl');
+    final ja = File('$dir/cards.json');
+    if (jl.existsSync()) {
+      pool = CardPool(jl.path, tplId);
+    } else if (ja.existsSync()) {
+      pool = CardPool(ja.path, tplId, jsonl: false);
+    }
+
     for (final fname in _chapterFiles(dir)) {
       final seed = seeds[fname];
       chapters.add(Chapter(
@@ -411,7 +572,7 @@ class Book {
         seedPassage: seed?.passage,
         seedCount: seed?.count ?? 0,
         seedIds: seed?.ids ?? const <String>[],
-        loader: () => _readChapterFile('$dir/$fname', tplId),
+        loader: () => _readChapterFile('$dir/$fname', tplId, pool),
       ));
     }
 
@@ -427,6 +588,7 @@ class Book {
       looseIds: (j['loose_ids'] as List? ?? []).map((e) => e.toString()).toList(),
       passage: _passageFrom(j['passage']),
       dir: dir,
+      pool: pool,
     );
   }
 
@@ -446,15 +608,17 @@ class Book {
 
   /// 新格式：index.json —— **只有书级元信息**，章节列表不写在这
   /// （章节由目录里的 ch_*.json 决定，加章不用改 index）
-  Map<String, dynamic> toIndexJson() {
+  Map<String, dynamic> toIndexJson({bool schema2 = false, int cardCount = 0}) {
     final m = <String, dynamic>{
-      'format': 'flashcard.book.v3',
+      'format': schema2 ? 'flashcard.book.v4' : 'flashcard.book.v3',
+      'schema': schema2 ? 2 : 1,
       'book_id': bookId,
       'title': title,
       'subtitle': subtitle,
       'template': templateId,
       'fields_order': fieldsOrder,
     };
+    if (schema2) m['card_count'] = cardCount;
     if (passage != null) m['passage'] = passage!.toJson();
     if (!hasChapters) {
       m['loose_count'] = looseCards.isNotEmpty ? looseCards.length : looseCount;

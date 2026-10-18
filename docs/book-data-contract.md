@@ -358,3 +358,61 @@ web_session 模板靠这几条自己开车（`webview_bridge.dart`）：
    → 建议：先存着，不驱动。
 4. 老书 adapter 放**壳（Dart）** 还是**模板（JS normCard）**？
    → 建议：模板 `normCard` 兜（改 JS 不用重编 APK），壳只喂原始。
+
+---
+
+## 11. schema 2：全书卡池 + 章内 id 索引（2026-10-18 生效）
+
+### 11.1 为什么改
+
+schema 1 里**卡片挂在章下面**（`ch_xxxx.json` 的 `cards[]` 是卡片对象数组）。
+于是同一个词想出现在两章，只有两条路，都烂：
+
+- 复制两份 → 两份内容各改各的，`sentence` / `meaningDetails` 永远不同步；
+- 不许重复收录 → 篇章只能凑合用没被别章占掉的词，语篇被词表反过来绑架。
+
+### 11.2 新磁盘布局
+
+```
+books/<book_id>/
+  index.json     书级元信息：schema=2 / card_count / template / fields_order
+  cards.jsonl    全书卡池，**一行一张卡**，id 唯一  ← 唯一真源
+  ch_0001.json   章：title + passage + "cards": ["flawed", "prevail", ...]
+  ch_0002.json   ...
+```
+
+章文件里的 `cards` 是**字符串 id 数组**。一张卡在全书只有一个物理位置，
+出现在几章就几章引用它 —— 调度状态按 id 唯一（`CardStore` 全以 cardId 为键），
+所以同一个词**绝不会被背两遍**，也不会出现内容分叉。
+
+### 11.3 兼容
+
+- `cards[]` 里元素是 **对象** → schema 1，内联解析（老书继续能读，不用动）；
+- 元素是 **字符串** → schema 2，从卡池 `byId` / `byWord` 取。
+  两种可以在同一本书里混着来，读路径不分支。
+- 写盘（`DeckRepository.saveImportedBook`）**一律写 schema 2**。
+- `cards.json`（数组形式）也支持，给手写的小书用。
+
+### 11.4 语篇跨章引用
+
+`Passage` 的 `[surface|lemma]` 本来就跟「这章有没有这张卡」无关，
+之前只是壳没给全书索引：`passageJson` 的 `byWord` 只从本章卡片建表，
+跨章引用的词会渲染成没有词性、没有释义的死词。
+
+现在 `StudyUnit.passageIndex` 一路带到 `passageJson(..., extra)`：
+本章表里查不到就查全书卡池。模板层零改动。
+
+### 11.5 迁移
+
+```bash
+python3 tools/migrate_cards_v2.py /path/to/books --all --dry-run   # 先看
+python3 tools/migrate_cards_v2.py /path/to/books --all            # 再写（自动备份）
+```
+
+⚠️ **先装新版 APK，再迁数据。** 老 APK 读到 schema 2 的章文件（`cards` 是字符串）
+会整章读空。脚本默认把书目录整份备份成 `<书目录>.v1bak-<时间戳>`。
+
+### 11.6 代价
+
+`passageIndex` 是**全量解析**卡池（第一次用到时）。只有「这一章真挂了语篇」
+才会取它；没有语篇的单元一律传 null，不会白白解析整本书。
