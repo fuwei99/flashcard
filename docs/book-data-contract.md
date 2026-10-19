@@ -375,11 +375,14 @@ schema 1 里**卡片挂在章下面**（`ch_xxxx.json` 的 `cards[]` 是卡片�
 
 ```
 books/<book_id>/
-  index.json     书级元信息：schema=2 / card_count / template / fields_order
+  index.json     书级元信息：schema=4（字段契约）/ card_layout=2（存储布局）/ card_count
   cards.jsonl    全书卡池，**一行一张卡**，id 唯一  ← 唯一真源
   ch_0001.json   章：title + passage + "cards": ["flawed", "prevail", ...]
   ch_0002.json   ...
 ```
+
+> 注意两个版本号别混：`schema` 是**卡片字段契约**（v4，见 §1），
+> `card_layout` 才是**存储布局**（2 = 全书卡池；缺省 = 卡片内联在章里）。
 
 章文件里的 `cards` 是**字符串 id 数组**。一张卡在全书只有一个物理位置，
 出现在几章就几章引用它 —— 调度状态按 id 唯一（`CardStore` 全以 cardId 为键），

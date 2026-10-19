@@ -611,7 +611,10 @@ class Book {
   Map<String, dynamic> toIndexJson({bool schema2 = false, int cardCount = 0}) {
     final m = <String, dynamic>{
       'format': schema2 ? 'flashcard.book.v4' : 'flashcard.book.v3',
-      'schema': schema2 ? 2 : 1,
+      // schema = 卡片字段契约版本（v4），跟 SOP 里那个 schema 是同一个东西。
+      // 存储布局另起一个键：card_layout 2 = 全书卡池，缺省 = 卡片内联在章里。
+      'schema': 4,
+      if (schema2) 'card_layout': 2,
       'book_id': bookId,
       'title': title,
       'subtitle': subtitle,

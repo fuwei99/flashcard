@@ -114,7 +114,10 @@ def migrate(book_dir, dry_run=False, backup=True):
             idx = json.load(f)
     else:
         idx = {"book_id": os.path.basename(book_dir), "template": "bubei_react_v1"}
-    idx["schema"] = 2
+    # schema 是卡片字段契约版本（SOP 里那个 4），别动；
+    # 存储布局用 card_layout 标：2 = 全书卡池。
+    idx.setdefault("schema", 4)
+    idx["card_layout"] = 2
     idx["card_count"] = len(pool)
     with open(idx_path, "w", encoding="utf-8") as f:
         json.dump(idx, f, ensure_ascii=False, indent=2)
