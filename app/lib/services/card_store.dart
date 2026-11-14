@@ -517,7 +517,7 @@ class CardStore {
   ///
   /// 每 [_dueEvery] 次状态变更重建一次；compact / 启动时也会重建。
   /// 字段：id / engine / due / state(phase) / s(ease|稳定性) / d(难度) /
-  ///       reps / lapses / last / step / known。
+  ///       reps / lapses / last / step / known / enrolled。
   ///
   /// `engine` 是后加的（2026-10-02）：两套调度状态混在一个文件里就必须标出来，
   /// 否则监工读到的「due」到底是词的还是卡的都分不清。老行没有这个字段 = fsrs。
@@ -539,6 +539,7 @@ class CardStore {
           'lapses': s.lapses,
           'last': _day(s.lastReview),
           'known': _kv[e.key]?['known'] == true,
+          'enrolled': inPlan(e.key),
         });
       }
       for (final e in _sm2.entries) {
@@ -556,6 +557,7 @@ class CardStore {
           'lapses': s.lapses,
           'last': _day(s.lastReview),
           'known': _kv[e.key]?['known'] == true,
+          'enrolled': inPlan(e.key),
         });
       }
       entries.sort((a, b) {
