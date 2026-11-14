@@ -26,6 +26,7 @@ import '../services/tts_log.dart';
 import '../services/tts_service.dart';
 import '../services/ui_prefs.dart';
 import '../services/webview_bridge.dart';
+import 'card_preview_screen.dart';
 
 class ReviewScreen extends StatefulWidget {
   final String title;
@@ -349,6 +350,9 @@ class _ReviewScreenState extends State<ReviewScreen>
           });
         }
         break;
+      case 'openRelated':
+        await _openRelated(m.data);
+        break;
       case 'web.finish':
         if (mounted) {
           setState(() {
@@ -360,6 +364,142 @@ class _ReviewScreenState extends State<ReviewScreen>
         StatusWriter.I.write();
         break;
     }
+  }
+
+  /// 模板要「看关联题目」：弹底部抽屉，列出这张卡挂的真题。
+  /// 点其中一条 -> 关抽屉 -> 进单卡预览（跟词表点进来是同一条路）。
+  Future<void> _openRelated(Map<String, dynamic> d) async {
+    final raw = d['ids'];
+    final ids = (raw is List ? raw : const [])
+        .map((e) => e.toString())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) return;
+
+    final cards = <FlashCard>[];
+    for (final id in ids) {
+      var c = _webIndex[id];
+      c ??= await _bridge.cardSource.cardById(id);
+      if (c != null) cards.add(c);
+    }
+    if (cards.isEmpty || !mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF141D1F),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetCtx).size.height * 0.72,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+                  child: Row(
+                    children: [
+                      const Text('关联题目',
+                          style: TextStyle(
+                              color: Color(0xFFF0F4F5),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 8),
+                      Text('${cards.length}',
+                          style: const TextStyle(
+                              color: Color(0xFF5AA9FF), fontSize: 14)),
+                      const Spacer(),
+                      const Text('点一条看全文',
+                          style: TextStyle(
+                              color: Color(0xFF54666C), fontSize: 12)),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    itemCount: cards.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final c = cards[i];
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CardPreviewScreen(
+                                card: c,
+                                template: widget.template,
+                                fieldsOrder: widget.fieldsOrder,
+                                store: widget.store,
+                                settings: widget.settings,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0x08FFFFFF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0x10FFFFFF)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                child: Text('${i + 1}',
+                                    style: const TextStyle(
+                                        color: Color(0xFF54666C),
+                                        fontSize: 12)),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(c.displayTitle,
+                                        style: const TextStyle(
+                                            color: Color(0xFFF0F4F5),
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w600)),
+                                    if (c.displaySubtitle.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 3),
+                                        child: Text(c.displaySubtitle,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                color: Color(0xFF8C9DA2),
+                                                fontSize: 12)),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right,
+                                  color: Color(0xFF54666C), size: 18),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// workflow.js 要挂某张卡 / 某个语篇

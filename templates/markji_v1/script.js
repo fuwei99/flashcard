@@ -570,6 +570,25 @@
       }
       inner.appendChild(mjAns);
 
+      // 关联题目：有 related 就在卡片底部挂一条，点了让壳弹抽屉
+      var rel = f.related;
+      if (rel && rel.length) {
+        var rd = document.createElement("div");
+        rd.className = "mj-related";
+        rd.setAttribute("role", "button");
+        rd.innerHTML = '<span>关联题目 · ' + rel.length + '</span>' +
+                       '<span class="mj-related-go">打开 ▸</span>';
+        rd.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          try {
+            if (window.Flashcard && Flashcard.post) {
+              Flashcard.post({ type: "openRelated", ids: rel, cardId: card.id });
+            }
+          } catch (e) {}
+        });
+        inner.appendChild(rd);
+      }
+
       MJ.bind(inner);
       bindBlanks();
       return { markji: true, type: type };

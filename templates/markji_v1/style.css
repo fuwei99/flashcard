@@ -519,3 +519,23 @@
 /* 预览：从顶部开始排，别垂直居中留一大片空 */
 .pc-root[data-preview="1"] .pc-inner { margin: 0; }
 .pc-root[data-preview="1"] .pc-body { padding-top: 8px; }
+
+
+/* ---------- 关联题目：卡片底部那条 ---------- */
+.mj-related {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 2px 2px;
+  padding: 10px 12px;
+  border: 1px solid rgba(90, 169, 255, .28);
+  border-radius: 10px;
+  background: rgba(90, 169, 255, .08);
+  color: var(--blue);
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mj-related:active { background: rgba(90, 169, 255, .16); }
+.mj-related-go { opacity: .75; font-size: 12px; }
