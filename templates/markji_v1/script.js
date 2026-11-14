@@ -550,6 +550,72 @@
     inner.innerHTML = "";
     inner.className = "pc-inner";
 
+    // ---- ① 真·墨墨复刻：sourceHtml 直通 ----
+    // markji 一页纸工作台里 MarginNote 卡的内容根本不是「语法文本」，
+    // 是带 inline 彩色的 HTML：<div class="source-line mn-line"> 里一堆
+    // <span style="color:#2000FF"><strong>…</strong></span>。
+    // 蓝 / 红 / 橙 / 亮蓝全是作者手工标的，必须原样保留 ——
+    // 之前拿 raw 自己改写了一遍纯文本，再怎么调 CSS 都不像，根子在这儿。
+    // 外面套的是站点 .point / .point-card-head / .point-card-body 真壳，
+    // CSS 段也一并从 styles.css 搬过来了（见 style.css 末尾）。
+    if (txt(f.sourceHtml).trim()) {
+      root.setAttribute("data-mode", "markji-source");
+      var shell = document.createElement("article");
+      shell.className = "mj-point";
+
+      var head = document.createElement("header");
+      head.className = "mj-point-head";
+      var idx = document.createElement("span");
+      idx.className = "mj-source-index";
+      idx.textContent = txt(f.sourceIndex || f.word || "");
+      head.appendChild(idx);
+      var pr = document.createElement("div");
+      pr.className = "mj-prompt";
+      pr.textContent = txt(f.prompt || f.word || "");
+      head.appendChild(pr);
+      shell.appendChild(head);
+
+      var body = document.createElement("div");
+      body.className = "mj-point-body";
+      var mn = document.createElement("div");
+      mn.className = "mj-mn-content";
+      mn.innerHTML = f.sourceHtml;   // 原样，不转义、不重写
+      body.appendChild(mn);
+      shell.appendChild(body);
+
+      // 关联题目条复用同一套
+      var rel0 = f.related;
+      if (rel0 && rel0.length) {
+        var rd0 = document.createElement("div");
+        rd0.className = "mj-related";
+        rd0.setAttribute("role", "button");
+        rd0.innerHTML = '<span>关联题目 · ' + rel0.length + '</span>' +
+                        '<span class="mj-related-go">打开 ▸</span>';
+        rd0.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          try {
+            if (window.Flashcard && Flashcard.post) {
+              Flashcard.post({ type: "openRelated", ids: rel0, cardId: card.id });
+            }
+          } catch (e) {}
+        });
+        shell.appendChild(rd0);
+      }
+
+      var srcFront = document.createElement("section");
+      srcFront.className = "pc-front";
+      srcFront.appendChild(shell);
+      inner.appendChild(srcFront);
+
+      // 解析里可能有挖空（当前 100 个知识点没有，但留好口子）
+      var srcAns = document.createElement("section");
+      srcAns.className = "pc-answer";
+      inner.appendChild(srcAns);
+      MJ.bind(inner);
+      bindBlanks();
+      return { markji: true, source: true, type: type };
+    }
+
     // ---- markji 直通：content 是墨墨记忆卡语法原文 ----
     if (txt(f.content).trim()) {
       root.setAttribute("data-mode", "markji");
