@@ -1,26 +1,16 @@
 /* ============================================================================
-   markji-render.js · 墨墨记忆卡（Markji）语法渲染器
+   markji-render.js —— 从 templates/markji_v1/script.js 抽出的纯渲染器
    ----------------------------------------------------------------------------
-   纯函数，零依赖。输入一段 Markji 语法文本，输出 { front, back, meta }。
-   语法基线：官方《墨墨记忆卡制卡指南》grammar_version = 3
-             + 社区已验证扩展（D 删除线、Choice 内公式、E 内挖空）
-
-   已实现：
-     块级   [P#H1|L|I2|center#内容]   [Choice#fixed,multi#…]   [Pic#…]   [E##…]
-     行内   [T#B,U,I,D,up,down,!rrggbb,!!rrggbb,link/"url"#文字]
-            [F#n#挖空]   [E##行内公式]   [Audio#…]   [Card#…]
-     分隔   ---  （答案线，第一次出现处切正面/背面）
-     转义   \[  \]
-
-   用法：
-     const r = Markji.render(text);
-     el.innerHTML = r.front;      // 正面（挖空未揭示）
-     el.innerHTML = r.back;       // 背面
-     Markji.bindCloze(el);        // 给挖空绑点击揭示
+   只管「墨墨语法文本 -> HTML」这一件事：块级 / 行内 / 挖空 / 选择题 / 公式 / 答案线。
+   注意：**网站知识点卡的真身是 sourceHtml（带彩色 <strong> 的 HTML），不走这个**；
+   这个渲染器服务的是真题卡和 01..10_*.txt 那套自写语法卡。
+   改 templates/markji_v1/script.js 里的 MJ 段后，务必同步本文件。
    ========================================================================== */
 (function (root) {
   "use strict";
 
+root.Markji = (function () {
+  
   var ESC_L = "\u0001", ESC_R = "\u0002";   // \[ \] 的占位符
 
   function esc(s) {
@@ -259,16 +249,12 @@
     });
   }
 
-  root.Markji = {
-    render: render,
-    inline: inline,
-    bind: function (scope) { bindCloze(scope); bindChoice(scope); }
-  };
 
-  // Node / CommonJS 下也拿得到
-  if (typeof module !== "undefined" && module.exports) module.exports = root.Markji;
-})(
-  typeof window !== "undefined" ? window
-  : typeof globalThis !== "undefined" ? globalThis
-  : this
-);
+    return { render: render, inline: inline, bind: function (s) { bindCloze(s); bindChoice(s); } };
+  })();
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = root.Markji;
+  }
+})(typeof window !== "undefined" ? window
+   : typeof globalThis !== "undefined" ? globalThis : this);
