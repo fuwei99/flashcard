@@ -1,0 +1,189 @@
+/* ============================================================================
+   markji.css · 墨墨记忆卡语法渲染样式
+   配合 markji-render.js 使用。深色模式用 [data-theme="dark"]。
+   ========================================================================== */
+
+.mj-root {
+  --mj-fg: #1f2329;
+  --mj-fg-2: #5c6470;
+  --mj-line: #e6e8eb;
+  --mj-bg: #ffffff;
+  --mj-accent: #2f6fed;
+  --mj-cloze-bg: #eaf1ff;
+  --mj-cloze-fg: #2f6fed;
+  --mj-mark: #fff3bf;
+
+  font: 16px/1.8 -apple-system, "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  color: var(--mj-fg);
+  background: var(--mj-bg);
+  -webkit-text-size-adjust: 100%;
+  word-break: break-word;
+}
+
+.mj-root[data-theme="dark"] {
+  --mj-fg: #e8eaed;
+  --mj-fg-2: #9aa3af;
+  --mj-line: #2c3036;
+  --mj-bg: #17191c;
+  --mj-accent: #6f9dff;
+  --mj-cloze-bg: #1e2b45;
+  --mj-cloze-fg: #8ab4ff;
+  --mj-mark: #4a3f14;
+}
+
+/* ------------------------------------------------------------------ 段落 */
+.mj-root .mj-p { margin: 0 0 .55em; }
+.mj-root .mj-p:last-child { margin-bottom: 0; }
+
+.mj-root .mj-h1 {
+  font-size: 1.22em;
+  font-weight: 700;
+  line-height: 1.5;
+  margin: .2em 0 .85em;
+  letter-spacing: .01em;
+}
+
+.mj-root .mj-li {
+  position: relative;
+  padding-left: 1.15em;
+  margin: 0 0 .4em;
+}
+.mj-root .mj-li::before {
+  content: "";
+  position: absolute;
+  left: .28em; top: .72em;
+  width: .34em; height: .34em;
+  border-radius: 50%;
+  background: var(--mj-fg-2);
+  opacity: .55;
+}
+
+.mj-root .mj-center { text-align: center; }
+.mj-root .mj-right  { text-align: right; }
+.mj-root .mj-left   { text-align: left; }
+
+/* ------------------------------------------------------------------ 行内 */
+.mj-root .mj-b { font-weight: 700; }
+.mj-root .mj-i { font-style: italic; }
+.mj-root .mj-u { text-decoration: underline; text-underline-offset: .18em; }
+.mj-root .mj-d { text-decoration: line-through; opacity: .65; }
+.mj-root .mj-up   { font-size: .72em; vertical-align: super; }
+.mj-root .mj-down { font-size: .72em; vertical-align: sub; }
+
+.mj-root a { color: var(--mj-accent); text-decoration: none; }
+
+/* ------------------------------------------------------------------ 挖空 */
+.mj-root .mj-f {
+  display: inline;
+  padding: .06em .34em;
+  border-radius: .28em;
+  background: var(--mj-cloze-bg);
+  color: transparent;
+  text-shadow: 0 0 0 var(--mj-cloze-fg);
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.mj-root .mj-f-t {
+  filter: blur(4px);
+  transition: filter .16s ease;
+}
+.mj-root .mj-f.on, .mj-root .mj-f.mj-on {
+  color: inherit;
+  background: transparent;
+  text-shadow: none;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--mj-accent);
+  border-radius: 0;
+}
+.mj-root .mj-f.on .mj-f-t, .mj-root .mj-f.mj-on .mj-f-t { filter: none; }
+
+/* ------------------------------------------------------------------ 公式 */
+.mj-root .mj-eq { display: inline-block; vertical-align: middle; }
+.mj-root .mj-eq-block {
+  display: block;
+  margin: .7em 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: .15em 0;
+}
+.mj-root .mj-eq-block:empty::after,
+.mj-root .mj-eq:empty::after {
+  content: attr(data-tex);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .92em;
+  color: var(--mj-fg-2);
+}
+
+/* ------------------------------------------------------------------ 选择题 */
+.mj-root .mj-choice { margin: .6em 0; }
+.mj-root .mj-choice-hint {
+  font-size: .74em;
+  color: var(--mj-fg-2);
+  letter-spacing: .08em;
+  margin-bottom: .5em;
+}
+.mj-root .mj-opt {
+  display: flex;
+  gap: .6em;
+  align-items: flex-start;
+  padding: .5em .7em;
+  margin-bottom: .38em;
+  border: 1px solid var(--mj-line);
+  border-radius: .6em;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.mj-root .mj-opt-mark {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: var(--mj-fg-2);
+  min-width: 1.1em;
+}
+.mj-root .mj-opt-t { flex: 1 1 auto; }
+.mj-root .mj-opt.mj-picked {
+  border-color: var(--mj-accent);
+  background: var(--mj-cloze-bg);
+}
+.mj-root .mj-opt.mj-picked .mj-opt-mark { color: var(--mj-accent); }
+
+/* ------------------------------------------------------------------ 图片 / 音频 */
+.mj-root .mj-pic,
+.mj-root .mj-audio,
+.mj-root .mj-card {
+  display: inline-flex;
+  align-items: center;
+  gap: .3em;
+  padding: .18em .5em;
+  border: 1px dashed var(--mj-line);
+  border-radius: .4em;
+  font-size: .88em;
+  color: var(--mj-fg-2);
+}
+
+/* ------------------------------------------------------------------ 卡片外壳 */
+.mj-card-shell {
+  max-width: 42em;
+  margin: 0 auto;
+  padding: 22px 20px 20px;
+  background: var(--mj-bg);
+  border-radius: 14px;
+}
+.mj-card-shell .mj-answer-line {
+  height: 1px;
+  background: var(--mj-line);
+  margin: 1.1em 0;
+  position: relative;
+}
+.mj-card-shell .mj-answer-line::after {
+  content: "答案";
+  position: absolute;
+  right: 0; top: -.75em;
+  font-size: .7em;
+  color: var(--mj-fg-2);
+  background: var(--mj-bg);
+  padding-left: .5em;
+  letter-spacing: .1em;
+}

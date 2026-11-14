@@ -451,6 +451,24 @@
     MARK_RE: MARK_RE
   };
 
+
+  // ---------------------------------------------------------------- 预览页
+  //
+  // 书详情里点一张卡 = card_preview_screen，它走的是壳的 mountCard：
+  //   onPageFinished -> Flashcard.mountCard(json) -> window.__FLASHCARD_CARD__
+  //                     -> window.__FLASHCARD_ONMOUNT__()
+  // 不接这个钩子，web_session 模板在预览里就是一张空白骨架（底部按钮在、
+  // 内容区全空）。复习界面走 workflow.js，跟这条路径无关。
+  if (window.Flashcard && Flashcard.onMount) {
+    Flashcard.onMount(function () {
+      var raw = window.__FLASHCARD_CARD__;
+      if (!raw || !raw.fields) return;
+      API.mount({ id: raw.id, fields: raw.fields }, { state: "front", math: null });
+      API.revealAll();                       // 预览 = 直接看答案，挖空全揭示
+      if (root) root.setAttribute("data-preview", "1");
+    });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

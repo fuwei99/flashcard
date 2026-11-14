@@ -297,3 +297,8 @@
 
 /* ---------- 空卡兜底：字段全空时别显示一片白 ---------- */
 .pc-empty { color: var(--dim); font-size: 14px; text-align: center; }
+
+/* 预览是只读的：正反两面一起摊开，别把背面藏起来 */
+.pc-root[data-preview="1"] .pc-front,
+.pc-root[data-preview="1"] .pc-answer { display: block !important; }
+.pc-root[data-preview="1"] .pc-body { display: block; }

@@ -244,12 +244,14 @@
 
     // plan 是壳给的「这一场是什么」：哪本书、哪套引擎、复习还是新学。
     // srs_basic 的模板拿它定身份，但**不拿它排队** —— 队列归这里。
+    log("start() 开始拉 session.plan");
     F.call("session.plan", {}).then(function (plan) {
       plan = plan || {};
       S.book = plan.book || "";
       S.engine = plan.engine || "sm2";
       S.mode = plan.mode === "review" ? "review" : "learn";
       S.math = plan.math || null;
+      log("plan 到手 book=" + S.book + " engine=" + S.engine + " mode=" + S.mode);
 
       return resumeOrBuild(plan).then(function (q) {
         S.queue = q || [];
@@ -273,10 +275,20 @@
 
   PC.onRate(rate);
 
-  F.on("web.start", function () { start(); });
+  F.on("web.start", function () { log("收到 web.start"); start(); });
 
   // 进后台立刻落断点：Android 杀后台不打招呼，晚了就白背
   F.on("lifecycle.pause", function () { save(); });
+
+  // 兜底自启：壳在 onPageFinished 里 emit('web.start')，而本脚本是内联执行，
+  // 两者的先后顺序不保证 —— 万一事件抢在 F.on 注册之前发了，页面就永远停在骨架。
+  // start() 有 S.started 守卫，重复调用无害。
+  setTimeout(function () {
+    if (!S.started) {
+      log("兜底自启（没收到 web.start）SDK=" + (typeof F) + " on=" + (typeof F.on));
+      start();
+    }
+  }, 300);
 
   // 会话正常结束时断点也留着（下次进来还能接着背），清断点在 finish 里做。
   log("workflow 就绪");

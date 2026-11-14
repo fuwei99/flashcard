@@ -1,0 +1,100 @@
+{
+  "api_version": "1",
+  "id": "markji_v1",
+  "name": "墨墨记忆卡 · 语法直通",
+  "version": "1.0.0",
+  "author": "江锋",
+  "description": "直接吃墨墨记忆卡（Markji）grammar_version=3 的语法：卡片只要一个 content 字段，整段原文丢进来即可。支持 [P#H1#标题] [P#L#列表] [T#B,U,!rrggbb#样式] [F#1#挖空] [E##公式] [Choice#fixed#…] 和 --- 答案线。翻面自动揭示全部挖空。引擎与 plaincard_v1 一致：srs_basic / SM-2。",
+  "engine": "srs_basic",
+  "render_mode": "placeholder",
+  "web_session": true,
+  "self_distractors": true,
+  "top_bar": true,
+  "fields": [
+    "content",
+    "type",
+    "front",
+    "back",
+    "detail",
+    "media",
+    "tags",
+    "source",
+    "mnemonic",
+    "html"
+  ],
+  "field_types": {
+    "media": "list",
+    "tags": "list",
+    "html": "html",
+    "detail": "html",
+    "back": "html",
+    "front": "html",
+    "content": "html"
+  },
+  "srs": {
+    "learning_steps": [
+      1,
+      10
+    ],
+    "relearning_steps": [
+      10
+    ],
+    "graduating_interval": 1,
+    "easy_interval": 4,
+    "starting_ease": 2.5,
+    "min_ease": 1.3,
+    "easy_bonus": 1.3,
+    "hard_factor": 1.2,
+    "interval_modifier": 1.0,
+    "max_interval": 36500,
+    "lapse_multiplier": 0.0
+  },
+  "math": {
+    "engine": "katex",
+    "delimiters": [
+      {
+        "left": "$$",
+        "right": "$$",
+        "display": true
+      },
+      {
+        "left": "\\[",
+        "right": "\\]",
+        "display": true
+      },
+      {
+        "left": "$",
+        "right": "$",
+        "display": false
+      },
+      {
+        "left": "\\(",
+        "right": "\\)",
+        "display": false
+      }
+    ]
+  },
+  "vendor": {
+    "css": [
+      "vendor/katex.css"
+    ],
+    "js": [
+      "vendor/katex.min.js",
+      "vendor/auto-render.min.js"
+    ]
+  },
+  "files": {
+    "script": "script.js",
+    "style": "style.css",
+    "template": "template.html",
+    "workflow": "workflow.js"
+  },
+  "tts": {
+    "auto_play": false,
+    "fields": [
+      "front",
+      "back"
+    ],
+    "lang": "en-US"
+  }
+}
