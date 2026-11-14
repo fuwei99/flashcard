@@ -503,9 +503,11 @@
   --mj-bg: transparent;
   --mj-cloze-bg: rgba(90, 169, 255, .14);
   --mj-cloze-fg: var(--blue);
-  background: transparent;
+  background: rgba(255, 255, 255, .035);
+  border: 1px solid var(--line);
+  border-radius: 14px;
   color: var(--txt);
-  padding: 0;
+  padding: 16px 14px;
 }
 .pc-root .mj-root .pc-front,
 .pc-root .mj-root .pc-answer,

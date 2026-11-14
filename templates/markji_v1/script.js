@@ -313,7 +313,7 @@
 
   // 文字样式参数 → class / style
   function styleAttrs(params) {
-    var cls = [], style = [];
+    var cls = [], style = [], bgLum = -1, hasFg = false;
     String(params || "").split(",").forEach(function (p) {
       p = p.trim();
       if (!p) return;
@@ -323,13 +323,22 @@
       else if (p === "D") cls.push("mj-d");
       else if (p === "up") cls.push("mj-up");
       else if (p === "down") cls.push("mj-down");
-      else if (/^!![0-9a-f]{6}$/i.test(p)) style.push("background:" + p.slice(2).replace(/^/, "#"));
-      else if (/^![0-9a-f]{6}$/i.test(p)) style.push("color:#" + p.slice(1));
+      else if (/^!![0-9a-f]{6}$/i.test(p)) {
+        var bg = p.slice(2).toLowerCase();
+        style.push("background:#" + bg);
+        bgLum = 0.299 * parseInt(bg.slice(0, 2), 16) +
+                0.587 * parseInt(bg.slice(2, 4), 16) +
+                0.114 * parseInt(bg.slice(4, 6), 16);
+      }
+      else if (/^![0-9a-f]{6}$/i.test(p)) { style.push("color:#" + p.slice(1).toLowerCase()); hasFg = true; }
       else if (/^link\//.test(p)) {
         var m = /^link\/"([^"]*)"/.exec(p);
         if (m) cls.push("mj-link:" + m[1]);
       }
     });
+    // 只给了背景色、没给文字色时按亮度配字：
+    // 亮底（浅黄/浅绿高亮）压深字，暗底压浅字 —— 否则深色主题下就是白字糊在浅黄上
+    if (bgLum >= 0 && !hasFg) style.push(bgLum >= 140 ? "color:#1f2329" : "color:#f0f4f5");
     return { cls: cls, style: style.join(";") };
   }
 
