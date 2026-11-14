@@ -298,66 +298,95 @@
 /* ---------- 空卡兜底：字段全空时别显示一片白 ---------- */
 .pc-empty { color: var(--dim); font-size: 14px; text-align: center; }
 
+/* 预览是只读的：正反两面一起摊开，别把背面藏起来 */
+.pc-root[data-preview="1"] .pc-front,
+.pc-root[data-preview="1"] .pc-answer { display: block !important; }
+.pc-root[data-preview="1"] .pc-body { display: block; }
 
-/* ===== Markji 语法样式 ===== */
+
+/* ===== Markji 语法样式（抄 markji.com 一页纸工作台） ===== */
 /* ============================================================================
-   markji.css · 墨墨记忆卡语法渲染样式
-   配合 markji-render.js 使用。深色模式用 [data-theme="dark"]。
+   markji.css · 墨墨语法渲染样式
+   ----------------------------------------------------------------------------
+   设计 token 直接抄 markji.com 一页纸工作台的 styles.css：
+     --blue  #36b59d   墨墨绿（答案 / 强调）
+     --ink   #333333   正文
+     --muted #8e8e8e   次要
+     --line  #efefef   分隔线
+     字号 16.5px / 行高 1.72 / 字重 620 / 字距 -0.012em
+   深色一套是站点 html[data-theme='dark'] 的镜像（#1c1c1c / #e5e5e5 / #454545）。
    ========================================================================== */
 
 .mj-root {
-  --mj-fg: #1f2329;
-  --mj-fg-2: #5c6470;
-  --mj-line: #e6e8eb;
+  --mj-ink: #333333;
+  --mj-muted: #8e8e8e;
+  --mj-line: #efefef;
   --mj-bg: #ffffff;
-  --mj-accent: #2f6fed;
-  --mj-cloze-bg: #eaf1ff;
-  --mj-cloze-fg: #2f6fed;
-  --mj-mark: #fff3bf;
+  --mj-soft: #fafafa;
+  --mj-accent: #36b59d;
+  --mj-accent-hover: #2fa38d;
+  --mj-accent-soft: #f1f9f7;
+  --mj-faint: #f8fcfb;
+  --mj-radius: 18px;
 
-  font: 16px/1.8 -apple-system, "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
-  color: var(--mj-fg);
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+               'Noto Sans CJK SC', sans-serif;
+  font-size: 16.5px;
+  line-height: 1.72;
+  letter-spacing: -0.012em;
+  color: var(--mj-ink);
   background: var(--mj-bg);
+  -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
   word-break: break-word;
 }
 
-.mj-root[data-theme="dark"] {
-  --mj-fg: #e8eaed;
-  --mj-fg-2: #9aa3af;
-  --mj-line: #2c3036;
-  --mj-bg: #17191c;
-  --mj-accent: #6f9dff;
-  --mj-cloze-bg: #1e2b45;
-  --mj-cloze-fg: #8ab4ff;
-  --mj-mark: #4a3f14;
+/* 深色：站点 html[data-theme='dark'] 的同款映射 */
+.mj-root[data-theme="dark"],
+.mj-dark .mj-root,
+html[data-theme="dark"] .mj-root {
+  --mj-ink: #e5e5e5;
+  --mj-muted: #8e8e8e;
+  --mj-line: #454545;
+  --mj-bg: #1c1c1c;
+  --mj-soft: #2b2b2b;
+  --mj-accent: #36b59d;
+  --mj-accent-soft: #2b2b2b;
+  --mj-faint: #1c1c1c;
 }
 
 /* ------------------------------------------------------------------ 段落 */
-.mj-root .mj-p { margin: 0 0 .55em; }
+.mj-root .mj-p {
+  margin: 0 0 .5em;
+  font-size: 16.5px;
+  line-height: 1.72;
+  font-weight: 620;
+  white-space: pre-line;
+  letter-spacing: -0.012em;
+}
 .mj-root .mj-p:last-child { margin-bottom: 0; }
 
 .mj-root .mj-h1 {
-  font-size: 1.22em;
+  font-size: 1.12em;
   font-weight: 700;
-  line-height: 1.5;
-  margin: .2em 0 .85em;
-  letter-spacing: .01em;
+  line-height: 1.55;
+  margin: .1em 0 .7em;
+  letter-spacing: -.018em;
 }
 
+/* 列表：站点没有圆点，用悬挂缩进 + 细分隔，更像知识点条目 */
 .mj-root .mj-li {
   position: relative;
-  padding-left: 1.15em;
-  margin: 0 0 .4em;
+  padding-left: 1.05em;
+  margin: 0 0 .42em;
 }
 .mj-root .mj-li::before {
-  content: "";
+  content: "·";
   position: absolute;
-  left: .28em; top: .72em;
-  width: .34em; height: .34em;
-  border-radius: 50%;
-  background: var(--mj-fg-2);
-  opacity: .55;
+  left: .18em;
+  top: -.02em;
+  color: var(--mj-accent);
+  font-weight: 700;
 }
 
 .mj-root .mj-center { text-align: center; }
@@ -368,38 +397,39 @@
 .mj-root .mj-b { font-weight: 700; }
 .mj-root .mj-i { font-style: italic; }
 .mj-root .mj-u { text-decoration: underline; text-underline-offset: .18em; }
-.mj-root .mj-d { text-decoration: line-through; opacity: .65; }
+.mj-root .mj-d { text-decoration: line-through; color: var(--mj-muted); }
 .mj-root .mj-up   { font-size: .72em; vertical-align: super; }
 .mj-root .mj-down { font-size: .72em; vertical-align: sub; }
 
 .mj-root a { color: var(--mj-accent); text-decoration: none; }
+.mj-root a:active { color: var(--mj-accent-hover); }
 
 /* ------------------------------------------------------------------ 挖空 */
+/* 未揭示：墨绿软底 + 透明字；揭示后直接变成站点里的 knowledge 绿 */
 .mj-root .mj-f {
   display: inline;
-  padding: .06em .34em;
-  border-radius: .28em;
-  background: var(--mj-cloze-bg);
+  padding: .04em .3em;
+  border-radius: 6px;
+  background: var(--mj-accent-soft);
   color: transparent;
-  text-shadow: 0 0 0 var(--mj-cloze-fg);
+  text-shadow: 0 0 0 var(--mj-accent);
   cursor: pointer;
-  transition: color .16s ease, background .16s ease;
+  transition: background .14s, color .14s;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.mj-root .mj-f-t {
-  filter: blur(4px);
-  transition: filter .16s ease;
-}
-.mj-root .mj-f.on, .mj-root .mj-f.mj-on {
-  color: inherit;
+.mj-root .mj-f-t { filter: blur(4.5px); transition: filter .14s; }
+.mj-root .mj-f.on,
+.mj-root .mj-f.mj-on {
+  color: var(--mj-accent);
   background: transparent;
   text-shadow: none;
-  font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--mj-accent);
-  border-radius: 0;
+  font-weight: 650;
+  padding-left: 0;
+  padding-right: 0;
 }
-.mj-root .mj-f.on .mj-f-t, .mj-root .mj-f.mj-on .mj-f-t { filter: none; }
+.mj-root .mj-f.on .mj-f-t,
+.mj-root .mj-f.mj-on .mj-f-t { filter: none; }
 
 /* ------------------------------------------------------------------ 公式 */
 .mj-root .mj-eq { display: inline-block; vertical-align: middle; }
@@ -414,44 +444,50 @@
 .mj-root .mj-eq-block:empty::after,
 .mj-root .mj-eq:empty::after {
   content: attr(data-tex);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: .92em;
-  color: var(--mj-fg-2);
+  color: var(--mj-muted);
 }
 
 /* ------------------------------------------------------------------ 选择题 */
-.mj-root .mj-choice { margin: .6em 0; }
+.mj-root .mj-choice { margin: .65em 0; }
 .mj-root .mj-choice-hint {
-  font-size: .74em;
-  color: var(--mj-fg-2);
-  letter-spacing: .08em;
-  margin-bottom: .5em;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--mj-muted);
+  letter-spacing: .06em;
+  margin-bottom: .55em;
 }
 .mj-root .mj-opt {
   display: flex;
-  gap: .6em;
+  gap: .62em;
   align-items: flex-start;
-  padding: .5em .7em;
-  margin-bottom: .38em;
+  padding: .52em .72em;
+  margin-bottom: .4em;
   border: 1px solid var(--mj-line);
-  border-radius: .6em;
+  border-radius: 7px;
+  background: var(--mj-bg);
   cursor: pointer;
-  transition: border-color .15s, background .15s;
+  transition: border-color .14s, background .14s, color .14s;
+  -webkit-tap-highlight-color: transparent;
 }
 .mj-root .mj-opt-mark {
   flex: 0 0 auto;
-  font-weight: 700;
-  color: var(--mj-fg-2);
-  min-width: 1.1em;
+  font-weight: 750;
+  font-size: .92em;
+  color: var(--mj-muted);
+  min-width: 1.05em;
+  line-height: 1.72;
 }
 .mj-root .mj-opt-t { flex: 1 1 auto; }
 .mj-root .mj-opt.mj-picked {
   border-color: var(--mj-accent);
-  background: var(--mj-cloze-bg);
+  background: var(--mj-accent);
+  color: #fff;
 }
-.mj-root .mj-opt.mj-picked .mj-opt-mark { color: var(--mj-accent); }
+.mj-root .mj-opt.mj-picked .mj-opt-mark { color: #fff; }
 
-/* ------------------------------------------------------------------ 图片 / 音频 */
+/* ------------------------------------------------------------------ 图片 / 音频 / 关联卡 */
 .mj-root .mj-pic,
 .mj-root .mj-audio,
 .mj-root .mj-card {
@@ -459,55 +495,74 @@
   align-items: center;
   gap: .3em;
   padding: .18em .5em;
-  border: 1px dashed var(--mj-line);
-  border-radius: .4em;
-  font-size: .88em;
-  color: var(--mj-fg-2);
+  border: 1px solid var(--mj-line);
+  border-radius: 7px;
+  font-size: .86em;
+  color: var(--mj-muted);
 }
 
 /* ------------------------------------------------------------------ 卡片外壳 */
 .mj-card-shell {
   max-width: 42em;
   margin: 0 auto;
-  padding: 22px 20px 20px;
+  padding: 20px 18px 18px;
   background: var(--mj-bg);
-  border-radius: 14px;
+  border-radius: var(--mj-radius);
 }
 .mj-card-shell .mj-answer-line {
   height: 1px;
   background: var(--mj-line);
-  margin: 1.1em 0;
+  margin: 1.05em 0;
   position: relative;
 }
 .mj-card-shell .mj-answer-line::after {
   content: "答案";
   position: absolute;
-  right: 0; top: -.75em;
-  font-size: .7em;
-  color: var(--mj-fg-2);
+  right: 0; top: -.8em;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  color: var(--mj-muted);
   background: var(--mj-bg);
   padding-left: .5em;
-  letter-spacing: .1em;
 }
 
-/* 预览是只读的：正反两面一起摊开，别把背面藏起来 */
-.pc-root[data-preview="1"] .pc-front,
-.pc-root[data-preview="1"] .pc-answer { display: block !important; }
-.pc-root[data-preview="1"] .pc-body { display: block; }
+/* 关联题目条 */
+.mj-related {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--mj-line);
+  border-radius: 7px;
+  background: var(--mj-bg);
+  color: var(--mj-accent);
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mj-related:active { background: var(--mj-accent-soft); }
+.mj-related-go { opacity: .7; font-weight: 600; }
 
-/* ---------- markji 区域跟随模板主题（别自带白底，深色下会变白板） ---------- */
+
+/* ============================================================
+   markji 区域跟随 plaincard 的深色主题
+   （模板 --txt/--muted/--line 已经在 .pc-root 上定义好了，这里只是接线）
+   ============================================================ */
 .pc-root .mj-root {
-  --mj-fg: var(--txt);
-  --mj-fg-2: var(--muted);
+  --mj-ink: var(--txt);
+  --mj-muted: var(--muted);
   --mj-line: var(--line);
   --mj-bg: transparent;
-  --mj-cloze-bg: rgba(90, 169, 255, .14);
-  --mj-cloze-fg: var(--blue);
-  background: rgba(255, 255, 255, .035);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  --mj-soft: rgba(255, 255, 255, .04);
+  --mj-faint: rgba(255, 255, 255, .02);
+  --mj-accent-soft: rgba(54, 181, 157, .13);
   color: var(--txt);
-  padding: 16px 14px;
+  padding: 0;
+  letter-spacing: 0;
 }
 .pc-root .mj-root .pc-front,
 .pc-root .mj-root .pc-answer,
@@ -520,22 +575,7 @@
 .pc-root[data-preview="1"] .pc-inner { margin: 0; }
 .pc-root[data-preview="1"] .pc-body { padding-top: 8px; }
 
-
-/* ---------- 关联题目：卡片底部那条 ---------- */
-.mj-related {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin: 14px 2px 2px;
-  padding: 10px 12px;
-  border: 1px solid rgba(90, 169, 255, .28);
-  border-radius: 10px;
-  background: rgba(90, 169, 255, .08);
-  color: var(--blue);
-  font-size: 13px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.mj-related:active { background: rgba(90, 169, 255, .16); }
-.mj-related-go { opacity: .75; font-size: 12px; }
+/* 预览是只读的：正反两面一起摊开，别把背面藏起来 */
+.pc-root[data-preview="1"] .pc-front,
+.pc-root[data-preview="1"] .pc-answer { display: block !important; }
+.pc-root[data-preview="1"] .pc-body { display: block; }
