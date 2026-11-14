@@ -50,6 +50,8 @@ class DeckRepository {
   static const _templateDirs = <String>[
     'assets/templates/bubei_react_v1',
     'assets/templates/plaincard_v1',
+    // 墨墨记忆卡语法直通：知识点卡专用，重建数据目录后也能自动铺回来。
+    'assets/templates/markji_v1',
   ];
 
   /// 一个模板包固定这几个文件（**核心文件**；额外资源走 manifest.vendor）

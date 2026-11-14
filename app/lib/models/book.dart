@@ -466,6 +466,11 @@ class Book {
   /// schema 2 的全书卡池（null = 老格式，卡片内联在各章里）
   final CardPool? pool;
 
+  /// 书级开关：true = 这本书走墨墨式「自己勾选加入记忆规划」，
+  /// 词表页显示多选 / 加入按钮。缺省 false —— 老单词书一律不受影响。
+  /// 注意它只管 UI，**队列判定**统一在 CardStore.inPlan 里，跟这个无关。
+  final bool enrollRequired;
+
   Book({
     required this.bookId,
     required this.title,
@@ -479,6 +484,7 @@ class Book {
     this.passage,
     this.dir,
     this.pool,
+    this.enrollRequired = false,
   });
 
   bool get hasChapters => chapters.isNotEmpty;
@@ -533,6 +539,7 @@ class Book {
       chapters: chapters,
       looseCards: loose,
       passage: _passageFrom(j['passage']),
+      enrollRequired: j['enroll_required'] == true,
     );
   }
 
@@ -589,6 +596,7 @@ class Book {
       passage: _passageFrom(j['passage']),
       dir: dir,
       pool: pool,
+      enrollRequired: j['enroll_required'] == true,
     );
   }
 
@@ -599,6 +607,7 @@ class Book {
         'subtitle': subtitle,
         'template': templateId,
         'fields_order': fieldsOrder,
+        if (enrollRequired) 'enroll_required': true,
         if (passage != null) 'passage': passage!.toJson(),
         if (chapters.isNotEmpty)
           'chapters': chapters.map((c) => c.toJson()).toList(),
@@ -621,6 +630,7 @@ class Book {
       'template': templateId,
       'fields_order': fieldsOrder,
     };
+    if (enrollRequired) m['enroll_required'] = true;
     if (schema2) m['card_count'] = cardCount;
     if (passage != null) m['passage'] = passage!.toJson();
     if (!hasChapters) {

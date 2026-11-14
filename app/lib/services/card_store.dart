@@ -218,20 +218,20 @@ class CardStore {
   List<String> reviewDueSm2(List<String> allIds, [DateTime? now]) {
     final t = now ?? DateTime.now();
     return [
-      for (final id in allIds)
+      for (final id in planIds(allIds))
         if (!isKnown(id) && sm2IsDue(sm2Of(id), t)) id,
     ];
   }
 
   /// 未学过的卡（srs_basic）
   List<String> newSm2(List<String> allIds) => [
-        for (final id in allIds)
+        for (final id in planIds(allIds))
           if (!isKnown(id) && !isLearnedSm2(id)) id,
       ];
 
   /// srs_basic 的完整队列：到期优先 → 新卡殿后
   List<String> queueSm2(List<String> allIds, [DateTime? now]) =>
-      sm2Queue(allIds, sm2Of, isKnown, now);
+      sm2Queue(planIds(allIds), sm2Of, isKnown, now);
 
   /// srs_basic 的已学计数（章节进度条用）
   int countLearnedSm2(List<String> ids) =>
@@ -270,6 +270,32 @@ class CardStore {
   bool isKnown(String id) => _kv[id]?['known'] == true;
 
   void setKnown(String id, bool v) => putKv(id, 'known', v);
+
+  // ---------- 加入记忆规划（墨墨式「自己挑要背的」）----------
+  //
+  // 语义刻意做成「默认在计划内」：
+  //   * 没写过这个 key 的老卡 / 老书 → inPlan = true，行为跟以前**一模一样**；
+  //     不会一升级就把几万词的书全踢出队列，那是灾难。
+  //   * 显式写 false = 移出规划，但**不动调度状态**（跟标熟一样是「不进队列」，
+  //     不是「删记录」），随时能加回，SM-2 的 ease / 间隔原样保留。
+  // 书级开关 enroll_required 只管 UI 显不显示勾选框，不参与这里的判定。
+  bool inPlan(String id) => _kv[id]?['enrolled'] != false;
+
+  void setEnrolled(String id, bool v) => putKv(id, 'enrolled', v);
+
+  /// 批量加入 / 移出（书内「全选 / 清空」用）
+  void setEnrolledAll(List<String> ids, bool v) {
+    for (final id in ids) {
+      setEnrolled(id, v);
+    }
+  }
+
+  int enrolledCount(List<String> ids) =>
+      ids.where((id) => inPlan(id)).length;
+
+  /// 所有挑卡入口先过这一道，保证「显示多少」和「实际背多少」不打架
+  List<String> planIds(List<String> ids) =>
+      [for (final id in ids) if (inPlan(id)) id];
 
   /// 到期复习队列（已学 + 到期，不含新卡）
   List<String> reviewDue(List<String> allIds) {

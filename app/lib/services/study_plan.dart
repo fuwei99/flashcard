@@ -258,7 +258,7 @@ class StudyPlanner {
   static int cardDueCount(List<Book> books, CardStore store) {
     var n = 0;
     for (final b in books) {
-      for (final id in b.allCardIds) {
+      for (final id in store.planIds(b.allCardIds)) {
         if (store.isKnown(id)) continue;
         final st = store.sm2Of(id);
         if (st.isLearned && sm2IsDue(st)) n++;
@@ -270,7 +270,7 @@ class StudyPlanner {
   static int cardNewCount(List<Book> books, CardStore store) {
     var n = 0;
     for (final b in books) {
-      for (final id in b.allCardIds) {
+      for (final id in store.planIds(b.allCardIds)) {
         if (!store.isKnown(id) && !store.isLearnedSm2(id)) n++;
       }
     }
@@ -306,6 +306,7 @@ class StudyPlanner {
       for (final g in groups) {
         for (final id in g.ids) {
           if (store.isKnown(id)) continue;
+          if (!store.inPlan(id)) continue; // 移出记忆规划
           final st = store.sm2Of(id);
           if (st.isNew) {
             newRefs.add(_DueRef(null, g, id));

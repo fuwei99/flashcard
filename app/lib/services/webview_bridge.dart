@@ -596,7 +596,9 @@ class WebViewBridge {
     if (_engineOf(p) == 'sm2') return _queueSm2(p, reviewOnly: reviewOnly);
 
     final limit = (p['limit'] as num?)?.toInt() ?? 0;
-    final bookId = (p['bookId'] ?? '').toString();
+    // workflow.js 传的是 `book`；老调用方可能传 bookId / book_id，都认。
+    final bookId =
+        (p['book'] ?? p['bookId'] ?? p['book_id'] ?? '').toString();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -607,6 +609,7 @@ class WebViewBridge {
       if (bookId.isNotEmpty && b.bookId != bookId) continue;
       for (final id in b.allCardIds) {
         if (store.isKnown(id)) continue; // 标熟 = 永久出队
+        if (!store.inPlan(id)) continue; // 移出记忆规划 = 不进队列
         final st = store.stateOf(id);
         if (st.isNew) {
           if (!reviewOnly) newIds.add(id);
@@ -642,7 +645,10 @@ class WebViewBridge {
     required bool reviewOnly,
   }) async {
     final limit = (p['limit'] as num?)?.toInt() ?? 0;
-    final bookId = (p['bookId'] ?? '').toString();
+    // workflow.js 传 `book`（session.plan 里就是 book），不是 bookId。
+    // 以前只读 bookId -> 恒为空 -> 多本 srs_basic 卡书的队列会串到一起。
+    final bookId =
+        (p['book'] ?? p['bookId'] ?? p['book_id'] ?? '').toString();
     final now = DateTime.now();
 
     final dueRefs = <MapEntry<String, DateTime?>>[];
@@ -652,6 +658,7 @@ class WebViewBridge {
       if (bookId.isNotEmpty && b.bookId != bookId) continue;
       for (final id in b.allCardIds) {
         if (store.isKnown(id)) continue; // 标熟 = 永久出队
+        if (!store.inPlan(id)) continue; // 移出记忆规划 = 不进队列
         final st = store.sm2Of(id);
         if (st.isNew) {
           if (!reviewOnly) newIds.add(id);
